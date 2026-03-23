@@ -36,8 +36,7 @@ target_link_libraries(VideoPlayerApp PRIVATE
     Qt6::Multimedia
     VideoPlayerLogger
     VideoPlayerPlugin
-    #QtQuickComponents     # backing library 名，由 qt_add_library(QtQuickComponents ...) 决定，与 URI 无关
-    QtQuickComponentsplugin
+    QtQuickComponents     # backing library 名，由 qt_add_library(QtQuickComponents ...) 决定，与 URI 无关
     ${DUMP_LIBS}
 )
 
