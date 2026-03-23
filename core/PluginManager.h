@@ -14,13 +14,24 @@
 class PluginManager : public QObject
 {
     Q_OBJECT
+    QML_ELEMENT
+    QML_SINGLETON
 
     Q_PROPERTY(int         pluginCount READ pluginCount NOTIFY pluginsChanged)
     Q_PROPERTY(QStringList pluginNames READ pluginNames NOTIFY pluginsChanged)
 
 public:
-    static PluginManager& instance();
-    static PluginManager* create(QQmlEngine* engine, QJSEngine* jsEngine);
+    static PluginManager* create(QQmlEngine*, QJSEngine*)
+    {
+        QQmlEngine::setObjectOwnership(&instance(), QQmlEngine::CppOwnership);
+        return &instance();
+    }
+
+    static PluginManager& instance()
+    {
+        static PluginManager s;
+        return s;
+    }
 
     void loadAll(const QString& pluginDir);
     bool loadPlugin(const QString& filePath);
@@ -37,7 +48,7 @@ signals:
     void pluginLoadFailed(const QString& path, const QString& reason);
 
 private:
-    explicit PluginManager(QObject* parent = nullptr);
+    explicit PluginManager(QObject* parent = nullptr) : QObject(parent) {}
 
     struct PluginEntry {
         std::unique_ptr<QPluginLoader> loader;

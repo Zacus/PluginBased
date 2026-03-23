@@ -1,13 +1,3 @@
-<!--
- * @Author: zs
- * @Date: 2026-03-21 14:18:46
- * @LastEditors: zs
- * @LastEditTime: 2026-03-23 15:10:29
- * @FilePath: /VideoPlayer1.0/BUILD.md
- * @Description: 
- * 
- * Copyright (c) 2026 by zs, All Rights Reserved. 
--->
 # 构建说明
 
 ## 快速开始
@@ -15,7 +5,7 @@
 ### 安装依赖（vcpkg 方式）
 
 ```bash
-vcpkg install spdlog
+vcpkg install spdlog fmt qt6
 ```
 
 ### 构建

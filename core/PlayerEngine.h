@@ -4,6 +4,7 @@
 #include <QUrl>
 #include <QString>
 #include <QTimer>
+#include <QQmlEngine>
 
 #include "MediaInfo.h"
 #include "IPlayerPlugin.h"
@@ -11,22 +12,18 @@
 class PlayerEngine : public QObject
 {
     Q_OBJECT
+    QML_ELEMENT
 
-    Q_PROPERTY(int     playbackState READ playbackStateInt NOTIFY playbackStateChanged)
-    Q_PROPERTY(qint64  position      READ position         NOTIFY positionChanged)
-    Q_PROPERTY(qint64  duration      READ duration         NOTIFY durationChanged)
-    Q_PROPERTY(float   volume        READ volume  WRITE setVolume  NOTIFY volumeChanged)
-    Q_PROPERTY(bool    muted         READ muted   WRITE setMuted   NOTIFY mutedChanged)
-    Q_PROPERTY(MediaInfo* currentMedia READ currentMedia   NOTIFY currentMediaChanged)
-    Q_PROPERTY(QString errorString   READ errorString      NOTIFY errorOccurred)
+    Q_PROPERTY(int       playbackState READ playbackStateInt NOTIFY playbackStateChanged)
+    Q_PROPERTY(qint64    position      READ position         NOTIFY positionChanged)
+    Q_PROPERTY(qint64    duration      READ duration         NOTIFY durationChanged)
+    Q_PROPERTY(float     volume        READ volume  WRITE setVolume NOTIFY volumeChanged)
+    Q_PROPERTY(bool      muted         READ muted   WRITE setMuted  NOTIFY mutedChanged)
+    Q_PROPERTY(MediaInfo* currentMedia READ currentMedia     NOTIFY currentMediaChanged)
+    Q_PROPERTY(QString   errorString   READ errorString      NOTIFY errorOccurred)
 
 public:
-    // QML 里用整数常量比较，避免 enum class 跨模块访问问题
-    enum PlaybackState {
-        Stopped = 0,
-        Playing = 1,
-        Paused  = 2
-    };
+    enum PlaybackState { Stopped = 0, Playing = 1, Paused = 2 };
     Q_ENUM(PlaybackState)
 
     explicit PlayerEngine(QObject* parent = nullptr);

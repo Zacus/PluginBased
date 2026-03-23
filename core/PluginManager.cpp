@@ -4,22 +4,6 @@
 #include <QDir>
 #include <QFileInfo>
 
-PluginManager::PluginManager(QObject* parent)
-    : QObject(parent)
-{}
-
-PluginManager& PluginManager::instance()
-{
-    static PluginManager s_instance;
-    return s_instance;
-}
-
-PluginManager* PluginManager::create(QQmlEngine* /*engine*/, QJSEngine* /*jsEngine*/)
-{
-    QQmlEngine::setObjectOwnership(&instance(), QQmlEngine::CppOwnership);
-    return &instance();
-}
-
 void PluginManager::loadAll(const QString& pluginDir)
 {
     QDir dir(pluginDir);
@@ -40,9 +24,8 @@ void PluginManager::loadAll(const QString& pluginDir)
     LOG_INFO("PluginManager: scanning {} — found {} files",
              pluginDir.toStdString(), entries.size());
 
-    for (const QString& file : entries) {
+    for (const QString& file : entries)
         loadPlugin(dir.absoluteFilePath(file));
-    }
 }
 
 bool PluginManager::loadPlugin(const QString& filePath)
@@ -89,9 +72,8 @@ bool PluginManager::loadPlugin(const QString& filePath)
 IPlayerPlugin* PluginManager::findPlugin(const QUrl& url) const
 {
     for (const auto& entry : m_plugins) {
-        if (entry.plugin && entry.plugin->canHandle(url)) {
+        if (entry.plugin && entry.plugin->canHandle(url))
             return entry.plugin;
-        }
     }
     LOG_WARN("PluginManager: no plugin found for {}", url.toString().toStdString());
     return nullptr;
@@ -100,26 +82,23 @@ IPlayerPlugin* PluginManager::findPlugin(const QUrl& url) const
 QStringList PluginManager::pluginNames() const
 {
     QStringList names;
-    for (const auto& e : m_plugins) {
+    for (const auto& e : m_plugins)
         if (e.plugin) names << e.plugin->name();
-    }
     return names;
 }
 
 QString PluginManager::pluginVersion(const QString& name) const
 {
-    for (const auto& e : m_plugins) {
+    for (const auto& e : m_plugins)
         if (e.plugin && e.plugin->name() == name)
             return e.plugin->version();
-    }
     return {};
 }
 
 QString PluginManager::pluginDescription(const QString& name) const
 {
-    for (const auto& e : m_plugins) {
+    for (const auto& e : m_plugins)
         if (e.plugin && e.plugin->name() == name)
             return e.plugin->description();
-    }
     return {};
 }

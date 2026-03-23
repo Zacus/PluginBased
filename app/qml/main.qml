@@ -1,4 +1,3 @@
-import VideoPlayer.Components 1.0
 import QtQuick
 import QtQuick.Controls.Basic
 import QtQuick.Layouts
