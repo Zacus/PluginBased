@@ -24,8 +24,17 @@ public:
      * @param logDir  日志目录（默认 ./logs）
      * @param level   最低输出级别（默认 debug）
      */
-    void init(const std::string& logDir  = "logs",
-              spdlog::level::level_enum level = spdlog::level::debug);
+    void init(const std::string& logDir        = "logs",
+              spdlog::level::level_enum level   = spdlog::level::debug,
+              std::size_t maxFileSizeBytes       = 5 * 1024 * 1024,
+              std::size_t maxFiles               = 3,
+              spdlog::level::level_enum flushOn  = spdlog::level::warn);
+
+    /**
+     * @brief 运行时动态修改日志级别（热重载配置时调用，无需重启）
+     * @param level  新的最低输出级别
+     */
+    void setLevel(spdlog::level::level_enum level);
 
     void shutdown();
 

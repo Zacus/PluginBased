@@ -1,5 +1,7 @@
 qt_add_executable(VideoPlayerApp
     main.cpp
+    AppConfig.h
+    AppConfig.cpp
     AppController.h
     AppController.cpp
     CrashHandler.h

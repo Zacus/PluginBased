@@ -8,6 +8,7 @@
 #include "CrashHandler.h"
 #include "AppController.h"
 #include "PluginManager.h"
+#include "AppConfig.h"
 
 // 注：静态构建时不需要手写 Q_IMPORT_QML_PLUGIN。
 // qt_add_executable 在 finalization 阶段会自动调用 qmlimportscanner
@@ -25,13 +26,28 @@ int main(int argc, char* argv[])
                                 QStandardPaths::AppLocalDataLocation);
     QDir().mkpath(dataDir + "/logs");
     QDir().mkpath(dataDir + "/dumps");
+    QDir().mkpath(dataDir + "/config");
+
+    // ── 加载配置（Logger 初始化前，确保 log 参数已就绪） ──
+    AppConfig& cfg = AppConfig::instance();
+    cfg.load(dataDir + "/config/videoplayer.ini");
+
+    // 若 logDir 为相对路径，则以 dataDir 为基准
+    const QString logDir = QDir::isAbsolutePath(cfg.logDir())
+                               ? cfg.logDir()
+                               : dataDir + "/" + cfg.logDir();
+    QDir().mkpath(logDir);
 
     Logger::instance().init(
-        (dataDir + "/logs").toStdString(),
-        spdlog::level::debug
+        logDir.toStdString(),
+        cfg.logLevel(),
+        static_cast<std::size_t>(cfg.logMaxFileMB()) * 1024 * 1024,
+        static_cast<std::size_t>(cfg.logMaxFiles()),
+        cfg.logFlushOn()
     );
     LOG_INFO("=== VideoPlayer starting (v1.0.0) ===");
     LOG_INFO("Data dir: {}", dataDir.toStdString());
+    LOG_INFO("Config  : {}", cfg.path().toStdString());
 
     CrashHandler::install((dataDir + "/dumps").toStdString());
     QQuickStyle::setStyle("Basic");

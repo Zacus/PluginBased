@@ -38,6 +38,8 @@ public slots:
     Q_INVOKABLE void logInfo(const QString& msg);
     Q_INVOKABLE void logWarn(const QString& msg);
     Q_INVOKABLE void logError(const QString& msg);
+    /** 热重载配置文件（运行时修改 INI 后调用，无需重启即可生效） */
+    Q_INVOKABLE void reloadConfig();
 
 signals:
     void pluginsReadyChanged();

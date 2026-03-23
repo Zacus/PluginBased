@@ -1,5 +1,6 @@
 #include "AppController.h"
 #include "Logger.h"
+#include "AppConfig.h"
 #include "PluginManager.h"
 
 #include <QCoreApplication>
@@ -42,3 +43,11 @@ void AppController::quit()
 void AppController::logInfo(const QString& msg)  { LOG_INFO("[QML] {}",  msg.toStdString()); }
 void AppController::logWarn(const QString& msg)  { LOG_WARN("[QML] {}",  msg.toStdString()); }
 void AppController::logError(const QString& msg) { LOG_ERROR("[QML] {}", msg.toStdString()); }
+
+void AppController::reloadConfig()
+{
+    LOG_INFO("AppController: reloading config from {}", AppConfig::instance().path().toStdString());
+    AppConfig::instance().load(AppConfig::instance().path());
+    Logger::instance().setLevel(AppConfig::instance().logLevel());
+    LOG_INFO("AppController: config reloaded successfully");
+}
