@@ -33,10 +33,26 @@ ApplicationWindow {
                 anchors { fill: parent; leftMargin: 16; rightMargin: 16 }
                 spacing: 12
 
+                // 返回首页按钮（仅在非主页时显示）
+                IconButton {
+                    iconText: "←"
+                    tooltip:  "返回主页"
+                    visible:  stack.depth > 1
+                    onClicked: stack.pop()
+                }
+
                 Text {
                     text: "▶ " + AppController.appName
                     color: "#e8e8f0"; font.pixelSize: 15; font.bold: true; font.letterSpacing: 1
                 }
+
+                // 当前页面副标题（非主页时显示）
+                Text {
+                    visible: stack.depth > 1
+                    text: stack.currentItem ? (stack.currentItem.pageTitle || "") : ""
+                    color: "#55556a"; font.pixelSize: 13
+                }
+
                 Item { Layout.fillWidth: true }
 
                 // 插件状态徽章
@@ -70,25 +86,67 @@ ApplicationWindow {
             Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 1; color: "#ffffff12" }
         }
 
-        // ── 内容区 ────────────────────────────────────────────────────────
-        RowLayout {
+        // ── 页面栈 ────────────────────────────────────────────────────────
+        StackView {
+            id: stack
             Layout.fillWidth: true
             Layout.fillHeight: true
-            spacing: 0
 
-            PlayerView {
-                id: playerView
-                Layout.fillWidth: true
-                Layout.fillHeight: true
+            pushEnter: Transition {
+                PropertyAnimation { property: "x"; from: stack.width * 0.04; to: 0; duration: 220; easing.type: Easing.OutCubic }
+                PropertyAnimation { property: "opacity"; from: 0; to: 1; duration: 180 }
+            }
+            pushExit: Transition {
+                PropertyAnimation { property: "opacity"; from: 1; to: 0; duration: 150 }
+            }
+            popEnter: Transition {
+                PropertyAnimation { property: "opacity"; from: 0; to: 1; duration: 180 }
+            }
+            popExit: Transition {
+                PropertyAnimation { property: "x"; from: 0; to: stack.width * 0.04; duration: 200; easing.type: Easing.InCubic }
+                PropertyAnimation { property: "opacity"; from: 1; to: 0; duration: 150 }
             }
 
-            Rectangle { width: 1; Layout.fillHeight: true; color: "#ffffff10" }
+            initialItem: HomePanel {
+                property string pageTitle: ""
 
-            // PlaylistView 通过属性接收 playlistModel，不再跨文件引用 id
-            PlaylistView {
-                width: 280
-                Layout.fillHeight: true
-                playlistModel: playerView.playlistModel
+                onBuiltinCardClicked: function(viewId) {
+                    if (viewId === "player" || viewId === "playlist") {
+                        AppController.logInfo("HomePanel: open builtin view=" + viewId)
+                        stack.push(playerViewComponent)
+                    }
+                }
+                onPluginCardClicked: function(pluginId) {
+                    AppController.logInfo("HomePanel: open plugin=" + pluginId)
+                }
+            }
+        }
+    }
+
+    // ── 播放器页面 ────────────────────────────────────────────────────────────
+    Component {
+        id: playerViewComponent
+
+        Item {
+            property string pageTitle: "视频播放器"
+
+            RowLayout {
+                anchors.fill: parent
+                spacing: 0
+
+                PlayerView {
+                    id: playerView
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                }
+
+                Rectangle { width: 1; Layout.fillHeight: true; color: "#ffffff10" }
+
+                PlaylistView {
+                    width: 280
+                    Layout.fillHeight: true
+                    playlistModel: playerView.playlistModel
+                }
             }
         }
     }

@@ -116,3 +116,15 @@ QString PluginManager::pluginDescription(const QString& name) const
             return e.plugin->description();
     return {};
 }
+
+QString PluginManager::pluginName(int index) const
+{
+    if (index < 0 || index >= static_cast<int>(m_plugins.size())) return {};
+    return m_plugins[index].plugin ? m_plugins[index].plugin->name() : QString();
+}
+
+QString PluginManager::pluginDescriptionAt(int index) const
+{
+    if (index < 0 || index >= static_cast<int>(m_plugins.size())) return {};
+    return m_plugins[index].plugin ? m_plugins[index].plugin->description() : QString();
+}

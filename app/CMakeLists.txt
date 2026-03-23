@@ -14,6 +14,7 @@ qt_add_qml_module(VideoPlayerApp
     OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/VideoPlayer"
     QML_FILES
         qml/main.qml
+        qml/HomePanel.qml
         qml/PlayerView.qml
         qml/ControlBar.qml
         qml/PlaylistView.qml

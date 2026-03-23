@@ -44,6 +44,10 @@ public:
     Q_INVOKABLE QString pluginVersion(const QString& name) const;
     Q_INVOKABLE QString pluginDescription(const QString& name) const;
 
+    // 按索引访问（QML HomePanel 使用）
+    Q_INVOKABLE QString pluginName(int index) const;
+    Q_INVOKABLE QString pluginDescriptionAt(int index) const;
+
 signals:
     void pluginsChanged();
     void pluginLoadFailed(const QString& path, const QString& reason);
