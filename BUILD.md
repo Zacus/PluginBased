@@ -1,3 +1,13 @@
+<!--
+ * @Author: zs
+ * @Date: 2026-03-22 01:07:39
+ * @LastEditors: zs
+ * @LastEditTime: 2026-03-23 17:47:15
+ * @FilePath: /VideoPlayer/BUILD.md
+ * @Description: 
+ * 
+ * Copyright (c) 2026 by zs, All Rights Reserved. 
+-->
 # 构建说明
 
 ## 快速开始
@@ -67,3 +77,15 @@ cmake --build build --parallel
 `logs/videoplayer.log`（滚动，最大 5MB × 3 个文件）
 
 格式：`[2025-01-01 12:00:00.123] [info] [12345] 消息内容`
+## 打包
+### 最常用：已编译好，直接打包
+./package.sh --skip-build
+
+### 同时触发编译（要求 build/ 已 cmake 初始化）
+./package.sh
+
+### 指定构建目录 + Qt 路径
+./package.sh ./build-release --qt-dir ~/Qt/6.7.0/macos
+
+### 覆盖版本号
+./package.sh --version 1.2.0 --skip-build
