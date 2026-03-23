@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls.Basic
 import QtQuick.Layouts
+import VideoPlayer.UI 1.0
 
 Rectangle {
     id: root
@@ -115,7 +116,7 @@ Rectangle {
                 from: 0.0; to: 1.0
                 value: root.muted ? 0 : root.volume
                 width: 90
-                anchors.verticalCenter: parent.verticalCenter
+                Layout.alignment: Qt.AlignVCenter
                 onMoved: root.volumeRequested(value)
 
                 background: Rectangle {

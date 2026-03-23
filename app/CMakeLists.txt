@@ -6,31 +6,15 @@ qt_add_executable(VideoPlayerApp
     CrashHandler.cpp
 )
 
-# Qt6 qt_add_qml_module 规则：
-#   如果把 qml/components/IconButton.qml 直接放入 URI "VideoPlayer" 模块，
-#   Qt6 会按路径前缀注册为 "components/IconButton"，导致 "IconButton is not a type"。
-#
-# 解决方案：QT_RESOURCE_ALIAS
-#   将 components 下的文件在资源系统里别名为模块根级路径，
-#   Qt6 就将其类型名识别为干净的 "IconButton" / "ProgressSlider"。
-
-set_source_files_properties(qml/components/IconButton.qml PROPERTIES
-    QT_RESOURCE_ALIAS "qml/IconButton.qml"
-)
-set_source_files_properties(qml/components/ProgressSlider.qml PROPERTIES
-    QT_RESOURCE_ALIAS "qml/ProgressSlider.qml"
-)
-
 qt_add_qml_module(VideoPlayerApp
     URI     "VideoPlayer"
     VERSION 1.0
+    OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/VideoPlayer"
     QML_FILES
         qml/main.qml
         qml/PlayerView.qml
         qml/ControlBar.qml
         qml/PlaylistView.qml
-        qml/components/IconButton.qml
-        qml/components/ProgressSlider.qml
     SOURCES
         ../core/PlayerEngine.h      ../core/PlayerEngine.cpp
         ../core/PlaylistModel.h     ../core/PlaylistModel.cpp
@@ -52,7 +36,13 @@ target_link_libraries(VideoPlayerApp PRIVATE
     Qt6::Multimedia
     VideoPlayerLogger
     VideoPlayerPlugin
+    VideoPlayerUI          # 链接顶层可复用组件库
     ${DUMP_LIBS}
+)
+
+# 将构建根目录加入 QML 搜索路径，使引擎能找到 VideoPlayer.UI 的 qmldir
+target_compile_definitions(VideoPlayerApp PRIVATE
+    QML_IMPORT_PATH="${CMAKE_BINARY_DIR}"
 )
 
 if(WIN32)

@@ -34,6 +34,10 @@ int main(int argc, char* argv[])
 
     QQmlApplicationEngine engine;
 
+#ifdef QML_IMPORT_PATH
+    engine.addImportPath(QStringLiteral(QML_IMPORT_PATH));
+#endif
+
     QObject::connect(
         &engine,
         &QQmlApplicationEngine::warnings,

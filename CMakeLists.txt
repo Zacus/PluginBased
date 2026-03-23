@@ -17,6 +17,7 @@ endif()
 
 add_subdirectory(logger)
 add_subdirectory(plugin)
+add_subdirectory(ui)
 add_subdirectory(core)
 add_subdirectory(plugins/DummyPlugin)
 add_subdirectory(app)
