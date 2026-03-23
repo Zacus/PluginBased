@@ -35,6 +35,7 @@ public:
 
     void loadAll(const QString& pluginDir);
     bool loadPlugin(const QString& filePath);
+    void unloadAll();
     IPlayerPlugin* findPlugin(const QUrl& url) const;
 
     int         pluginCount() const { return static_cast<int>(m_plugins.size()); }
@@ -49,6 +50,7 @@ signals:
 
 private:
     explicit PluginManager(QObject* parent = nullptr) : QObject(parent) {}
+    ~PluginManager() override { unloadAll(); }
 
     struct PluginEntry {
         std::unique_ptr<QPluginLoader> loader;

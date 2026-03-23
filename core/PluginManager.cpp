@@ -4,6 +4,19 @@
 #include <QDir>
 #include <QFileInfo>
 
+void PluginManager::unloadAll()
+{
+    // 逆序 shutdown，再逆序 unload，保证依赖顺序
+    for (auto it = m_plugins.rbegin(); it != m_plugins.rend(); ++it)
+        if (it->plugin) it->plugin->shutdown();
+
+    for (auto it = m_plugins.rbegin(); it != m_plugins.rend(); ++it)
+        if (it->loader) it->loader->unload();
+
+    m_plugins.clear();
+    LOG_INFO("PluginManager: all plugins unloaded");
+}
+
 void PluginManager::loadAll(const QString& pluginDir)
 {
     QDir dir(pluginDir);
@@ -15,7 +28,8 @@ void PluginManager::loadAll(const QString& pluginDir)
 #if defined(Q_OS_WIN)
     const QStringList filters{"*.dll"};
 #elif defined(Q_OS_MAC)
-    const QStringList filters{"*.dylib"};
+    // Qt MODULE 库在 macOS 上后缀是 .so，不是 .dylib
+    const QStringList filters{"*.so"};
 #else
     const QStringList filters{"*.so"};
 #endif
