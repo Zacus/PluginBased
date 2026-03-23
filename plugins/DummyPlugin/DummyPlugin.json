@@ -1,0 +1,7 @@
+{
+    "IID": "com.videoplayer.IPlayerPlugin/1.0",
+    "MetaData": {
+        "name": "DummyPlugin",
+        "version": "1.0.0"
+    }
+}
