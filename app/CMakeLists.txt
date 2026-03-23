@@ -37,6 +37,7 @@ target_link_libraries(VideoPlayerApp PRIVATE
     VideoPlayerLogger
     VideoPlayerPlugin
     QtQuickComponents     # backing library 名，由 qt_add_library(QtQuickComponents ...) 决定，与 URI 无关
+    #QtQuickComponentsplugin #qt静态库生成自动添加了plugin后缀，必须链接这个库才能使用插件
     ${DUMP_LIBS}
 )
 
