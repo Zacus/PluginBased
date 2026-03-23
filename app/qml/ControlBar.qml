@@ -1,7 +1,7 @@
 import QtQuick
 import QtQuick.Controls.Basic
 import QtQuick.Layouts
-import VideoPlayer.UI 1.0
+import QuickUI.Components 1.0
 
 Rectangle {
     id: root

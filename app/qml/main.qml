@@ -2,7 +2,7 @@ import QtQuick
 import QtQuick.Controls.Basic
 import QtQuick.Layouts
 import VideoPlayer 1.0
-import VideoPlayer.UI 1.0
+import QuickUI.Components 1.0
 
 ApplicationWindow {
     id: root

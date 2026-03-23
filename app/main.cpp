@@ -9,6 +9,15 @@
 #include "AppController.h"
 #include "PluginManager.h"
 
+// 静态构建时必须显式导入子模块插件。
+// QT_STATIC 由 Qt 自身在静态构建时定义，动态构建时此块不编译。
+#if defined(QT_STATIC)
+#  include <QtPlugin>
+// 插件类名规则：backing library 名（QtQuickComponents）去掉非字母字符 + Plugin
+// 即 QtQuickComponents -> QtQuickComponentsPlugin，与 URI 无关
+Q_IMPORT_QML_PLUGIN(QtQuickComponentsPlugin)
+#endif
+
 int main(int argc, char* argv[])
 {
     QGuiApplication app(argc, argv);

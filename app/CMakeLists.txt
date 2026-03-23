@@ -36,11 +36,11 @@ target_link_libraries(VideoPlayerApp PRIVATE
     Qt6::Multimedia
     VideoPlayerLogger
     VideoPlayerPlugin
-    VideoPlayerUI          # 链接顶层可复用组件库
+    QtQuickComponents     # backing library 名，由 qt_add_library(QtQuickComponents ...) 决定，与 URI 无关
     ${DUMP_LIBS}
 )
 
-# 将构建根目录加入 QML 搜索路径，使引擎能找到 VideoPlayer.UI 的 qmldir
+# 将构建根目录加入 QML 搜索路径，使引擎能找到 QuickUI/Components/qmldir
 target_compile_definitions(VideoPlayerApp PRIVATE
     QML_IMPORT_PATH="${CMAKE_BINARY_DIR}"
 )

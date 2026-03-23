@@ -17,7 +17,21 @@ endif()
 
 add_subdirectory(logger)
 add_subdirectory(plugin)
-add_subdirectory(ui)
 add_subdirectory(core)
 add_subdirectory(plugins/DummyPlugin)
+
+# ── UI 组件库：独立仓库，通过 FetchContent 引入 ───────────────
+# 生产环境替换 SOURCE_DIR 为 GIT_REPOSITORY + GIT_TAG：
+#   FetchContent_Declare(
+#       QuickUIComponents
+#       GIT_REPOSITORY https://github.com/yourname/QtQuickComponents.git
+#       GIT_TAG        v1.0.0
+#   )
+include(FetchContent)
+FetchContent_Declare(
+    QtQuickComponents
+    SOURCE_DIR "${CMAKE_SOURCE_DIR}/../QtQuickComponents"
+)
+FetchContent_MakeAvailable(QtQuickComponents)
+
 add_subdirectory(app)
