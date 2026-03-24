@@ -1,0 +1,8 @@
+{
+    "IID": "com.videoplayer.IPlayerPlugin/1.0",
+    "MetaData": {
+        "name":        "PlayPlugin",
+        "version":     "1.0.0",
+        "description": "内置播放器界面：视频播放 + 播放列表"
+    }
+}

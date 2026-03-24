@@ -128,3 +128,27 @@ QString PluginManager::pluginDescriptionAt(int index) const
     if (index < 0 || index >= static_cast<int>(m_plugins.size())) return {};
     return m_plugins[index].plugin ? m_plugins[index].plugin->description() : QString();
 }
+
+bool PluginManager::pluginHasQmlUI(int index) const
+{
+    if (index < 0 || index >= static_cast<int>(m_plugins.size())) return false;
+    return m_plugins[index].plugin ? m_plugins[index].plugin->hasQmlUI() : false;
+}
+
+QUrl PluginManager::pluginQmlUrl(int index) const
+{
+    if (index < 0 || index >= static_cast<int>(m_plugins.size())) return {};
+    return m_plugins[index].plugin ? m_plugins[index].plugin->qmlComponentUrl() : QUrl{};
+}
+
+QString PluginManager::pluginCardIcon(int index) const
+{
+    if (index < 0 || index >= static_cast<int>(m_plugins.size())) return QStringLiteral("⬡");
+    return m_plugins[index].plugin ? m_plugins[index].plugin->cardIcon() : QStringLiteral("⬡");
+}
+
+QString PluginManager::pluginCardName(int index) const
+{
+    if (index < 0 || index >= static_cast<int>(m_plugins.size())) return {};
+    return m_plugins[index].plugin ? m_plugins[index].plugin->cardName() : QString();
+}

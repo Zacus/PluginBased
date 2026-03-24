@@ -48,6 +48,16 @@ public:
     Q_INVOKABLE QString pluginName(int index) const;
     Q_INVOKABLE QString pluginDescriptionAt(int index) const;
 
+    // ── QML UI 能力查询（HomePanel / 页面路由使用）────────────────────────
+    /** 插件是否提供自己的 QML 页面 */
+    Q_INVOKABLE bool    pluginHasQmlUI(int index) const;
+    /** 插件 QML 入口文件 URL（仅 hasQmlUI 为 true 时有效） */
+    Q_INVOKABLE QUrl    pluginQmlUrl(int index) const;
+    /** 插件在卡片上显示的图标 */
+    Q_INVOKABLE QString pluginCardIcon(int index) const;
+    /** 插件在卡片上显示的名称 */
+    Q_INVOKABLE QString pluginCardName(int index) const;
+
 signals:
     void pluginsChanged();
     void pluginLoadFailed(const QString& path, const QString& reason);

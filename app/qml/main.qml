@@ -116,14 +116,24 @@ ApplicationWindow {
                         stack.push(playerViewComponent)
                     }
                 }
-                onPluginCardClicked: function(pluginId) {
-                    AppController.logInfo("HomePanel: open plugin=" + pluginId)
+                onPluginCardClicked: function(pluginId, pluginIndex) {
+                    AppController.logInfo("HomePanel: open plugin=" + pluginId + " index=" + pluginIndex)
+                    if (PluginManager.pluginHasQmlUI(pluginIndex)) {
+                        // 插件提供自己的 QML 页面，通过 Loader 动态加载
+                        stack.push(pluginPageComponent, {
+                            "pluginQmlUrl":  PluginManager.pluginQmlUrl(pluginIndex),
+                            "pluginTitle":   PluginManager.pluginCardName(pluginIndex)
+                        })
+                    } else {
+                        // 无 QML UI 的插件，暂时回退到内置播放器视图
+                        stack.push(playerViewComponent)
+                    }
                 }
             }
         }
     }
 
-    // ── 播放器页面 ────────────────────────────────────────────────────────────
+    // ── 播放器页面（内置，保留供 builtinCardClicked 使用）───────────────────
     Component {
         id: playerViewComponent
 
@@ -146,6 +156,75 @@ ApplicationWindow {
                     width: 280
                     Layout.fillHeight: true
                     playlistModel: playerView.playlistModel
+                }
+            }
+        }
+    }
+
+    // ── 插件页面（通用 Loader 容器，供 pluginCardClicked 使用）─────────────
+    Component {
+        id: pluginPageComponent
+
+        Item {
+            // 由 stack.push() 注入
+            property url    pluginQmlUrl: ""
+            property string pluginTitle:  ""
+            property string pageTitle:    pluginTitle
+
+            Loader {
+                id: pluginLoader
+                anchors.fill: parent
+                source: pluginQmlUrl
+
+                onStatusChanged: {
+                    if (status === Loader.Error)
+                        AppController.logError("pluginPageComponent: failed to load " + pluginQmlUrl)
+                    else if (status === Loader.Ready)
+                        AppController.logInfo("pluginPageComponent: loaded " + pluginQmlUrl)
+                }
+            }
+
+            // 加载中占位
+            Rectangle {
+                anchors.fill: parent
+                color: "#0f0f13"
+                visible: pluginLoader.status === Loader.Loading
+
+                Column {
+                    anchors.centerIn: parent
+                    spacing: 14
+                    BusyIndicator { anchors.horizontalCenter: parent.horizontalCenter; running: true }
+                    Text {
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        text: "正在加载插件界面…"
+                        color: "#50507a"; font.pixelSize: 13
+                    }
+                }
+            }
+
+            // 加载失败占位
+            Rectangle {
+                anchors.fill: parent
+                color: "#0f0f13"
+                visible: pluginLoader.status === Loader.Error
+
+                Column {
+                    anchors.centerIn: parent
+                    spacing: 10
+                    Text {
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        text: "⚠"; font.pixelSize: 40; color: "#e74c3c"
+                    }
+                    Text {
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        text: "插件界面加载失败"
+                        color: "#c0c0d0"; font.pixelSize: 14
+                    }
+                    Text {
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        text: pluginQmlUrl.toString()
+                        color: "#50506a"; font.pixelSize: 11
+                    }
                 }
             }
         }

@@ -6,7 +6,7 @@ import VideoPlayer 1.0
 Item {
     id: root
 
-    signal pluginCardClicked(string pluginId)
+    signal pluginCardClicked(string pluginId, int pluginIndex)
     signal builtinCardClicked(string viewId)
 
     // ── 内联组件：必须在根对象内部定义 ──────────────────────────────────────
@@ -228,17 +228,17 @@ Item {
                         model: AppController.pluginsReady ? PluginManager.pluginCount : 0
 
                         PluginCard {
-                            readonly property var iconList:  ["⬡", "◈", "⬢", "◇", "⊕", "◎"]
-                            readonly property var colorList: ["#152a10", "#0d2040", "#2e1414",
-                                                              "#2a1a00", "#1a1040", "#0c3530"]
+                            readonly property var iconBgList: ["#152a10", "#0d2040", "#2e1414",
+                                                               "#2a1a00", "#1a1040", "#0c3530"]
+
                             width:    pluginGrid.colWidth
                             cardId:   "plugin:" + index
-                            iconText: iconList[index % iconList.length]
-                            iconBg:   colorList[index % colorList.length]
-                            cardName: PluginManager.pluginName(index)
+                            iconText: PluginManager.pluginCardIcon(index)
+                            iconBg:   iconBgList[index % iconBgList.length]
+                            cardName: PluginManager.pluginCardName(index)
                             cardDesc: PluginManager.pluginDescriptionAt(index)
                             cardTag:  "插件"; tagBg: "#0d3020"; tagFg: "#2ecc71"
-                            onClicked: (id) => root.pluginCardClicked(id)
+                            onClicked: (id) => root.pluginCardClicked(id, index)
                         }
                     }
 

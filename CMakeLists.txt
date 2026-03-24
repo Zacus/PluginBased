@@ -19,6 +19,7 @@ add_subdirectory(logger)
 add_subdirectory(plugin)
 add_subdirectory(core)
 add_subdirectory(plugins/DummyPlugin)
+add_subdirectory(plugins/PlayPlugin)
 
 # ── UI 组件库：独立仓库，通过 FetchContent 引入 ───────────────
 # 生产环境替换 SOURCE_DIR 为 GIT_REPOSITORY + GIT_TAG：
