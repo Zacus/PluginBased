@@ -24,7 +24,7 @@ public:
     QString description() const override { return QStringLiteral("Stub plugin for framework validation"); }
 
     // ── 生命周期 ──────────────────────────────────────────────────────────
-    bool initialize() override;
+    bool initialize(PluginFinder /*finder*/ = {}) override;
     void shutdown()   override;
 
     // ── 能力查询 ──────────────────────────────────────────────────────────

@@ -3,6 +3,7 @@
 #include <QString>
 #include <QUrl>
 #include <QtPlugin>
+#include <functional>
 
 /**
  * @brief 播放器插件纯虚接口
@@ -19,6 +20,15 @@ class IPlayerPlugin
 public:
     virtual ~IPlayerPlugin() = default;
 
+    /**
+     * @brief 插件查找器类型
+     *
+     * 由宿主 PluginManager 在调用 initialize() 时构造并传入。
+     * 插件通过此函数查找能处理指定 URL 的解码插件，
+     * 无需 #include PluginManager.h，彻底断开对宿主层的静态依赖。
+     */
+    using PluginFinder = std::function<IPlayerPlugin*(const QUrl&)>;
+
     // ── 元信息 ────────────────────────────────────────────────────────────
     /** 插件唯一名称，例如 "FFmpegPlugin" */
     virtual QString name()        const = 0;
@@ -28,8 +38,13 @@ public:
     virtual QString description() const = 0;
 
     // ── 生命周期 ──────────────────────────────────────────────────────────
-    /** 插件加载后由 PluginManager 调用，返回 false 表示初始化失败 */
-    virtual bool initialize() = 0;
+    /**
+     * @brief 插件加载后由 PluginManager 调用，返回 false 表示初始化失败
+     *
+     * @param finder 宿主注入的插件查找器，插件可用它查找其他已加载插件。
+     *               不需要此能力的插件（如 DummyPlugin）可忽略该参数。
+     */
+    virtual bool initialize(PluginFinder finder = {}) = 0;
     /** 插件卸载前调用 */
     virtual void shutdown() = 0;
 

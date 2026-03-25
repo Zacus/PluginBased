@@ -47,8 +47,8 @@ int main(int argc, char* argv[])
     QQuickStyle::setStyle("Basic");
 
     // ── 插件加载（在 QQmlEngine 创建之前完成）────────────────────────────
-    // PlayPlugin::initialize() 会调用 PlayerEngine::registerPluginFinder()，
-    // 必须在 QML 引擎实例化任何 PlayerEngine 之前执行。
+    // PlayPlugin::initialize() 会向 PlaybackContext 注入 PluginFinder，
+    // 必须在 QML 引擎实例化任何 PlayerEngine 之前完成。
     AppController::instance().initPlugins();
 
     QQmlApplicationEngine engine;

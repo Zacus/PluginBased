@@ -63,7 +63,13 @@ bool PluginManager::loadPlugin(const QString& filePath)
         return false;
     }
 
-    if (!plugin->initialize()) {
+    // 构造 PluginFinder 并注入：插件通过此 lambda 查找其他已加载插件，
+    // 无需 #include PluginManager.h，彻底断开对宿主层的静态依赖。
+    IPlayerPlugin::PluginFinder finder = [this](const QUrl& url) -> IPlayerPlugin* {
+        return this->findPlugin(url);
+    };
+
+    if (!plugin->initialize(finder)) {
         LOG_ERROR("PluginManager: plugin {} initialize() failed",
                   plugin->name().toStdString());
         loader->unload();

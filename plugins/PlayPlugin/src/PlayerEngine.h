@@ -5,30 +5,26 @@
 #include <QString>
 #include <QTimer>
 #include <QQmlEngine>
-#include <functional>
 
 #include "MediaInfo.h"
 #include "IPlayerPlugin.h"
 
 /**
- * @brief 播放引擎 —— 归属 PlayPlugin 模块，与 PluginManager 完全解耦
+ * @brief 播放引擎 —— PlayPlugin 模块内部业务类
  *
- * ## 依赖注入机制
+ * ## 依赖获取方式（Step 2 后）
  *
- * QML 通过 `PlayerEngine {}` 实例化本类，无法在构造时传参。
- * 采用「静态注册表」模式解决：
+ * open() 时通过 PlaybackContext::instance().findPlugin(url) 获取解码插件，
+ * 不再持有 PluginFinder 成员变量，不再有 registerPluginFinder 静态方法。
  *
- *   1. PlayPlugin::initialize() 调用 PlayerEngine::registerPluginFinder()
- *      将 PluginManager::findPlugin 包装后写入静态注册表。
- *   2. 每个 PlayerEngine 实例在构造时从注册表取出 finder 存入成员变量。
- *   3. open() 时通过 finder 查找能处理该 URL 的 IPlayerPlugin。
- *
- * 如此 PlayerEngine 的头文件无需 include PluginManager.h，
- * 插件与宿主之间保持单向依赖（宿主 → 插件），无循环依赖。
+ * 好处：
+ *   - 无构造时拷贝：每次 open() 都取当前最新 finder，shutdown 后自动失效
+ *   - 无静态方法：PlayerEngine 的职责回归纯粹——播放控制，不承担依赖注入容器角色
+ *   - PlaybackContext 是模块内的统一上下文，未来扩展其他共享状态也有落脚点
  *
  * ## QML 注册
- * 类型注册在 URI="PlayPlugin" Version=1.0 模块，
- * PlayPlugin 的 qt_add_qml_module 负责生成对应的 qmldir 和类型注册代码。
+ * 注册在 URI="PlayPlugin" Version=1.0，由 PlayPluginBackend 的
+ * qt_add_qml_module 负责生成类型注册代码。
  */
 class PlayerEngine : public QObject
 {
@@ -44,16 +40,6 @@ class PlayerEngine : public QObject
     Q_PROPERTY(QString    errorString   READ errorString      NOTIFY errorOccurred)
 
 public:
-    using PluginFinder = std::function<IPlayerPlugin*(const QUrl&)>;
-
-    /**
-     * @brief 注册全局 PluginFinder（由 PlayPlugin::initialize() 调用）
-     *
-     * 线程安全性：必须在 QML 引擎创建任何 PlayerEngine 实例之前调用，
-     * 即在 PlayPlugin::initialize() 阶段完成注册。
-     */
-    static void registerPluginFinder(PluginFinder finder);
-
     enum PlaybackState { Stopped = 0, Playing = 1, Paused = 2 };
     Q_ENUM(PlaybackState)
 
@@ -94,7 +80,8 @@ private:
     void setState(PlaybackState s);
     void setError(const QString& msg);
 
-    PluginFinder   m_pluginFinder;
+    // 注意：不再持有 PluginFinder 成员变量
+    // open() 时实时从 PlaybackContext::instance() 取，无拷贝无缓存
     IPlayerPlugin* m_plugin    = nullptr;
     MediaInfo*     m_mediaInfo = nullptr;
     PlaybackState  m_state     = Stopped;

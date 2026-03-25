@@ -39,7 +39,7 @@ public:
     QString cardName() const override { return QStringLiteral("视频播放器"); }
 
     // ── 生命周期 ──────────────────────────────────────────────────────────
-    bool initialize() override;
+    bool initialize(PluginFinder finder = {}) override;
     void shutdown()   override;
 
     // ── 能力查询 ──────────────────────────────────────────────────────────

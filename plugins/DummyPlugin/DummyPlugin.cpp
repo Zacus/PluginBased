@@ -10,7 +10,7 @@ DummyPlugin::~DummyPlugin()
     shutdown();
 }
 
-bool DummyPlugin::initialize()
+bool DummyPlugin::initialize(PluginFinder)
 {
     LOG_INFO("DummyPlugin::initialize()");
     return true;

@@ -1,22 +1,11 @@
 #include "PlayerEngine.h"
+#include "PlaybackContext.h"
 #include "Logger.h"
 
 #include <QFileInfo>
 
-// ── 静态注册表 ────────────────────────────────────────────────────────────────
-// 存储由 PlayPlugin::initialize() 注入的 PluginFinder，
-// 供所有 PlayerEngine QML 实例在构造时取用。
-static PlayerEngine::PluginFinder s_globalFinder;
-
-void PlayerEngine::registerPluginFinder(PluginFinder finder)
-{
-    s_globalFinder = std::move(finder);
-}
-
-// ── 构造 / 析构 ───────────────────────────────────────────────────────────────
 PlayerEngine::PlayerEngine(QObject* parent)
     : QObject(parent)
-    , m_pluginFinder(s_globalFinder)   // 从注册表取 finder
 {
     m_positionTimer.setInterval(250);
     connect(&m_positionTimer, &QTimer::timeout, this, [this] {
@@ -32,7 +21,6 @@ PlayerEngine::~PlayerEngine()
     LOG_DEBUG("PlayerEngine destroyed");
 }
 
-// ── 属性 getter ───────────────────────────────────────────────────────────────
 qint64 PlayerEngine::position() const { return m_plugin ? m_plugin->position() : 0LL; }
 qint64 PlayerEngine::duration() const { return m_plugin ? m_plugin->duration() : 0LL; }
 
@@ -51,19 +39,21 @@ void PlayerEngine::setMuted(bool m)
     emit mutedChanged(m_muted);
 }
 
-// ── 播放控制 ──────────────────────────────────────────────────────────────────
 void PlayerEngine::open(const QUrl& url)
 {
     LOG_INFO("PlayerEngine: open({})", url.toString().toStdString());
     stop();
 
-    if (!m_pluginFinder) {
-        setError(QStringLiteral("PlayerEngine: PluginFinder not registered — "
-                                "call PlayerEngine::registerPluginFinder() before use"));
+    // 每次 open() 都从 PlaybackContext 实时取 finder，
+    // 无需在构造时拷贝，shutdown() 后 clearFinder() 立即对所有实例生效。
+    PlaybackContext& ctx = PlaybackContext::instance();
+    if (!ctx.hasFinder()) {
+        setError(QStringLiteral("PlayerEngine: no PluginFinder available — "
+                                "PlayPlugin may not be initialized"));
         return;
     }
 
-    m_plugin = m_pluginFinder(url);
+    m_plugin = ctx.findPlugin(url);
     if (!m_plugin) {
         setError(QStringLiteral("No plugin found for: ") + url.toString());
         return;
@@ -126,7 +116,6 @@ void PlayerEngine::togglePlayPause()
     if (m_state == Playing) pause(); else play();
 }
 
-// ── 内部辅助 ──────────────────────────────────────────────────────────────────
 void PlayerEngine::setState(PlaybackState s)
 {
     if (m_state == s) return;
