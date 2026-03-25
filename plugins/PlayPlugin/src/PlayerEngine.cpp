@@ -1,17 +1,27 @@
 #include "PlayerEngine.h"
-#include "PluginManager.h"
 #include "Logger.h"
 
 #include <QFileInfo>
 
+// ── 静态注册表 ────────────────────────────────────────────────────────────────
+// 存储由 PlayPlugin::initialize() 注入的 PluginFinder，
+// 供所有 PlayerEngine QML 实例在构造时取用。
+static PlayerEngine::PluginFinder s_globalFinder;
+
+void PlayerEngine::registerPluginFinder(PluginFinder finder)
+{
+    s_globalFinder = std::move(finder);
+}
+
+// ── 构造 / 析构 ───────────────────────────────────────────────────────────────
 PlayerEngine::PlayerEngine(QObject* parent)
     : QObject(parent)
+    , m_pluginFinder(s_globalFinder)   // 从注册表取 finder
 {
     m_positionTimer.setInterval(250);
     connect(&m_positionTimer, &QTimer::timeout, this, [this] {
-        if (m_plugin && m_state == Playing) {
+        if (m_plugin && m_state == Playing)
             emit positionChanged(m_plugin->position());
-        }
     });
     LOG_DEBUG("PlayerEngine created");
 }
@@ -22,15 +32,9 @@ PlayerEngine::~PlayerEngine()
     LOG_DEBUG("PlayerEngine destroyed");
 }
 
-qint64 PlayerEngine::position() const
-{
-    return m_plugin ? m_plugin->position() : 0LL;
-}
-
-qint64 PlayerEngine::duration() const
-{
-    return m_plugin ? m_plugin->duration() : 0LL;
-}
+// ── 属性 getter ───────────────────────────────────────────────────────────────
+qint64 PlayerEngine::position() const { return m_plugin ? m_plugin->position() : 0LL; }
+qint64 PlayerEngine::duration() const { return m_plugin ? m_plugin->duration() : 0LL; }
 
 void PlayerEngine::setVolume(float v)
 {
@@ -47,12 +51,19 @@ void PlayerEngine::setMuted(bool m)
     emit mutedChanged(m_muted);
 }
 
+// ── 播放控制 ──────────────────────────────────────────────────────────────────
 void PlayerEngine::open(const QUrl& url)
 {
     LOG_INFO("PlayerEngine: open({})", url.toString().toStdString());
     stop();
 
-    m_plugin = PluginManager::instance().findPlugin(url);
+    if (!m_pluginFinder) {
+        setError(QStringLiteral("PlayerEngine: PluginFinder not registered — "
+                                "call PlayerEngine::registerPluginFinder() before use"));
+        return;
+    }
+
+    m_plugin = m_pluginFinder(url);
     if (!m_plugin) {
         setError(QStringLiteral("No plugin found for: ") + url.toString());
         return;
@@ -74,16 +85,12 @@ void PlayerEngine::open(const QUrl& url)
     );
     emit currentMediaChanged(m_mediaInfo);
     emit durationChanged(m_plugin->duration());
-
     play();
 }
 
 void PlayerEngine::play()
 {
-    if (!m_plugin) {
-        LOG_WARN("PlayerEngine::play() — no plugin loaded");
-        return;
-    }
+    if (!m_plugin) { LOG_WARN("PlayerEngine::play() — no plugin loaded"); return; }
     m_plugin->play();
     setState(Playing);
     m_positionTimer.start();
@@ -102,10 +109,7 @@ void PlayerEngine::pause()
 void PlayerEngine::stop()
 {
     m_positionTimer.stop();
-    if (m_plugin) {
-        m_plugin->stop();
-        m_plugin = nullptr;
-    }
+    if (m_plugin) { m_plugin->stop(); m_plugin = nullptr; }
     setState(Stopped);
     LOG_INFO("PlayerEngine: stop");
 }
@@ -119,10 +123,10 @@ void PlayerEngine::seek(qint64 positionMs)
 
 void PlayerEngine::togglePlayPause()
 {
-    if (m_state == Playing) pause();
-    else play();
+    if (m_state == Playing) pause(); else play();
 }
 
+// ── 内部辅助 ──────────────────────────────────────────────────────────────────
 void PlayerEngine::setState(PlaybackState s)
 {
     if (m_state == s) return;

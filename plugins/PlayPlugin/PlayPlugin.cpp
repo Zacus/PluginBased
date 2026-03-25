@@ -1,4 +1,6 @@
 #include "PlayPlugin.h"
+#include "PlayerEngine.h"    // PlayPlugin/src/PlayerEngine.h（via include_directories）
+#include "PluginManager.h"   // core/PluginManager.h（宿主层，仅在 initialize() 中引用）
 #include "Logger.h"
 
 PlayPlugin::PlayPlugin(QObject* parent)
@@ -13,6 +15,20 @@ PlayPlugin::~PlayPlugin()
 bool PlayPlugin::initialize()
 {
     LOG_INFO("PlayPlugin::initialize()");
+
+    // ── 依赖注入：向 PlayerEngine 静态注册表写入 PluginFinder ─────────────
+    //
+    // PlayerEngine 由 QML 实例化（PlayerView.qml 中的 PlayerEngine {}），
+    // 每个实例在构造时从静态注册表取 finder，在 open() 时调用它查找解码插件。
+    //
+    // 此处是 PlayPlugin 与宿主 PluginManager 唯一的耦合点，
+    // 且方向是：宿主 → 插件（PlayPlugin::initialize 被宿主调用），
+    // 插件不持有 PluginManager 的指针，仅在这里借用其方法包一个 lambda 注入。
+    PlayerEngine::registerPluginFinder([](const QUrl& url) -> IPlayerPlugin* {
+        return PluginManager::instance().findPlugin(url);
+    });
+
+    LOG_INFO("PlayPlugin: PluginFinder registered into PlayerEngine");
     return true;
 }
 
@@ -20,20 +36,17 @@ void PlayPlugin::shutdown()
 {
     LOG_INFO("PlayPlugin::shutdown()");
     m_playing = false;
+    PlayerEngine::registerPluginFinder(nullptr);   // 清除，避免 shutdown 后悬空引用
 }
 
 bool PlayPlugin::canHandle(const QUrl& url) const
 {
-    // 支持所有本地视频 / 音频文件
-    if (!url.isLocalFile())
-        return false;
-
+    if (!url.isLocalFile()) return false;
     static const QStringList exts = {
         "mp4", "mkv", "avi", "mov", "flv", "webm",
         "mp3", "flac", "aac", "ogg", "wav"
     };
-    const QString suffix = url.fileName().section('.', -1).toLower();
-    return exts.contains(suffix);
+    return exts.contains(url.fileName().section('.', -1).toLower());
 }
 
 bool PlayPlugin::open(const QUrl& url)
@@ -72,6 +85,6 @@ void PlayPlugin::seek(qint64 positionMs)
 
 QUrl PlayPlugin::qmlComponentUrl() const
 {
-    // qrc 路径由 CMakeLists qt_add_resources 注册，前缀为 /PlayPlugin
+    // qrc 路径：PlayPlugin.so 通过 qt6_add_resources 内嵌，前缀 /PlayPlugin/qml/
     return QUrl(QStringLiteral("qrc:/PlayPlugin/qml/PlayPluginView.qml"));
 }

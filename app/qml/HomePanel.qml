@@ -7,7 +7,6 @@ Item {
     id: root
 
     signal pluginCardClicked(string pluginId, int pluginIndex)
-    signal builtinCardClicked(string viewId)
 
     // ── 内联组件：必须在根对象内部定义 ──────────────────────────────────────
 
@@ -144,51 +143,6 @@ Item {
                     Text {
                         text: "选择一个应用开始使用"
                         font.pixelSize: 13; color: "#55556a"
-                    }
-                }
-            }
-
-            // ── 内置应用分区 ─────────────────────────────────────────────────
-            Item {
-                Layout.fillWidth: true
-                implicitHeight: builtinLabel.implicitHeight + 14 + builtinGrid.implicitHeight + 32
-
-                property real hPad: Math.max(40, (flick.width - 960) / 2)
-
-                Text {
-                    id: builtinLabel
-                    anchors { top: parent.top; topMargin: 8; left: parent.left; leftMargin: parent.hPad }
-                    text: "内置应用"
-                    font.pixelSize: 11; font.weight: Font.Bold; font.letterSpacing: 2
-                    color: "#38385a"; font.capitalization: Font.AllUppercase
-                }
-
-                Grid {
-                    id: builtinGrid
-                    anchors {
-                        top: builtinLabel.bottom; topMargin: 14
-                        left: parent.left; right: parent.right
-                        leftMargin: parent.hPad; rightMargin: parent.hPad
-                    }
-                    property int minColWidth: 200
-                    property int colSpacing:  14
-                    columns: Math.max(1, Math.floor((width + colSpacing) / (minColWidth + colSpacing)))
-                    property real colWidth: (width - (columns - 1) * colSpacing) / columns
-                    spacing: 14
-
-                    PluginCard {
-                        width: builtinGrid.colWidth
-                        cardId: "player"; iconText: "▶"; iconBg: "#221e50"
-                        cardName: "视频播放器"; cardDesc: "播放本地及网络视频，管理播放列表"
-                        cardTag: "内置"; tagBg: "#1e1e35"; tagFg: "#7c6fff"
-                        onClicked: (id) => root.builtinCardClicked(id)
-                    }
-                    PluginCard {
-                        width: builtinGrid.colWidth
-                        cardId: "playlist"; iconText: "☰"; iconBg: "#0c3530"
-                        cardName: "播放列表"; cardDesc: "组织、排序和编辑媒体文件播放队列"
-                        cardTag: "内置"; tagBg: "#1e1e35"; tagFg: "#7c6fff"
-                        onClicked: (id) => root.builtinCardClicked(id)
                     }
                 }
             }

@@ -5,13 +5,19 @@
 #include "IPlayerPlugin.h"
 
 /**
- * @brief PlayPlugin —— 内置播放器界面插件
+ * @brief PlayPlugin —— 播放器界面插件（完全自包含）
  *
- * 将原来硬编码在 app 层的播放页面（PlayerView / ControlBar / PlaylistView）
- * 封装为一个标准 IPlayerPlugin，宿主通过 qmlComponentUrl() 加载其 QML 界面。
+ * 本插件封装了播放器全部业务逻辑与 UI：
+ *   - C++ 业务层：PlayerEngine / PlaylistModel / MediaInfo
+ *   - QML 界面层：PlayPluginView / PlayerView / ControlBar / PlaylistView
  *
- * 媒体解码仍由 PlayerEngine（core 层）负责；
- * 本插件只负责 UI 呈现 + 简单的播放控制转发。
+ * 与宿主的唯一耦合点：
+ *   1. IPlayerPlugin 接口（播放控制协议）
+ *   2. PluginManager::findPlugin（通过依赖注入，在 initialize() 中绑定）
+ *   3. AppController::log*（QML 层通过 VideoPlayer 1.0 模块访问，属于 app 基础设施）
+ *
+ * QML 类型注册在独立模块 URI="PlayPlugin" Version=1.0，
+ * 与宿主的 "VideoPlayer" 模块互不污染。
  */
 class PlayPlugin : public QObject, public IPlayerPlugin
 {
@@ -52,8 +58,8 @@ public:
     bool   isPlaying() const override { return m_playing;  }
 
     // ── QML UI 能力 ───────────────────────────────────────────────────────
-    bool hasQmlUI()         const override { return true; }
-    QUrl qmlComponentUrl()  const override;
+    bool hasQmlUI()        const override { return true; }
+    QUrl qmlComponentUrl() const override;
 
 private:
     QUrl   m_currentUrl;

@@ -110,12 +110,6 @@ ApplicationWindow {
             initialItem: HomePanel {
                 property string pageTitle: ""
 
-                onBuiltinCardClicked: function(viewId) {
-                    if (viewId === "player" || viewId === "playlist") {
-                        AppController.logInfo("HomePanel: open builtin view=" + viewId)
-                        stack.push(playerViewComponent)
-                    }
-                }
                 onPluginCardClicked: function(pluginId, pluginIndex) {
                     AppController.logInfo("HomePanel: open plugin=" + pluginId + " index=" + pluginIndex)
                     if (PluginManager.pluginHasQmlUI(pluginIndex)) {
@@ -125,37 +119,9 @@ ApplicationWindow {
                             "pluginTitle":   PluginManager.pluginCardName(pluginIndex)
                         })
                     } else {
-                        // 无 QML UI 的插件，暂时回退到内置播放器视图
-                        stack.push(playerViewComponent)
+                        // 无 QML UI 的插件，仅记录日志
+                        AppController.logWarn("HomePanel: plugin has no QML UI, index=" + pluginIndex)
                     }
-                }
-            }
-        }
-    }
-
-    // ── 播放器页面（内置，保留供 builtinCardClicked 使用）───────────────────
-    Component {
-        id: playerViewComponent
-
-        Item {
-            property string pageTitle: "视频播放器"
-
-            RowLayout {
-                anchors.fill: parent
-                spacing: 0
-
-                PlayerView {
-                    id: playerView
-                    Layout.fillWidth: true
-                    Layout.fillHeight: true
-                }
-
-                Rectangle { width: 1; Layout.fillHeight: true; color: "#ffffff10" }
-
-                PlaylistView {
-                    width: 280
-                    Layout.fillHeight: true
-                    playlistModel: playerView.playlistModel
                 }
             }
         }
