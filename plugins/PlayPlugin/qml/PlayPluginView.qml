@@ -1,12 +1,10 @@
 // PlayPluginView.qml —— PlayPlugin 插件 QML 入口
 // 宿主通过 Loader { source: plugin.qmlComponentUrl() } 加载本文件。
-// 本文件及 PlayerView / ControlBar / PlaylistView 全部打包在
-// 同一 qrc 前缀 /PlayPlugin/qml/ 下，属于完全自包含的插件 UI 层。
+// 只依赖 PlayPlugin 1.0 和 Qt 标准模块，对宿主模块零感知。
 
 import QtQuick
 import QtQuick.Layouts
-import VideoPlayer 1.0         // AppController（宿主基础设施）
-import PlayPlugin 1.0          // PlayerEngine、PlaylistModel 等插件 C++ 类型
+import PlayPlugin 1.0          // PlayerEngine、PlaylistModel、PlaybackContext 等
 
 Item {
     id: root

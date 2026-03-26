@@ -23,8 +23,8 @@
  *   - PlaybackContext 是模块内的统一上下文，未来扩展其他共享状态也有落脚点
  *
  * ## QML 注册
- * 注册在 URI="PlayPlugin" Version=1.0，由 PlayPluginBackend 的
- * qt_add_qml_module 负责生成类型注册代码。
+ * 注册在 URI="PlayPlugin" Version=1.0，由 PlayPlugin 的
+ * qt_add_qml_module（PLUGIN_TARGET PlayPlugin）负责生成类型注册代码。
  */
 class PlayerEngine : public QObject
 {

@@ -54,6 +54,11 @@ target_link_libraries(VideoPlayerApp PRIVATE
     ${DUMP_LIBS}
 )
 
+# 将构建根目录加入 QML 搜索路径：
+#   - ${CMAKE_BINARY_DIR}/VideoPlayer/   宿主模块 (VideoPlayer 1.0)
+#   - ${CMAKE_BINARY_DIR}/PlayPlugin/    插件模块 (PlayPlugin 1.0)
+#   - ${CMAKE_BINARY_DIR}/AppLog/        日志模块 (AppLog 1.0)
+# 三者父目录均为 CMAKE_BINARY_DIR，addImportPath 一次覆盖所有模块
 target_compile_definitions(VideoPlayerApp PRIVATE
     QML_IMPORT_PATH="${CMAKE_BINARY_DIR}"
 )

@@ -1,13 +1,12 @@
 // PlayerView.qml —— PlayPlugin 模块内部组件
-// PlayerEngine / PlaylistModel / MediaInfo 均注册在 "PlayPlugin 1.0"，
-// ControlBar 与本文件同属一个 qrc 前缀，由 Qt 自动发现，无需 import。
+// 只依赖 PlayPlugin 1.0、AppLog 1.0 和 Qt 标准模块，对宿主模块零感知。
 
 import QtQuick
 import QtQuick.Controls.Basic
 import QtQuick.Layouts
 import QtQuick.Dialogs
-import PlayPlugin 1.0          // PlayerEngine、PlaylistModel、MediaInfo
-import VideoPlayer 1.0         // AppController（宿主基础设施，跨模块访问）
+import AppLog    1.0          // Log 单例（基础设施层，所有插件共用）
+import PlayPlugin 1.0          // PlayerEngine、PlaylistModel、MediaInfo、PlaybackContext
 
 Item {
     id: root
@@ -16,10 +15,10 @@ Item {
         id: engine
         onErrorOccurred: (msg) => {
             errorBar.show(msg)
-            AppController.logError("PlayerEngine: " + msg)
+            Log.error("[PlayPlugin] PlayerEngine: " + msg)
         }
         onPlaybackStateChanged: (state) => {
-            AppController.logInfo("State → " + state)
+            Log.info("[PlayPlugin] State → " + state)
         }
     }
 
@@ -28,7 +27,6 @@ Item {
         onCurrentMediaRequested: (url) => engine.open(url)
     }
 
-    // 暴露给外部（PlaylistView 通过属性绑定使用）
     property alias playlistModel: playlist
 
     FileDialog {
@@ -67,7 +65,7 @@ Item {
 
         MouseArea {
             anchors.fill: parent
-            onDoubleClicked: AppController.logInfo("Fullscreen toggle (TODO)")
+            onDoubleClicked: Log.info("[PlayPlugin] Fullscreen toggle (TODO)")
         }
     }
 

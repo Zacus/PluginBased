@@ -11,10 +11,10 @@
  *   - C++ 业务层：PlayerEngine / PlaylistModel / MediaInfo
  *   - QML 界面层：PlayPluginView / PlayerView / ControlBar / PlaylistView
  *
- * 与宿主的唯一耦合点：
+ * 与宿主的耦合点（Step 1-4 后）：
  *   1. IPlayerPlugin 接口（播放控制协议）
- *   2. PluginManager::findPlugin（通过依赖注入，在 initialize() 中绑定）
- *   3. AppController::log*（QML 层通过 VideoPlayer 1.0 模块访问，属于 app 基础设施）
+ *   2. PluginFinder（通过 initialize() 参数注入，Step 1）
+ *   QML 层对宿主模块零感知，日志通过 PlaybackContext 下沉到 C++ 层（Step 4）
  *
  * QML 类型注册在独立模块 URI="PlayPlugin" Version=1.0，
  * 与宿主的 "VideoPlayer" 模块互不污染。
