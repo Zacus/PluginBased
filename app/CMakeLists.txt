@@ -2,23 +2,22 @@ qt_add_executable(VideoPlayerApp
     main.cpp
     AppConfig.h
     AppConfig.cpp
-    AppController.h
-    AppController.cpp
     CrashHandler.h
     CrashHandler.cpp
 )
 
 # ENABLE_EXPORTS → 链接时加 -rdynamic（Linux）/ -Wl,-export_dynamic（macOS）
 # 将主程序所有非 static 符号导出到动态符号表，
-# 使运行时 dlopen 的插件 .so 能直接解析 PluginManager 等宿主符号，
-# 无需插件静态链接 VideoPlayerCore。
+# 使运行时 dlopen 的插件 .so 能直接解析 PluginManager 等宿主符号。
 set_target_properties(VideoPlayerApp PROPERTIES
     ENABLE_EXPORTS    ON
     WIN32_EXECUTABLE  TRUE
     MACOSX_BUNDLE     TRUE
 )
 
-# ── VideoPlayer 1.0 QML 模块（宿主基础设施层）────────────────
+# ── VideoPlayer 1.0 QML 模块（宿主基础设施层）────────────────────
+# SOURCES 放有 QML_ELEMENT/QML_SINGLETON 宏的类，让 qmltyperegistrar 生成类型注册代码。
+# AppController 和 PluginManager 都是 QML_ELEMENT，放在这里编译一次即可。
 qt_add_qml_module(VideoPlayerApp
     URI     "VideoPlayer"
     VERSION 1.0
@@ -27,18 +26,14 @@ qt_add_qml_module(VideoPlayerApp
         qml/main.qml
         qml/HomePanel.qml
     SOURCES
-        # PluginManager 在宿主层编译，符号随主程序导出供插件运行时使用
-        ../core/PluginManager.h
-        ../core/PluginManager.cpp
-        # AppController 也是宿主 QML 单例
-        AppController.h
-        AppController.cpp
+        AppController.h     AppController.cpp
+        ../core/PluginManager.h  ../core/PluginManager.cpp
 )
 
 target_include_directories(VideoPlayerApp PRIVATE
-    ${CMAKE_SOURCE_DIR}/core
-    ${CMAKE_SOURCE_DIR}/plugin
-    ${CMAKE_SOURCE_DIR}/logger
+    ${CMAKE_SOURCE_DIR}/core        # PluginManager.h
+    ${CMAKE_SOURCE_DIR}/plugin      # IPlayerPlugin.h
+    # logger/ 头文件已由 VideoPlayerLogger PUBLIC include_directories 传递，无需手动列出
 )
 
 target_link_libraries(VideoPlayerApp PRIVATE
@@ -47,18 +42,18 @@ target_link_libraries(VideoPlayerApp PRIVATE
     Qt6::Quick
     Qt6::QuickControls2
     Qt6::Multimedia
-    VideoPlayerLogger
-    VideoPlayerPlugin
-    VideoPlayerCore             # INTERFACE：传递 PluginManager.h 等头文件搜索路径
+    VideoPlayerLogger               # Logger + AppLog QML 模块
+    VideoPlayerPlugin               # IPlayerPlugin.h（INTERFACE）
+    VideoPlayerCore                 # PluginManager.h 头文件路径（INTERFACE）
     QtQuickComponents
     ${DUMP_LIBS}
 )
 
-# 将构建根目录加入 QML 搜索路径：
-#   - ${CMAKE_BINARY_DIR}/VideoPlayer/   宿主模块 (VideoPlayer 1.0)
-#   - ${CMAKE_BINARY_DIR}/PlayPlugin/    插件模块 (PlayPlugin 1.0)
-#   - ${CMAKE_BINARY_DIR}/AppLog/        日志模块 (AppLog 1.0)
-# 三者父目录均为 CMAKE_BINARY_DIR，addImportPath 一次覆盖所有模块
+# CMAKE_BINARY_DIR 下同时存在：
+#   VideoPlayer/qmldir   宿主模块 (VideoPlayer 1.0)
+#   PlayPlugin/qmldir    插件模块 (PlayPlugin 1.0)
+#   AppLog/qmldir        日志模块 (AppLog 1.0)
+# addImportPath 一次覆盖所有模块
 target_compile_definitions(VideoPlayerApp PRIVATE
     QML_IMPORT_PATH="${CMAKE_BINARY_DIR}"
 )
