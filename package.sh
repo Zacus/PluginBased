@@ -19,6 +19,7 @@
 #    Linux   →  dist/VideoPlayer-<ver>-linux-x86_64.tar.gz
 #    Windows →  dist/VideoPlayer-<ver>-win64.zip
 #               dist/VideoPlayer-<ver>-win64-installer.exe  （需 NSIS）
+#    macOS打包总是遗漏Qt的库，比如QtDBus，QtQuickTemplates2
 # =============================================================================
 set -euo pipefail
 
