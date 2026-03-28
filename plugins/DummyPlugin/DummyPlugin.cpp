@@ -1,3 +1,13 @@
+/*
+ * @Author: zs
+ * @Date: 2026-03-25 19:18:22
+ * @LastEditors: zs
+ * @LastEditTime: 2026-03-27 20:28:55
+ * @FilePath: /VideoPlayer/plugins/DummyPlugin/DummyPlugin.cpp
+ * @Description: 
+ * 
+ * Copyright (c) 2026 by zs, All Rights Reserved. 
+ */
 #include "DummyPlugin.h"
 #include "Logger.h"
 
@@ -60,4 +70,9 @@ void DummyPlugin::seek(qint64 positionMs)
 {
     m_position = qBound(0LL, positionMs, m_duration);
     LOG_DEBUG("DummyPlugin::seek({}ms)", positionMs);
+}
+
+QUrl DummyPlugin::qmlComponentUrl() const
+{
+    return QUrl(QStringLiteral("qrc:/DummyPlugin/qml/DummyPluginView.qml"));
 }

@@ -1,3 +1,13 @@
+/*
+ * @Author: zs
+ * @Date: 2026-03-25 19:18:16
+ * @LastEditors: zs
+ * @LastEditTime: 2026-03-27 20:27:55
+ * @FilePath: /VideoPlayer/plugins/DummyPlugin/DummyPlugin.h
+ * @Description: 
+ * 
+ * Copyright (c) 2026 by zs, All Rights Reserved. 
+ */
 #pragma once
 
 #include <QObject>
@@ -41,6 +51,9 @@ public:
     qint64 duration()  const override { return m_duration; }
     qint64 position()  const override { return m_position; }
     bool   isPlaying() const override { return m_playing; }
+
+    bool hasQmlUI()        const override { return true; }
+    QUrl qmlComponentUrl() const override;
 
 private:
     QUrl   m_url;

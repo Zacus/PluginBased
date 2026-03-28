@@ -11,6 +11,14 @@ add_library(DummyPlugin MODULE
     DummyPlugin.cpp
 )
 
+qt_add_qml_module(DummyPlugin
+    NO_PLUGIN
+    URI     DummyPlugin
+    VERSION 1.0
+    OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/DummyPlugin"
+    QML_FILES
+        qml/DummyPluginView.qml
+)
 # 符号可见性：只导出 Qt 插件入口符号，减小库体积、避免符号污染
 set_target_properties(DummyPlugin PROPERTIES
     CXX_VISIBILITY_PRESET     hidden
@@ -29,6 +37,7 @@ target_link_libraries(DummyPlugin PRIVATE
     Qt6::Core
     VideoPlayerPlugin
     VideoPlayerLogger
+    QtQuickComponents
 )
 
 # ── 安装规则（make install / CPack 打包时使用）────────────────
