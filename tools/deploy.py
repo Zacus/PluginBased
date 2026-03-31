@@ -355,6 +355,15 @@ def fix_rpath_linux(binary: Path, lib_rpath: str = "$ORIGIN/../lib") -> None:
 # 目前只测试了mac版本，发现mac下确实framework相关文件，所以暂时添加了frameworks这个目录，因为
 # frameworks目录下除了有xxx.framework文件夹，还有dylib动态库，所以不能把dylib都拷贝到plugins下，
 # undo：后续优化区分pluigins目录下还是framworks下，根据yml文件去区分或和文件前缀等
+# 问题：拷贝包后，mac注册签名会报错bundle format is ambiguous (could be app or framework)，incomponentent,
+# 原因：拷贝时copy函数破坏了链接，可以使用ls -al查看符号链接，下面是正常结构，mac应用framework要严格遵循这个结构
+# QtDBus.framework/
+###├── QtDBus          ❌ 不是 symlink
+###├── Versions/
+###    └── A/
+###        └── QtDBus
+### 手动方式：ln -sfn Versions/A/QtDBus QtDBus
+###          ln -sfn A Versions/Current
 # windows和linux暂时没发现有frameworks相关的文件，所以先不处理frameworks目录
 # =============================================================================
 def copy_qt_runtime_plugins(
@@ -426,7 +435,9 @@ def copy_qt_runtime_plugins(
                 dst.unlink()
 
         if src.is_dir():
-            info(f"  开始拷贝文件夹 {src}")
+            #使用shutil.copytree时，默认会将符号链接当作普通文件复制，
+            # 导致mac下framework目录结构被破坏，
+            # 所以这里改为先创建符号链接，再复制文件
             shutil.copytree(src, dst, symlinks=True)
             info(f"  Qt 插件目录: {rel_path}/")
         else:
