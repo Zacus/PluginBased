@@ -132,17 +132,20 @@ AppController.reloadConfig()
 使用项目根目录的 `package.sh`，自动调用平台对应的 Qt 部署工具：
 
 ```bash
-# 确保已完成 Release 构建，直接打包
-./package.sh --skip-build
+# 首次使用
+pip3 install pyyaml
 
-# 同时触发编译（要求 build/ 已 cmake 初始化）
-./package.sh
+# 日常打包
+cmake -B build -DCMAKE_BUILD_TYPE=Release .
+./package.sh --qt-dir ~/Qt/6.7.0/macos
 
-# 指定构建目录和 Qt 路径
-./package.sh ./build-release --qt-dir ~/Qt/6.7.2/macos
+# 跳过编译（已构建好）
+./package.sh -s
 
-# 覆盖版本号
-./package.sh --skip-build --version 1.2.0
+# 发现运行时缺库时，手动验证
+python3 tools/verify.py --stage-dir build/app/VideoPlayerApp.app
+
+# 把缺失的库加到 tools/package.yml 的 qt_runtime_plugins 白名单，下次打包自动补全
 ```
 
 ### 各平台产物
