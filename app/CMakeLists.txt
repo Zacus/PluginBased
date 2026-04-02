@@ -63,3 +63,38 @@ if(WIN32)
 elseif(UNIX)
     target_compile_definitions(VideoPlayerApp PRIVATE PLATFORM_LINUX)
 endif()
+
+# # ── 安装规则 ────────────────────────────────────────────────────────────────
+# # cmake --install 时写入 CMAKE_INSTALL_RPATH，自动替换构建期 rpath，
+# # 无需事后 install_name_tool（修改二进制会破坏代码签名）。
+# if(APPLE)
+#     # macOS：整个 .app bundle 安装到 prefix 根目录
+#     install(TARGETS VideoPlayerApp
+#         BUNDLE DESTINATION .
+#     )
+#     # QML 模块目录 → Contents/Resources/qml/
+#     # main.cpp 在 bundle 下搜索 Contents/Resources/qml/ 作为 import path
+#     foreach(mod AppLog VideoPlayer PlayPlugin)
+#         install(DIRECTORY "${CMAKE_BINARY_DIR}/${mod}"
+#             DESTINATION "$<TARGET_BUNDLE_DIR:VideoPlayerApp>/Contents/Resources/qml"
+#         )
+#     endforeach()
+#     # QuickUI（QtQuickComponents）QML 模块目录
+#     install(DIRECTORY "${CMAKE_BINARY_DIR}/QuickUI"
+#         DESTINATION "$<TARGET_BUNDLE_DIR:VideoPlayerApp>/Contents/Resources/qml"
+#     )
+# else()
+#     # Linux / Windows：可执行文件安装到 bin/
+#     install(TARGETS VideoPlayerApp
+#         RUNTIME DESTINATION bin
+#     )
+#     # QML 模块目录 → bin/qml/（main.cpp 搜索 appDir + "/qml"）
+#     foreach(mod AppLog VideoPlayer PlayPlugin)
+#         install(DIRECTORY "${CMAKE_BINARY_DIR}/${mod}"
+#             DESTINATION "bin/qml"
+#         )
+#     endforeach()
+#     install(DIRECTORY "${CMAKE_BINARY_DIR}/QuickUI"
+#         DESTINATION "bin/qml"
+#     )
+# endif()

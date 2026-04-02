@@ -15,6 +15,35 @@ if(WIN32)
     set(DUMP_LIBS dbghelp)
 endif()
 
+# # ── macOS RPATH 设置 ──────────────────────────────────────────
+# # 让所有 SHARED/MODULE 库在构建时就带上正确的 install_name，
+# # macdeployqt 才能解析 @rpath/Qt*.framework 并正确打包。
+# #
+# # CMAKE_MACOSX_RPATH ON：
+# #   每个 dylib/so 的 install_name 使用 @rpath/<libname>（相对路径），
+# #   而非绝对的构建目录路径。
+# #
+# # CMAKE_BUILD_RPATH：
+# #   构建期 rpath，指向 Qt 安装目录内的 lib/，让开发期直接运行 .app 有效。
+# #   从 Qt6_DIR 推导（Qt6_DIR 通常是 .../Qt/6.x.x/macos/lib/cmake/Qt6）。
+# #
+# # CMAKE_INSTALL_RPATH：
+# #   install/打包后的 rpath，使用 @executable_path/../Frameworks，
+# #   让 macdeployqt 把 Qt.framework 拷进 bundle 后能被找到。
+# if(APPLE)
+#     set(CMAKE_MACOSX_RPATH ON)
+
+#     # 从 Qt6_DIR 推导 Qt lib 目录（开发期 rpath）
+#     if(DEFINED Qt6_DIR)
+#         get_filename_component(_qt_lib_dir "${Qt6_DIR}/../../.." ABSOLUTE)
+#         set(CMAKE_BUILD_RPATH "${_qt_lib_dir}")
+#     endif()
+
+#     # 发布期 rpath：@executable_path/../Frameworks（macdeployqt 标准位置）
+#     set(CMAKE_INSTALL_RPATH "@executable_path/../Frameworks")
+#     set(CMAKE_INSTALL_RPATH_USE_LINK_PATH OFF)
+# endif()
+
 add_subdirectory(logger)
 add_subdirectory(plugin)
 add_subdirectory(core)
