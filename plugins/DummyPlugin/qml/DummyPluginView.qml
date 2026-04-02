@@ -13,9 +13,13 @@ Item {
 
         Component.onCompleted: {
             var base = new Date("2024-01-01T00:00:00Z").getTime()
+
             addSegment(base,           base + 3600000,  0)  // 普通录像 1h
             addSegment(base + 5400000, base + 7200000,  1)  // 移动侦测
             addSegment(base + 9000000, base + 10800000, 2)  // 报警
+            //base + 365天
+            //base += 365 * 24 * 3600000
+            addSegment(base + 365 * 24 * 3600000, base + 365 * 24 * 3600000+ 7200000, 0)     // 普通录像 1h
         }
     }
 
@@ -57,7 +61,7 @@ Item {
             Layout.fillWidth: true
             height: 120
             model: myTimelineModel
-            followMode:  "center"
+            followMode: TimelineEnums.FollowCenter
             currentTime: root.playPosition
 
             onSeeked: function(t) {
