@@ -11,6 +11,35 @@ qt_standard_project_setup()
 
 find_package(spdlog REQUIRED)   # vcpkg / conan / system
 
+# ── FFmpeg（通过 vcpkg + pkg-config）─────────────────────────────────────────
+# 安装：vcpkg install ffmpeg[avcodec,avformat,avutil,swresample,swscale] pkgconf
+# 或直接在 vcpkg.json 中声明依赖后 cmake 自动安装（manifest 模式）
+#
+# pkg_check_modules 的 IMPORTED_TARGET 参数会自动创建 PkgConfig::<NAME> target，
+# 包含正确的 include 路径、库链接、编译选项，无需手动维护 FindFFmpeg.cmake。
+find_package(PkgConfig REQUIRED)
+
+pkg_check_modules(AVFORMAT   REQUIRED IMPORTED_TARGET libavformat)
+pkg_check_modules(AVCODEC    REQUIRED IMPORTED_TARGET libavcodec)
+pkg_check_modules(AVUTIL     REQUIRED IMPORTED_TARGET libavutil)
+pkg_check_modules(SWSCALE    REQUIRED IMPORTED_TARGET libswscale)
+pkg_check_modules(SWRESAMPLE REQUIRED IMPORTED_TARGET libswresample)
+
+# 创建聚合 INTERFACE target FFmpeg::all，业务代码只需链接这一个
+# 和 spdlog::spdlog、Qt6::Core 的使用风格保持一致
+add_library(FFmpeg::all INTERFACE IMPORTED)
+target_link_libraries(FFmpeg::all INTERFACE
+    PkgConfig::AVFORMAT
+    PkgConfig::AVCODEC
+    PkgConfig::AVUTIL
+    PkgConfig::SWSCALE
+    PkgConfig::SWRESAMPLE
+)
+
+message(STATUS "FFmpeg avformat : ${AVFORMAT_VERSION}")
+message(STATUS "FFmpeg avcodec  : ${AVCODEC_VERSION}")
+message(STATUS "FFmpeg avutil   : ${AVUTIL_VERSION}")
+
 if(WIN32)
     set(DUMP_LIBS dbghelp)
 endif()

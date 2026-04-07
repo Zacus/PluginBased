@@ -1,0 +1,21 @@
+{
+  "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg/master/scripts/vcpkg.schema.json",
+  "name": "videoplayer",
+  "version": "1.0.0",
+  "dependencies": [
+    {
+      "name": "spdlog",
+      "features": ["fmt"]
+    },
+    "pkgconf",
+    {
+      "name": "ffmpeg",
+      "features": [
+        "avcodec",
+        "avformat",
+        "swresample",
+        "swscale"
+      ]
+    }
+  ]
+}
