@@ -71,6 +71,10 @@ qt_add_qml_module(PlayPlugin
         src/PlayerEngine.h     src/PlayerEngine.cpp
         src/PlaylistModel.h    src/PlaylistModel.cpp
         src/MediaInfo.h
+        # Step 2 — FFmpeg 解码器
+        src/FFmpegUtils.h
+        src/FrameQueue.h
+        src/FFmpegDecoder.h    src/FFmpegDecoder.cpp
 )
 
 # ── 编译属性 ──────────────────────────────────────────────────
@@ -97,6 +101,7 @@ target_link_libraries(PlayPlugin PRIVATE
     Qt6::Multimedia
     VideoPlayerPlugin                   # IPlayerPlugin.h（INTERFACE，零编译产物）
     VideoPlayerLogger                   # spdlog 封装（STATIC）
+    FFmpeg::all                         # avformat / avcodec / avutil / swscale / swresample
     # 不链接 VideoPlayerCore：PluginManager 符号由主程序 -rdynamic 在运行时提供
 )
 
