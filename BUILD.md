@@ -21,8 +21,9 @@
 git clone https://github.com/microsoft/vcpkg
 ./vcpkg/bootstrap-vcpkg.sh   # Windows: bootstrap-vcpkg.bat
 
-# 安装依赖（Qt 本体建议用 Qt Installer，vcpkg 的 Qt 构建时间很长）
-vcpkg install spdlog fmt
+# 项目根目录已有 vcpkg.json（manifest 模式），
+# cmake 配置时会自动安装所有依赖：spdlog、pkgconf、ffmpeg
+# 无需手动执行 vcpkg install
 ```
 
 ### 方式二：系统包管理器（Linux）
@@ -132,20 +133,17 @@ AppController.reloadConfig()
 使用项目根目录的 `package.sh`，自动调用平台对应的 Qt 部署工具：
 
 ```bash
-# 首次使用
-pip3 install pyyaml
+# 确保已完成 Release 构建，直接打包
+./package.sh --skip-build
 
-# 日常打包
-cmake -B build -DCMAKE_BUILD_TYPE=Release .
-./package.sh --qt-dir ~/Qt/6.7.0/macos
+# 同时触发编译（要求 build/ 已 cmake 初始化）
+./package.sh
 
-# 跳过编译（已构建好）
-./package.sh -s
+# 指定构建目录和 Qt 路径
+./package.sh ./build-release --qt-dir ~/Qt/6.7.2/macos
 
-# 发现运行时缺库时，手动验证
-python3 tools/verify.py --stage-dir build/app/VideoPlayerApp.app
-
-# 把缺失的库加到 tools/package.yml 的 qt_runtime_plugins 白名单，下次打包自动补全
+# 覆盖版本号
+./package.sh --skip-build --version 1.2.0
 ```
 
 ### 各平台产物

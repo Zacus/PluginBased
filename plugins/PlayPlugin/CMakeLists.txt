@@ -75,6 +75,11 @@ qt_add_qml_module(PlayPlugin
         src/FFmpegUtils.h
         src/FrameQueue.h
         src/FFmpegDecoder.h    src/FFmpegDecoder.cpp
+        # Step 3 — 渲染器 + 时钟同步 + 视频输出组件
+        src/ClockSync.h
+        src/AudioRenderer.h    src/AudioRenderer.cpp
+        src/VideoRenderer.h    src/VideoRenderer.cpp
+        src/FFmpegSurface.h    src/FFmpegSurface.cpp
 )
 
 # ── 编译属性 ──────────────────────────────────────────────────

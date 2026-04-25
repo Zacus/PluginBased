@@ -67,6 +67,7 @@ signals:
     /** 文件打开成功，媒体信息已就绪 */
     void mediaInfoReady(qint64 durationMs, int width, int height,
                         double fps, int sampleRate, int channels,
+                        int sampleFmt,       // AVSampleFormat，用 int 传递避免跨模块枚举依赖
                         const QString& format);
 
     /** 解码出错 */
@@ -102,12 +103,13 @@ private:
     int  m_audioStreamIdx = -1;
 
     // ── 媒体信息（open 后写入，之后只读）─────────────────────────────────────
-    qint64  m_durationMs     = 0;
-    int     m_videoWidth     = 0;
-    int     m_videoHeight    = 0;
-    double  m_videoFps       = 0.0;
-    int     m_audioChannels  = 0;
+    qint64  m_durationMs      = 0;
+    int     m_videoWidth      = 0;
+    int     m_videoHeight     = 0;
+    double  m_videoFps        = 0.0;
+    int     m_audioChannels   = 0;
     int     m_audioSampleRate = 0;
+    int     m_audioSampleFmt  = AV_SAMPLE_FMT_FLTP; // AVSampleFormat，存 int 避免枚举依赖
     QString m_formatName;
 
     // ── 控制变量（跨线程，用原子或 mutex 保护）───────────────────────────────

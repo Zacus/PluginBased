@@ -5,21 +5,16 @@
 #include <functional>
 #include "IPlayerPlugin.h"
 
+// 前向声明，避免循环依赖
+class PlayerEngine;
+
 /**
  * @brief PlaybackContext —— PlayPlugin 模块内部的播放上下文单例
  *
- * ## 职责
- *   持有 PluginFinder，供 PlayerEngine::open() 查找解码插件。
- *
- * ## 日志
- *   插件 QML 的日志改由 AppLog 1.0 模块的 Log 单例承担，
- *   PlaybackContext 不再重复实现 logXxx 方法。
- *   任何需要日志的插件 QML 只需：
- *     import AppLog 1.0
- *     Log.info("...")
- *
- * ## 线程安全
- *   所有方法均在主线程调用（QML 引擎单线程），无需加锁。
+ * 职责：
+ *   1. 持有 PluginFinder，供 PlayerEngine::open() 查找解码插件
+ *   2. 持有 PlayerEngine* 弱引用，供 PlayPlugin（IPlayerPlugin 实现）
+ *      查询 duration/position/isPlaying 状态，无需直接依赖 PlayerEngine.h
  */
 class PlaybackContext : public QObject
 {
@@ -43,6 +38,7 @@ public:
         return s;
     }
 
+    // ── PluginFinder ──────────────────────────────────────────────────────
     void setFinder(PluginFinder finder) { m_finder = std::move(finder); }
     void clearFinder()                  { m_finder = {}; }
     bool hasFinder() const              { return static_cast<bool>(m_finder); }
@@ -52,8 +48,16 @@ public:
         return m_finder ? m_finder(url) : nullptr;
     }
 
+    // ── PlayerEngine 注册（由 PlayerEngine 构造/析构时调用）──────────────
+    // 使用裸指针+手动注册，避免头文件循环依赖
+    // PlayPlugin 通过此接口查询状态，无需 #include "PlayerEngine.h"
+    void registerEngine(PlayerEngine* engine)   { m_engine = engine; }
+    void unregisterEngine(PlayerEngine* engine) { if (m_engine == engine) m_engine = nullptr; }
+    PlayerEngine* engine() const                { return m_engine; }
+
 private:
     explicit PlaybackContext(QObject* parent = nullptr) : QObject(parent) {}
 
-    PluginFinder m_finder;
+    PluginFinder  m_finder;
+    PlayerEngine* m_engine = nullptr;
 };

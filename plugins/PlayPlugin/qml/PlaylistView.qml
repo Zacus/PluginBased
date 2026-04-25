@@ -95,7 +95,7 @@ Item {
                     MouseArea {
                         id: delegateMouse
                         anchors.fill: parent; hoverEnabled: true
-                        onDoubleClicked: { if (root.playlistModel) root.playlistModel.setCurrentIndex(index) }
+                        onDoubleClicked: { if (root.playlistModel) root.playlistModel.currentIndex = index }
                     }
                 }
             }

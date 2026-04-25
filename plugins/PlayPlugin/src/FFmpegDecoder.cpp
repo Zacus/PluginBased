@@ -128,6 +128,7 @@ void FFmpegDecoder::run()
         emit mediaInfoReady(m_durationMs,
                             m_videoWidth, m_videoHeight, m_videoFps,
                             m_audioSampleRate, m_audioChannels,
+                            m_audioSampleFmt,
                             m_formatName);
 
         decodeLoop();
@@ -227,6 +228,7 @@ bool FFmpegDecoder::openInternal(const QString& path)
                 m_audioCodecCtx.reset(actx);
                 m_audioChannels   = actx->ch_layout.nb_channels;
                 m_audioSampleRate = actx->sample_rate;
+                m_audioSampleFmt  = static_cast<int>(actx->sample_fmt);
             }
         }
     }
@@ -317,6 +319,13 @@ bool FFmpegDecoder::sendPacketToDecoder(AVCodecContext* ctx,
         return false;
     }
 
+    // 取出流的 time_base，用于把 PTS 换算为微秒
+    AVRational tb = { 0, 1 };
+    if (ctx == m_videoCodecCtx.get() && m_videoStreamIdx >= 0)
+        tb = m_fmtCtx->streams[m_videoStreamIdx]->time_base;
+    else if (ctx == m_audioCodecCtx.get() && m_audioStreamIdx >= 0)
+        tb = m_fmtCtx->streams[m_audioStreamIdx]->time_base;
+
     while (true) {
         auto frame = make_frame();
         ret = avcodec_receive_frame(ctx, frame.get());
@@ -327,13 +336,19 @@ bool FFmpegDecoder::sendPacketToDecoder(AVCodecContext* ctx,
             return false;
         }
 
-        // 发布解码位置（只对视频流发，避免音频噪音）
-        if (ctx == m_videoCodecCtx.get()) {
-            AVStream* vs = m_fmtCtx->streams[m_videoStreamIdx];
-            qint64 pts = frame->best_effort_timestamp;
-            if (pts != AV_NOPTS_VALUE)
-                emit positionChanged(pts * 1000 * vs->time_base.num / vs->time_base.den);
-        }
+        // 把 PTS 统一换算为微秒存入 frame->pts
+        // VideoRenderer 和 AudioClock 均以微秒为单位，后续直接使用
+        qint64 pts = frame->best_effort_timestamp;
+        if (pts == AV_NOPTS_VALUE)
+            pts = frame->pts;
+        if (pts != AV_NOPTS_VALUE && tb.den > 0)
+            frame->pts = av_rescale_q(pts, tb, { 1, AV_TIME_BASE });
+        else
+            frame->pts = AV_NOPTS_VALUE;
+
+        // 视频帧：发布解码位置（微秒 → 毫秒）
+        if (ctx == m_videoCodecCtx.get() && frame->pts != AV_NOPTS_VALUE)
+            emit positionChanged(frame->pts / 1000);
 
         if (!queue->push(std::move(frame), serial))
             return false; // abort
@@ -386,5 +401,6 @@ void FFmpegDecoder::closeInternal()
     m_videoFps       = 0.0;
     m_audioChannels  = 0;
     m_audioSampleRate = 0;
+    m_audioSampleFmt  = AV_SAMPLE_FMT_FLTP;
     LOG_DEBUG("FFmpegDecoder: closed");
 }

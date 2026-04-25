@@ -7,17 +7,14 @@
 /**
  * @brief PlayPlugin —— 播放器界面插件（完全自包含）
  *
- * 本插件封装了播放器全部业务逻辑与 UI：
- *   - C++ 业务层：PlayerEngine / PlaylistModel / MediaInfo
- *   - QML 界面层：PlayPluginView / PlayerView / ControlBar / PlaylistView
+ * IPlayerPlugin 实现层：负责与宿主对接（canHandle / open / play 等接口）。
+ * 真正的播放逻辑由 PlayerEngine（QML 侧实例化）承担，
+ * PlayPlugin 通过 PlaybackContext::engine() 查询状态、转发控制指令。
  *
- * 与宿主的耦合点（Step 1-4 后）：
- *   1. IPlayerPlugin 接口（播放控制协议）
- *   2. PluginFinder（通过 initialize() 参数注入，Step 1）
- *   QML 层对宿主模块零感知，日志通过 PlaybackContext 下沉到 C++ 层（Step 4）
- *
- * QML 类型注册在独立模块 URI="PlayPlugin" Version=1.0，
- * 与宿主的 "VideoPlayer" 模块互不污染。
+ * 生命周期：
+ *   宿主 PluginManager::loadAll() → 调用 initialize()
+ *   宿主卸载 → 调用 shutdown()
+ *   PlayerEngine 由 QML 引擎管理，生命周期独立于 PlayPlugin
  */
 class PlayPlugin : public QObject, public IPlayerPlugin
 {
@@ -32,38 +29,30 @@ public:
     // ── 元信息 ────────────────────────────────────────────────────────────
     QString name()        const override { return QStringLiteral("PlayPlugin"); }
     QString version()     const override { return QStringLiteral("1.0.0"); }
-    QString description() const override { return QStringLiteral("内置播放器界面：视频播放 + 播放列表"); }
-
-    // ── HomePanel 显示 ────────────────────────────────────────────────────
-    QString cardIcon() const override { return QStringLiteral("▶"); }
-    QString cardName() const override { return QStringLiteral("视频播放器"); }
+    QString description() const override { return QStringLiteral("内置播放器：视频 + 播放列表"); }
+    QString cardIcon()    const override { return QStringLiteral("▶"); }
+    QString cardName()    const override { return QStringLiteral("视频播放器"); }
 
     // ── 生命周期 ──────────────────────────────────────────────────────────
     bool initialize(PluginFinder finder = {}) override;
-    void shutdown()   override;
+    void shutdown()                          override;
 
     // ── 能力查询 ──────────────────────────────────────────────────────────
     bool canHandle(const QUrl& url) const override;
 
-    // ── 播放控制（转发给 PlayerEngine；UI 侧由 QML 直接调用 engine） ──────
-    bool open(const QUrl& url) override;
-    void play()                override;
-    void pause()               override;
-    void stop()                override;
-    void seek(qint64 positionMs) override;
+    // ── 播放控制（转发给 PlayerEngine）───────────────────────────────────
+    bool open(const QUrl& url)      override;
+    void play()                     override;
+    void pause()                    override;
+    void stop()                     override;
+    void seek(qint64 positionMs)    override;
 
-    // ── 状态查询 ──────────────────────────────────────────────────────────
-    qint64 duration()  const override { return m_duration; }
-    qint64 position()  const override { return m_position; }
-    bool   isPlaying() const override { return m_playing;  }
+    // ── 状态查询（从 PlayerEngine 实时读取）─────────────────────────────
+    qint64 duration()  const override;
+    qint64 position()  const override;
+    bool   isPlaying() const override;
 
-    // ── QML UI 能力 ───────────────────────────────────────────────────────
+    // ── QML UI ────────────────────────────────────────────────────────────
     bool hasQmlUI()        const override { return true; }
     QUrl qmlComponentUrl() const override;
-
-private:
-    QUrl   m_currentUrl;
-    qint64 m_duration = 0;
-    qint64 m_position = 0;
-    bool   m_playing  = false;
 };

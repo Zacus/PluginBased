@@ -1,14 +1,8 @@
-/*
- * @Author: zs
- * @Date: 2026-04-06 14:16:24
- * @LastEditors: zs
- * @LastEditTime: 2026-04-07 14:28:31
- * @FilePath: /VideoPlayer/plugins/PlayPlugin/src/FFmpegUtils.h
- * @Description: 
- * 
- * Copyright (c) 2026 by zs, All Rights Reserved. 
- */
 #pragma once
+
+#include <memory>
+#include <string>
+#include <stdexcept>
 
 // FFmpeg C 库必须用 extern "C" 包裹
 extern "C" {
@@ -21,7 +15,6 @@ extern "C" {
 }
 
 #include <memory>
-#include <string>
 #include <stdexcept>
 
 // ── RAII 删除器 ───────────────────────────────────────────────────────────────

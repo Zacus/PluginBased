@@ -3,28 +3,30 @@
 #include <QObject>
 #include <QUrl>
 #include <QString>
-#include <QTimer>
+#include <QPointer>
 #include <QQmlEngine>
+#include <memory>
 
 #include "MediaInfo.h"
-#include "IPlayerPlugin.h"
+#include "FrameQueue.h"
+#include "ClockSync.h"
+#include "FFmpegDecoder.h"
+#include "AudioRenderer.h"
+#include "VideoRenderer.h"
+#include "FFmpegSurface.h"
 
 /**
- * @brief 播放引擎 —— PlayPlugin 模块内部业务类
+ * @brief PlayerEngine — PlayPlugin 的核心播放引擎
  *
- * ## 依赖获取方式（Step 2 后）
+ * 持有并协调以下组件：
+ *   FFmpegDecoder   解码线程，产出视频帧和音频帧
+ *   AudioRenderer   音频渲染线程，消费音频帧，维护音频时钟
+ *   VideoRenderer   视频渲染定时器（主线程），消费视频帧，同步时钟
+ *   FFmpegSurface   QML 视频输出组件（由 QML 侧创建，Engine 只持有弱引用）
  *
- * open() 时通过 PlaybackContext::instance().findPlugin(url) 获取解码插件，
- * 不再持有 PluginFinder 成员变量，不再有 registerPluginFinder 静态方法。
- *
- * 好处：
- *   - 无构造时拷贝：每次 open() 都取当前最新 finder，shutdown 后自动失效
- *   - 无静态方法：PlayerEngine 的职责回归纯粹——播放控制，不承担依赖注入容器角色
- *   - PlaybackContext 是模块内的统一上下文，未来扩展其他共享状态也有落脚点
- *
- * ## QML 注册
- * 注册在 URI="PlayPlugin" Version=1.0，由 PlayPlugin 的
- * qt_add_qml_module（PLUGIN_TARGET PlayPlugin）负责生成类型注册代码。
+ * QML 接口与之前完全保持不变：
+ *   - 所有 Q_PROPERTY 和信号不变，QML 代码无需修改
+ *   - position() 改为由 AudioRenderer::positionChanged 驱动，不再轮询
  */
 class PlayerEngine : public QObject
 {
@@ -48,8 +50,8 @@ public:
 
     PlaybackState playbackState()    const { return m_state; }
     int           playbackStateInt() const { return static_cast<int>(m_state); }
-    qint64        position()         const;
-    qint64        duration()         const;
+    qint64        position()         const { return m_position; }
+    qint64        duration()         const { return m_duration; }
     float         volume()           const { return m_volume; }
     bool          muted()            const { return m_muted; }
     MediaInfo*    currentMedia()     const { return m_mediaInfo; }
@@ -57,6 +59,9 @@ public:
 
     void setVolume(float v);
     void setMuted(bool m);
+
+    /** QML 侧把 FFmpegSurface 对象传入，Engine 连接 VideoRenderer::frameReady */
+    Q_INVOKABLE void setSurface(FFmpegSurface* surface);
 
 public slots:
     Q_INVOKABLE void open(const QUrl& url);
@@ -76,17 +81,47 @@ signals:
     void errorOccurred(const QString& msg);
     void endOfMedia();
 
+private slots:
+    // 来自 FFmpegDecoder 的信号
+    void onMediaInfoReady(qint64 durationMs, int width, int height,
+                          double fps, int sampleRate, int channels,
+                          int sampleFmt, const QString& format);
+    void onDecoderError(const QString& msg);
+    void onEndOfFile();
+
+    // 来自 AudioRenderer 的信号
+    void onAudioPosition(qint64 posMs);
+
+    // 来自 VideoRenderer 的信号
+    void onEndOfVideo();
+
 private:
     void setState(PlaybackState s);
     void setError(const QString& msg);
+    void stopAllComponents();
 
-    // 注意：不再持有 PluginFinder 成员变量
-    // open() 时实时从 PlaybackContext::instance() 取，无拷贝无缓存
-    IPlayerPlugin* m_plugin    = nullptr;
-    MediaInfo*     m_mediaInfo = nullptr;
-    PlaybackState  m_state     = Stopped;
-    float          m_volume    = 1.0f;
-    bool           m_muted     = false;
-    QString        m_errorString;
-    QTimer         m_positionTimer;
+    // ── 帧队列（PlayerEngine 持有，Decoder 写，Renderer 读）─────────────────
+    VideoFrameQueue m_videoQueue { 30 }; // 视频队列：30帧约1秒缓冲
+    AudioFrameQueue m_audioQueue { 64 }; // 音频队列：64帧
+
+    // ── 时钟（AudioRenderer 写，VideoRenderer 读）────────────────────────────
+    ClockSync m_clock;
+
+    // ── 组件（unique_ptr，生命周期由 PlayerEngine 管理）─────────────────────
+    std::unique_ptr<FFmpegDecoder>  m_decoder;
+    std::unique_ptr<AudioRenderer>  m_audioRenderer;
+    std::unique_ptr<VideoRenderer>  m_videoRenderer;
+
+    // ── QML 侧的渲染组件（弱引用，不拥有所有权）─────────────────────────────
+    QPointer<FFmpegSurface> m_surface;
+
+    // ── 播放状态 ─────────────────────────────────────────────────────────────
+    MediaInfo*    m_mediaInfo  = nullptr;
+    PlaybackState m_state      = Stopped;
+    qint64        m_position   = 0;
+    qint64        m_duration   = 0;
+    float         m_volume     = 1.0f;
+    bool          m_muted      = false;
+    QString       m_errorString;
+    QUrl          m_currentUrl; // open() 时记录，onMediaInfoReady 时写入 MediaInfo
 };
