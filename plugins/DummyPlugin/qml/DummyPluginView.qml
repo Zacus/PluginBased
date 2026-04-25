@@ -63,10 +63,16 @@ Item {
             model: myTimelineModel
             followMode: TimelineEnums.FollowCenter
             currentTime: root.playPosition
+            dragSensitivity: 0.1   // 0.1 极慢精细，1.0 原始速度
 
             onSeeked: function(t) {
                 root.playPosition = t
                 console.log("[DummyPlugin] seek(ms):", t)
+            }
+
+            onPlayRequested: function(t) {
+                root.playPosition = t          // 双击：跳转到该时间
+                playTimer.running = true       // 启动播放
             }
         }
 
