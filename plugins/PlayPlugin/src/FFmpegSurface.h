@@ -1,16 +1,16 @@
 #pragma once
 
+#include "FFmpegUtils.h"
+
 #include <QQuickItem>
-#include <QImage>
-#include <QSGImageNode>
 #include <QMutex>
 #include <QQmlEngine>
 
 /**
  * @brief FFmpegSurface — QML 视频渲染组件
  *
- * 继承 QQuickItem，重写 updatePaintNode，用 QSGImageNode 把 QImage
- * 上屏。QSGImageNode 在 Qt 渲染线程执行，零主线程 CPU 消耗。
+ * 继承 QQuickItem，重写 updatePaintNode，在 Scene Graph 中把 YUV plane
+ * 作为纹理交给 shader 采样上屏，避免 CPU 侧 swscale + QImage 转换。
  *
  * 使用方式（QML）：
  *   FFmpegSurface {
@@ -23,7 +23,7 @@
  *
  * 线程安全：
  *   onFrameReady 在主线程被调用（VideoRenderer 运行在主线程），
- *   updatePaintNode 在 Qt 渲染线程调用，两者通过 m_mutex + m_pendingImage 同步。
+ *   updatePaintNode 在 Qt 渲染线程调用，两者通过 m_mutex + m_pendingFrame 同步。
  */
 class FFmpegSurface : public QQuickItem
 {
@@ -42,7 +42,7 @@ public:
 
 public slots:
     /** 接收 VideoRenderer::frameReady 信号 */
-    void onFrameReady(const QImage& image);
+    void onFrameReady(const VideoFrameDataPtr& frame);
 
 signals:
     void aspectRatioModeChanged();
@@ -51,9 +51,9 @@ protected:
     QSGNode* updatePaintNode(QSGNode* old, UpdatePaintNodeData*) override;
 
 private:
-    QMutex  m_mutex;
-    QImage  m_pendingImage;   // 待上屏的帧（主线程写，渲染线程读）
-    bool    m_dirty = false;  // 是否有新帧待渲染
+    QMutex            m_mutex;
+    VideoFrameDataPtr m_pendingFrame;   // 待上屏的帧（主线程写，渲染线程读）
+    bool              m_dirty = false;  // 是否有新帧待渲染
 
     Qt::AspectRatioMode m_aspectRatioMode = Qt::KeepAspectRatio;
 };

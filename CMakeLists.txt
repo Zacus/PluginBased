@@ -6,7 +6,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 
-find_package(Qt6 REQUIRED COMPONENTS Core Gui Quick QuickControls2 Multimedia)
+find_package(Qt6 REQUIRED COMPONENTS Core Gui Quick QuickControls2 Multimedia ShaderTools)
 qt_standard_project_setup()
 
 find_package(spdlog REQUIRED)   # vcpkg / conan / system
@@ -24,6 +24,21 @@ pkg_check_modules(AVCODEC    REQUIRED IMPORTED_TARGET libavcodec)
 pkg_check_modules(AVUTIL     REQUIRED IMPORTED_TARGET libavutil)
 pkg_check_modules(SWSCALE    REQUIRED IMPORTED_TARGET libswscale)
 pkg_check_modules(SWRESAMPLE REQUIRED IMPORTED_TARGET libswresample)
+
+if(APPLE)
+    # pkgconf + static FFmpeg on macOS may inject bare framework names into
+    # INTERFACE_LINK_OPTIONS, which clang then treats as input files instead of
+    # "-framework Foo". The proper framework dependencies are still present in
+    # the imported link libraries, so strip the broken link options here.
+    foreach(_ffmpeg_target
+            PkgConfig::AVFORMAT
+            PkgConfig::AVCODEC
+            PkgConfig::AVUTIL
+            PkgConfig::SWSCALE
+            PkgConfig::SWRESAMPLE)
+        set_property(TARGET ${_ffmpeg_target} PROPERTY INTERFACE_LINK_OPTIONS "")
+    endforeach()
+endif()
 
 # 创建聚合 INTERFACE target FFmpeg::all，业务代码只需链接这一个
 # 和 spdlog::spdlog、Qt6::Core 的使用风格保持一致

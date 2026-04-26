@@ -98,10 +98,6 @@ void PlayerEngine::open(const QUrl& url)
     // 重置时钟
     m_clock.invalidate();
 
-    // 启动音频渲染线程（等待音频帧到来后开始播放）
-    if (!m_audioRenderer->isRunning())
-        m_audioRenderer->start(QThread::HighPriority);
-
     // 启动视频渲染定时器
     m_videoRenderer->start();
 
@@ -216,14 +212,14 @@ void PlayerEngine::onMediaInfoReady(qint64 durationMs,
     m_duration = durationMs;
     emit durationChanged(m_duration);
 
-    // 通知各渲染器更新源格式
-    if (width > 0 && height > 0)
-        m_videoRenderer->setSourceSize(width, height,
-                                       static_cast<AVPixelFormat>(AV_PIX_FMT_YUV420P));
-
-    if (sampleRate > 0 && channels > 0)
+    // VideoRenderer 会在真正消费 AVFrame 时读取颜色范围 / 色彩空间等信息，
+    // 这里不再提前做 CPU 侧的视频格式初始化。
+    if (sampleRate > 0 && channels > 0) {
         m_audioRenderer->setSourceFormat(sampleRate, channels,
                                          static_cast<AVSampleFormat>(sampleFmt));
+        if (!m_audioRenderer->isRunning())
+            m_audioRenderer->start(QThread::HighPriority);
+    }
 
     // 更新 MediaInfo（QML 侧显示文件信息）
     // onMediaInfoReady 通过 Qt::AutoConnection 在主线程执行，安全

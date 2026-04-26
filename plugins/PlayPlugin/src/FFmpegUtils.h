@@ -10,6 +10,7 @@ extern "C" {
 #include <libavcodec/avcodec.h>
 #include <libavutil/avutil.h>
 #include <libavutil/imgutils.h>
+#include <libavutil/pixdesc.h>
 #include <libswscale/swscale.h>
 #include <libswresample/swresample.h>
 }
@@ -65,9 +66,27 @@ using AVPacketPtr        = std::unique_ptr<AVPacket,        AVPacketDeleter>;
 using SwsContextPtr      = std::unique_ptr<SwsContext,      SwsContextDeleter>;
 using SwrContextPtr      = std::unique_ptr<SwrContext,      SwrContextDeleter>;
 
+struct VideoFrameData {
+    AVFramePtr frame;
+    bool       fullRange = false;
+    bool       bt709     = true;
+};
+
+using VideoFrameDataPtr = std::shared_ptr<VideoFrameData>;
+
 // ── 工厂函数 ──────────────────────────────────────────────────────────────────
 inline AVFramePtr  make_frame()  { return AVFramePtr(av_frame_alloc()); }
 inline AVPacketPtr make_packet() { return AVPacketPtr(av_packet_alloc()); }
+inline VideoFrameDataPtr make_video_frame(AVFramePtr frame,
+                                          bool fullRange,
+                                          bool bt709)
+{
+    auto data = std::make_shared<VideoFrameData>();
+    data->frame = std::move(frame);
+    data->fullRange = fullRange;
+    data->bt709 = bt709;
+    return data;
+}
 
 // ── 错误码转字符串 ────────────────────────────────────────────────────────────
 inline std::string av_err(int errcode)

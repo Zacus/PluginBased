@@ -82,6 +82,15 @@ qt_add_qml_module(PlayPlugin
         src/FFmpegSurface.h    src/FFmpegSurface.cpp
 )
 
+qt6_add_shaders(PlayPlugin "PlayPluginShaders"
+    PREFIX "/PlayPlugin/shaders"
+    BASE shaders
+    BATCHABLE
+    FILES
+        shaders/yuvvideo.vert
+        shaders/yuvvideo.frag
+)
+
 # ── 编译属性 ──────────────────────────────────────────────────
 set_target_properties(PlayPlugin PROPERTIES
     CXX_VISIBILITY_PRESET     hidden
@@ -102,6 +111,7 @@ target_include_directories(PlayPlugin PRIVATE
 target_link_libraries(PlayPlugin PRIVATE
     Qt6::Core
     Qt6::Gui
+    Qt6::GuiPrivate
     Qt6::Quick
     Qt6::Multimedia
     VideoPlayerPlugin                   # IPlayerPlugin.h（INTERFACE，零编译产物）

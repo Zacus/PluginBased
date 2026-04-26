@@ -26,7 +26,6 @@ void VideoRenderer::start()
 void VideoRenderer::stop()
 {
     m_timer.stop();
-    m_swsCtx.reset();
     LOG_DEBUG("VideoRenderer: stopped");
 }
 
@@ -37,18 +36,6 @@ void VideoRenderer::flush()
     // 丢弃暂存的旧帧（serial 已过期）
     m_hasHeld = false;
     m_heldEntry = {};
-}
-
-void VideoRenderer::setSourceSize(int width, int height, AVPixelFormat fmt)
-{
-    if (m_srcWidth == width && m_srcHeight == height && m_srcFmt == fmt)
-        return;
-    m_srcWidth  = width;
-    m_srcHeight = height;
-    m_srcFmt    = fmt;
-    m_swsCtx.reset(); // 触发重建
-    LOG_INFO("VideoRenderer: source size {}x{} fmt={}", width, height,
-             av_get_pix_fmt_name(fmt));
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -98,69 +85,12 @@ void VideoRenderer::onTimer()
             continue; // 丢帧，取下一帧
         }
 
-        // ── 渲染 ──────────────────────────────────────────────────────────────
-        if (!m_swsCtx) {
-            if (!initSwsContext()) return;
-        }
-
-        QImage img = convertFrame(entry.frame.get());
-        if (!img.isNull()) {
-            emit frameReady(img);
-        }
+        const bool fullRange = entry.frame->color_range == AVCOL_RANGE_JPEG;
+        const bool bt709 =
+            entry.frame->colorspace == AVCOL_SPC_BT709 ||
+            (entry.frame->colorspace == AVCOL_SPC_UNSPECIFIED &&
+             entry.frame->width >= 1280);
+        emit frameReady(make_video_frame(std::move(entry.frame), fullRange, bt709));
         return; // 每次定时器只渲染一帧
     }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// 初始化 swscale
-// ─────────────────────────────────────────────────────────────────────────────
-bool VideoRenderer::initSwsContext()
-{
-    if (m_srcWidth <= 0 || m_srcHeight <= 0) return false;
-
-    SwsContext* sws = sws_getContext(
-        m_srcWidth, m_srcHeight, m_srcFmt,           // 源
-        m_srcWidth, m_srcHeight, AV_PIX_FMT_RGB32,   // 目标：RGB32 = BGRA（Qt 兼容）
-        SWS_BILINEAR,
-        nullptr, nullptr, nullptr
-    );
-
-    if (!sws) {
-        LOG_ERROR("VideoRenderer: sws_getContext failed");
-        return false;
-    }
-
-    m_swsCtx.reset(sws);
-
-    // 预分配输出图像（避免每帧 malloc）
-    m_outputImage = QImage(m_srcWidth, m_srcHeight, QImage::Format_ARGB32);
-    LOG_DEBUG("VideoRenderer: swscale initialized {}x{}", m_srcWidth, m_srcHeight);
-    return true;
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// 帧转换 YUV → QImage
-// ─────────────────────────────────────────────────────────────────────────────
-QImage VideoRenderer::convertFrame(AVFrame* frame)
-{
-    if (!m_swsCtx || m_outputImage.isNull()) return {};
-
-    // sws_scale 直接写入 QImage 的内存，零额外拷贝
-    uint8_t* dstData[1]     = { m_outputImage.bits() };
-    int      dstLinesize[1] = { static_cast<int>(m_outputImage.bytesPerLine()) };
-
-    const int ret = sws_scale(
-        m_swsCtx.get(),
-        frame->data, frame->linesize,          // 源
-        0, frame->height,                      // 源行范围
-        dstData, dstLinesize                   // 目标
-    );
-
-    if (ret <= 0) {
-        LOG_WARN("VideoRenderer: sws_scale returned {}", ret);
-        return {};
-    }
-
-    // 返回 QImage 的浅拷贝（共享数据，copy-on-write，效率高）
-    return m_outputImage;
 }
