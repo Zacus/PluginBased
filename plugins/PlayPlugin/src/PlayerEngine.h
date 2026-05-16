@@ -88,6 +88,8 @@ private slots:
                           int sampleFmt, const QString& format);
     void onDecoderError(const QString& msg);
     void onEndOfFile();
+    void onDecoderPosition(qint64 posMs);
+    void onDecoderSeekCompleted(int generation);
 
     // 来自 AudioRenderer 的信号
     void onAudioPosition(qint64 posMs);
@@ -122,6 +124,8 @@ private:
     qint64        m_duration   = 0;
     float         m_volume     = 1.0f;
     bool          m_muted      = false;
+    bool          m_hasAudio   = false;
+    int           m_seekGeneration = 0;
     QString       m_errorString;
     QUrl          m_currentUrl; // open() 时记录，onMediaInfoReady 时写入 MediaInfo
 };

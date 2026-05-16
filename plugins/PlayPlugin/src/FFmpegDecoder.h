@@ -55,7 +55,7 @@ public slots:
     void openFile(const QUrl& url);
 
     /** seek 到指定位置（毫秒）*/
-    void seekTo(qint64 posMs);
+    void seekTo(qint64 posMs, int generation = 0);
 
     /** 暂停 / 恢复解码循环 */
     void setPaused(bool paused);
@@ -78,6 +78,9 @@ signals:
 
     /** 当前解码位置更新（毫秒），供主线程同步进度条 */
     void positionChanged(qint64 posMs);
+
+    /** seek 已在解码线程完成，generation 对应 seekTo() 的调用方标识 */
+    void seekCompleted(int generation);
 
 protected:
     void run() override;
@@ -120,6 +123,7 @@ private:
     QWaitCondition m_seekCond;
     bool   m_seekRequested = false;
     qint64 m_seekTargetMs  = 0;
+    int    m_seekGeneration = 0;
 
     QMutex         m_openMutex;
     QWaitCondition m_openCond;

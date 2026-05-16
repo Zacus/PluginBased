@@ -36,6 +36,9 @@ public:
     void start();                // 开始渲染定时器
     void stop();                 // 停止渲染定时器
     void flush();                // seek 时调用
+    void reset();                // 新媒体/停止时重置跨文件状态
+    void beginSeek(int generation);
+    void completeSeek(int generation);
 
 signals:
     /** 每一帧待显示的视频帧，发给 FFmpegSurface */
@@ -57,6 +60,6 @@ private:
     VideoFrameQueue::Entry m_heldEntry;
     bool                   m_hasHeld = false;
 
-    // 当前帧的 flush serial（用于丢弃 seek 前的旧帧）
-    int m_currentSerial = 0;
+    int  m_pendingSeekGeneration = 0;
+    bool m_seekPending = false;
 };

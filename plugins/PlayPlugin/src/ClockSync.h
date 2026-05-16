@@ -1,56 +1,97 @@
+/*
+ * @Author: zs
+ * @Date: 2026-04-07 15:39:45
+ * @LastEditors: zs
+ * @LastEditTime: 2026-04-27 00:02:15
+ * @FilePath: /VideoPlayer/plugins/PlayPlugin/src/ClockSync.h
+ * @Description: 
+ * 
+ * Copyright (c) 2026 by zs, All Rights Reserved. 
+ */
 #pragma once
 
 #include <QAtomicInteger>
+#include <QElapsedTimer>
+#include <QMutex>
 #include <QtGlobal>
 #include <limits>
 
-/**
- * @brief ClockSync — 音视频同步时钟
- *
- * 以音频时钟为主（工业标准：人耳对音频抖动更敏感）。
- *
- * AudioRenderer 持续更新 audioClock（已渲染的音频时间，单位：微秒）。
- * VideoRenderer 读取 audioClock，根据当前帧 PTS 决定：
- *   - PTS 比时钟早超过 EARLY_THRESHOLD_US  → 等待（帧还没到时间）
- *   - PTS 比时钟晚超过  LATE_THRESHOLD_US  → 丢帧（落后太多，追帧）
- *   - 否则                                 → 渲染
- *
- * 使用 QAtomicInteger<qint64> 保证无锁读写，不需要 mutex。
- */
 class ClockSync
 {
 public:
-    // 同步阈值（微秒）
-    static constexpr qint64 EARLY_THRESHOLD_US =  40'000;  // 早于时钟 40ms → 等待
-    static constexpr qint64 LATE_THRESHOLD_US  = 100'000;  // 晚于时钟 100ms → 丢帧
-
+    static constexpr qint64 EARLY_THRESHOLD_US =  40'000;
+    static constexpr qint64 LATE_THRESHOLD_US  = 100'000;
     static constexpr qint64 INVALID_CLOCK = std::numeric_limits<qint64>::min();
 
     ClockSync() { m_audioClock.storeRelaxed(INVALID_CLOCK); }
 
-    // ── AudioRenderer 写 ─────────────────────────────────────────────────────
-    void setAudioClock(qint64 us) { m_audioClock.storeRelaxed(us); }
-    void invalidate()             { m_audioClock.storeRelaxed(INVALID_CLOCK); }
+    // AudioRenderer 写：每次 processedUSecs 有新值时调用
+    void setAudioClock(qint64 us)
+    {
+        QMutexLocker lk(&m_mutex);
+        m_baseAudioUs = us;
+        m_elapsed.restart(); // 从这一刻开始用壁钟补偿
+        m_paused = false;
+        m_audioClock.storeRelaxed(us);
+    }
 
-    // ── VideoRenderer 读 ─────────────────────────────────────────────────────
-    qint64 audioClock() const { return m_audioClock.loadRelaxed(); }
-    bool   isValid()    const { return audioClock() != INVALID_CLOCK; }
+    void invalidate()
+    {
+        QMutexLocker lk(&m_mutex);
+        m_baseAudioUs = INVALID_CLOCK;
+        m_paused = false;
+        m_audioClock.storeRelaxed(INVALID_CLOCK);
+    }
 
-    /**
-     * @brief 判断视频帧该如何处理
-     * @param framePtsUs 帧的 PTS（微秒）
-     */
+    void setPaused(bool paused)
+    {
+        QMutexLocker lk(&m_mutex);
+        if (m_baseAudioUs == INVALID_CLOCK || m_paused == paused)
+            return;
+
+        if (paused)
+        {
+            m_baseAudioUs += m_elapsed.nsecsElapsed() / 1000;
+            m_audioClock.storeRelaxed(m_baseAudioUs);
+        }
+        else
+        {
+            m_elapsed.restart();
+        }
+
+        m_paused = paused;
+    }
+
+    // VideoRenderer 读：返回平滑后的时钟
+    qint64 audioClock() const
+    {
+        QMutexLocker lk(&m_mutex);
+        if (m_baseAudioUs == INVALID_CLOCK)
+            return INVALID_CLOCK;
+        if (m_paused)
+            return m_baseAudioUs;
+        // 用壁钟补偿 processedUSecs 的粗粒度更新
+        return m_baseAudioUs + m_elapsed.nsecsElapsed() / 1000;
+    }
+
+    bool isValid() const { return audioClock() != INVALID_CLOCK; }
+
     enum class Action { Render, Wait, Drop };
     Action decide(qint64 framePtsUs) const
     {
-        if (!isValid()) return Action::Render; // 无音频时直接渲染
+        const qint64 clk = audioClock();
+        if (clk == INVALID_CLOCK) return Action::Render;
 
-        const qint64 diff = framePtsUs - audioClock(); // 正数：帧还没到时间
+        const qint64 diff = framePtsUs - clk;
         if (diff >  EARLY_THRESHOLD_US) return Action::Wait;
         if (diff < -LATE_THRESHOLD_US)  return Action::Drop;
         return Action::Render;
     }
 
 private:
-    QAtomicInteger<qint64> m_audioClock;
+    mutable QMutex   m_mutex;
+    mutable QElapsedTimer m_elapsed;
+    qint64           m_baseAudioUs = INVALID_CLOCK;
+    bool             m_paused = false;
+    QAtomicInteger<qint64> m_audioClock; // 保留原子，兼容旧读取
 };

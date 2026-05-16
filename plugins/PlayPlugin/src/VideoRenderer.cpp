@@ -32,10 +32,33 @@ void VideoRenderer::stop()
 void VideoRenderer::flush()
 {
     // seek 时清空，旧帧由 FrameQueue::flush() 已经丢弃
-    ++m_currentSerial;
     // 丢弃暂存的旧帧（serial 已过期）
     m_hasHeld = false;
     m_heldEntry = {};
+}
+
+void VideoRenderer::reset()
+{
+    m_hasHeld = false;
+    m_heldEntry = {};
+    m_pendingSeekGeneration = 0;
+    m_seekPending = false;
+}
+
+void VideoRenderer::beginSeek(int generation)
+{
+    m_hasHeld = false;
+    m_heldEntry = {};
+    m_pendingSeekGeneration = generation;
+    m_seekPending = true;
+}
+
+void VideoRenderer::completeSeek(int generation)
+{
+    if (!m_seekPending || generation != m_pendingSeekGeneration)
+        return;
+
+    m_seekPending = false;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -43,6 +66,9 @@ void VideoRenderer::flush()
 // ─────────────────────────────────────────────────────────────────────────────
 void VideoRenderer::onTimer()
 {
+    if (m_seekPending)
+        return;
+
     // 一次最多处理有限帧，避免卡死主线程
     for (int attempts = 0; attempts < 4; ++attempts) {
 
@@ -63,15 +89,18 @@ void VideoRenderer::onTimer()
 
         if (!entry.frame) continue;
 
-        // 丢弃 seek 前的旧帧（serial 不匹配）
-        if (entry.serial < m_currentSerial) continue;
-
         // ── 音视频同步决策 ────────────────────────────────────────────────────
         // frame->pts 已由 FFmpegDecoder 统一换算为微秒（AV_TIME_BASE = 1000000）
         qint64 framePtsUs = entry.frame->pts;
         if (framePtsUs == AV_NOPTS_VALUE) framePtsUs = 0;
 
         const ClockSync::Action action = m_clock->decide(framePtsUs);
+
+                // ← 加这行，每次决策都打出来
+        LOG_DEBUG("VideoRenderer: pts={}µs clock={}µs action={}",
+                  framePtsUs, m_clock->audioClock(),
+                  action == ClockSync::Action::Wait   ? "Wait" :
+                  action == ClockSync::Action::Drop   ? "Drop" : "Render");
 
         if (action == ClockSync::Action::Wait) {
             // 帧还没到时间：暂存起来，8ms 后再判断，不丢弃

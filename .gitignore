@@ -3,6 +3,8 @@
 .AppleDouble
 .LSOverride
 .vscode
+.clang-tidy
+.clang-format
 
 # Build
 build/

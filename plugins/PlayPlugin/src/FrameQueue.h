@@ -52,6 +52,16 @@ public:
         return true;
     }
 
+    bool tryPush(T frame, int serial = 0, bool eof = false)
+    {
+        QMutexLocker lk(&m_mutex);
+        if (static_cast<int>(m_queue.size()) >= m_maxSize)
+            return false; // 满了直接返回，不阻塞
+        m_queue.push_back({ std::move(frame), serial, eof });
+        m_notEmpty.wakeOne();
+        return true;
+    }
+
     // ── 消费者接口（渲染线程调用）────────────────────────────────────────────
 
     /**

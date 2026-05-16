@@ -103,9 +103,7 @@ private:
 
 struct PendingUpload
 {
-    QByteArray data_y, data_u, data_v;
-    int stride_y = 0, stride_u = 0, stride_v = 0;
-    int width = 0, height = 0;
+    VideoFrameDataPtr frameData; // ← 直接持有 shared_ptr，不再拷贝像素
     bool valid = false;
 };
 
@@ -189,12 +187,13 @@ public:
     float opacity   = 1.0f;
     bool  fullRange = false;
     bool  bt709     = false;
+    bool pendingBlackFrame = false; // 纹理刚建好，需要上传一次占位黑帧
 
     // 缓存上一帧的标志，避免每帧都 dirty
     bool  cachedFullRange  = false;
     bool  cachedBt709      = false;
     bool  paramsDirty      = true;   // 首帧强制写入
-    
+    VideoFrameDataPtr currentFrame; // 保证 GPU 读取期间 AVFrame 不被释放
 
     QSGMaterialType* type() const override {
         static QSGMaterialType k_type;
@@ -292,49 +291,74 @@ bool updateUniformData(RenderState& state,
     {
         auto* mat = static_cast<VideoMaterial*>(new_mat);
 
-        // ── 纹理数据上传（每帧最多一次）──────────────────────────────────
-        if (mat->pending.valid) {
-            const auto& p     = mat->pending;
-            auto*       batch = state.resourceUpdateBatch();
+        // 纹理刚创建时上传一次黑帧占位，只执行一次
+        if (mat->pendingBlackFrame) {
+            const int w  = mat->size.width(),  h  = mat->size.height();
+            const int cw = mat->fmtInfo.chromaWidth(w);
+            const int ch = mat->fmtInfo.chromaHeight(h);
 
-            // 辅助 lambda：上传单个 YUV 平面，正确处理 FFmpeg linesize 对齐
-            auto upload_plane = [&](QRhiTexture*      tex,
-                                    const QByteArray& data,
-                                    int               stride,
-                                    QSize             tex_size)
+            // 8bit: Y=16 U/V=128；10bit R16 纹理同样用这个值，视觉上都是纯黑
+            const QByteArray black_y(w  * h,  char(16));
+            const QByteArray black_uv(cw * ch, char(128));
+
+            auto* batch = state.resourceUpdateBatch();
+            auto upload = [&](QRhiTexture* tex, const QByteArray& data, QSize sz) {
+                QRhiTextureSubresourceUploadDescription desc(data.constData(), data.size());
+                desc.setSourceSize(sz);
+                batch->uploadTexture(tex,
+                    QRhiTextureUploadDescription(QRhiTextureUploadEntry(0, 0, desc)));
+            };
+            upload(mat->tex_y, black_y,  { w,  h  });
+            upload(mat->tex_u, black_uv, { cw, ch });
+            upload(mat->tex_v, black_uv, { cw, ch });
+
+            mat->pendingBlackFrame = false;
+        }
+
+        // ── 直接从 AVFrame 上传，无中间拷贝 ──────────────────────────────────
+        if (mat->pending.valid && mat->pending.frameData)
+        {
+            const AVFrame*        frame = mat->pending.frameData->frame.get();
+            const PixelFormatInfo& fmt  = mat->fmtInfo;
+            auto* batch = state.resourceUpdateBatch();
+
+            auto upload_plane = [&](QRhiTexture*   tex,
+                                    const uint8_t* data,
+                                    int            stride,   // linesize（含对齐）
+                                    QSize          texSize)  // 有效像素区域
             {
                 QRhiTextureSubresourceUploadDescription desc(
-                    data.constData(), data.size());
-                // setSourceSize：有效像素区域（不含 stride 末尾 padding）
-                desc.setSourceSize(tex_size);
-                // setSourceLayout：每行实际字节数（含 FFmpeg 对齐 padding）
-                // 若省略，图像出现斜向错位条纹
-                desc.setDataStride(stride);
+                    data, stride * texSize.height());
+                desc.setSourceSize(texSize);
+                desc.setDataStride(stride);  // 告知 RHI 每行实际字节数
                 batch->uploadTexture(tex,
                     QRhiTextureUploadDescription(
                         QRhiTextureUploadEntry(0, 0, desc)));
             };
 
-            // [优化2] 色度平面高度向上取整，兼容奇数高度视频
-            const int chroma_h = (p.height + 1) / 2;
-            const int chroma_w = (p.width  + 1) / 2;
+            const int cw = fmt.chromaWidth (frame->width);
+            const int ch = fmt.chromaHeight(frame->height);
 
-            upload_plane(mat->tex_y, p.data_y, p.stride_y, { p.width,   p.height  });
-            upload_plane(mat->tex_u, p.data_u, p.stride_u, { chroma_w,  chroma_h  });
-            upload_plane(mat->tex_v, p.data_v, p.stride_v, { chroma_w,  chroma_h  });
+            upload_plane(mat->tex_y, frame->data[0], frame->linesize[0],
+                        { frame->width, frame->height });
+            upload_plane(mat->tex_u, frame->data[1], frame->linesize[1],
+                        { cw, ch });
+            upload_plane(mat->tex_v, frame->data[2], frame->linesize[2],
+                        { cw, ch });
 
             mat->pending.valid = false;
+            mat->currentFrame   = std::move(mat->pending.frameData); // ← 延迟释放
+// currentFrame 会在下一帧的 upload 时被下一帧的 shared_ptr 覆盖替换
+// 届时 GPU 必然已经执行完上一帧的命令，安全
         }
 
-        // ── 将 QRhiTexture* 包装为 QSGTexture* 并返回 ────────────────────
-        // thread_local：渲染线程固定，避免每帧堆分配
+        // ── 将 QRhiTexture* 包装为 QSGTexture* ───────────────────────────────
         static thread_local RhiTextureWrapper wrap_y, wrap_u, wrap_v;
-
         switch (binding) {
         case 0: wrap_y.setRhiTexture(mat->tex_y); *texture = &wrap_y; break;
         case 1: wrap_u.setRhiTexture(mat->tex_u); *texture = &wrap_u; break;
         case 2: wrap_v.setRhiTexture(mat->tex_v); *texture = &wrap_v; break;
-        default: *texture = nullptr;                                   break;
+        default: *texture = nullptr; break;
         }
     }
 };
@@ -376,53 +400,33 @@ public:
     }
 
         // 拷贝帧数据；GPU 上传延迟到 VideoShader 回调中执行
-    void setFrame(QQuickWindow* window, const VideoFrameData& data)
+    void setFrame(QQuickWindow* window, const VideoFrameDataPtr& frameData)
     {
-        if (!window) return;
-
-        const AVFrame* frame = data.frame.get();
+        if (!window || !frameData) return;
+        const AVFrame* frame = frameData->frame.get();
         if (!frame) return;
 
         const PixelFormatInfo fmt = PixelFormatInfo::fromAVFormat(frame->format);
         if (!fmt.valid) {
-            qWarning("FFmpegSurface: unsupported pixel format %d (%s), frame dropped.",
-                    frame->format,
-                    av_get_pix_fmt_name(static_cast<AVPixelFormat>(frame->format)));
+            qWarning("FFmpegSurface: unsupported pixel format %d, frame dropped.", frame->format);
             return;
         }
 
-        
         ensureTextures(window, frame->width, frame->height, fmt);
 
+        // ✅ 只存 shared_ptr，零拷贝
+        m_material_.pending.frameData = frameData;
+        m_material_.pending.valid     = true;
+        m_hasFrame = true;
 
-        const int chroma_h = fmt.chromaHeight(frame->height);
-
-        // const int chroma_h = (frame->height + 1) / 2;
-
-        auto& p    = m_material_.pending;
-        p.width    = frame->width;
-        p.height   = frame->height;
-        p.stride_y = frame->linesize[0];
-        p.stride_u = frame->linesize[1];
-        p.stride_v = frame->linesize[2];
-     
-        // 10bit 每像素 2 字节
-        p.data_y = QByteArray(reinterpret_cast<const char*>(frame->data[0]),
-                            frame->linesize[0] * frame->height);
-        p.data_u = QByteArray(reinterpret_cast<const char*>(frame->data[1]),
-                            frame->linesize[1] * chroma_h);
-        p.data_v = QByteArray(reinterpret_cast<const char*>(frame->data[2]),
-                            frame->linesize[2] * chroma_h);
-        p.valid  = true;
-         m_hasFrame  = true;
-        // 仅在参数变化时标脏，避免每帧写 uniform buffer
-        if (m_material_.cachedFullRange != data.fullRange ||
-            m_material_.cachedBt709     != data.bt709)
+        // 色彩空间参数（仅变化时才标脏）
+        if (m_material_.cachedFullRange != frameData->fullRange ||
+            m_material_.cachedBt709     != frameData->bt709)
         {
-            m_material_.fullRange       = data.fullRange;
-            m_material_.bt709           = data.bt709;
-            m_material_.cachedFullRange = data.fullRange;
-            m_material_.cachedBt709     = data.bt709;
+            m_material_.fullRange       = frameData->fullRange;
+            m_material_.bt709           = frameData->bt709;
+            m_material_.cachedFullRange = frameData->fullRange;
+            m_material_.cachedBt709     = frameData->bt709;
             m_material_.paramsDirty     = true;
         }
 
@@ -433,6 +437,15 @@ public:
 
     // 用于 FFmpegSurface 在无新帧时仍能计算 drawRect
     QSize videoSize() const { return m_material_.size; }
+
+    void clearToBlack() {
+        m_hasFrame = false;
+        if (m_material_.tex_y) {  // 纹理存在才填，否则直接透明
+            m_material_.pendingBlackFrame = true;
+            m_material_.paramsDirty = true;
+            markDirty(QSGNode::DirtyMaterial);
+        }
+    }
 
 private:
     void ensureTextures(QQuickWindow* window, int w, int h,  const PixelFormatInfo& fmt)
@@ -455,16 +468,10 @@ private:
         m_material_.fmtInfo = fmt;
 
         // ✅ 填充占位数据：Y=16, U=128, V=128 → 纯黑（limited range）
-        auto& p    = m_material_.pending;
-        p.width    = w;
-        p.height   = h;
-        p.stride_y = w;
-        p.stride_u = cw;
-        p.stride_v = cw;
-        p.data_y   = QByteArray(w * h,        char(16));
-        p.data_u   = QByteArray(cw * ch, char(128));
-        p.data_v   = QByteArray(cw * ch, char(128));
-        p.valid    = true;
+        m_material_.pendingBlackFrame = true; // ← 只立 flag，不再填 QByteArray
+        m_material_.paramsDirty = true;
+        m_material_.cachedFullRange = !m_material_.fullRange;
+        m_material_.cachedBt709     = !m_material_.bt709;
 
         // // 纹理重建后颜色矩阵需重新写入 uniform buffer
         // m_material_.colorMatrixDirty = true;
@@ -483,10 +490,12 @@ private:
         delete m_material_.tex_u; m_material_.tex_u = nullptr;
         delete m_material_.tex_v; m_material_.tex_v = nullptr;
         m_material_.size = {};
+        m_material_.currentFrame.reset(); 
     }
 
+    
     VideoMaterial m_material_;
-    bool m_hasFrame  = false; 
+    bool m_hasFrame  = false;
 };
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -528,14 +537,22 @@ QSGNode* FFmpegSurface::updatePaintNode(QSGNode*         old_node,
 {
     auto* node = static_cast<VideoNode*>(old_node);
 
+    bool clearPending = false;
     // ── 取出待上屏的帧（move 转移所有权，避免引用计数抖动）────────────────
     VideoFrameDataPtr frame;
     {
         QMutexLocker lock(&m_mutex);
+        clearPending   = m_clearPending;
+        m_clearPending = false;
         if (m_dirty) {
             frame   = std::move(m_pendingFrame);
             m_dirty = false;
         }
+    }
+
+    // 清屏：不删节点，只填黑，GPU 纹理安全
+    if (clearPending && node) {
+        node->clearToBlack();
     }
 
     if (!frame && (!node || !node->hasFrame())) {
@@ -568,7 +585,16 @@ QSGNode* FFmpegSurface::updatePaintNode(QSGNode*         old_node,
     node->setRect(draw_rect);
 
     if (frame)
-        node->setFrame(window(), *frame);
+        node->setFrame(window(), frame);
 
     return node;
+}
+
+void FFmpegSurface::clear()
+{
+    {
+        QMutexLocker lock(&m_mutex);
+        m_clearPending = true; // 标记正在清除，updatePaintNode 里可选地处理（如显示纯黑）
+    }
+    QMetaObject::invokeMethod(this, "update", Qt::QueuedConnection);
 }

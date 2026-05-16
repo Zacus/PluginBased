@@ -1,36 +1,34 @@
 #include "PlayerEngine.h"
-#include "PlaybackContext.h"
 #include "Logger.h"
+#include "PlaybackContext.h"
 
 #include <QFileInfo>
 // ─────────────────────────────────────────────────────────────────────────────
 // 构造 / 析构
 // ─────────────────────────────────────────────────────────────────────────────
-PlayerEngine::PlayerEngine(QObject* parent)
-    : QObject(parent)
+PlayerEngine::PlayerEngine(QObject* parent) : QObject(parent)
 {
     // 构造时就创建好组件，队列在成员初始化时已构造
-    m_decoder       = std::make_unique<FFmpegDecoder>(&m_videoQueue, &m_audioQueue);
+    m_decoder = std::make_unique<FFmpegDecoder>(&m_videoQueue, &m_audioQueue);
     m_audioRenderer = std::make_unique<AudioRenderer>(&m_audioQueue, &m_clock);
     m_videoRenderer = std::make_unique<VideoRenderer>(&m_videoQueue, &m_clock);
 
     // ── FFmpegDecoder 信号 ────────────────────────────────────────────────────
-    connect(m_decoder.get(), &FFmpegDecoder::mediaInfoReady,
-            this, &PlayerEngine::onMediaInfoReady);
-    connect(m_decoder.get(), &FFmpegDecoder::errorOccurred,
-            this, &PlayerEngine::onDecoderError);
-    connect(m_decoder.get(), &FFmpegDecoder::endOfFile,
-            this, &PlayerEngine::onEndOfFile);
+    connect(m_decoder.get(), &FFmpegDecoder::mediaInfoReady, this, &PlayerEngine::onMediaInfoReady);
+    connect(m_decoder.get(), &FFmpegDecoder::errorOccurred, this, &PlayerEngine::onDecoderError);
+    connect(m_decoder.get(), &FFmpegDecoder::endOfFile, this, &PlayerEngine::onEndOfFile);
+    connect(m_decoder.get(), &FFmpegDecoder::positionChanged, this, &PlayerEngine::onDecoderPosition);
+    connect(m_decoder.get(), &FFmpegDecoder::seekCompleted, this,
+            &PlayerEngine::onDecoderSeekCompleted);
 
     // ── AudioRenderer 信号 ────────────────────────────────────────────────────
-    connect(m_audioRenderer.get(), &AudioRenderer::positionChanged,
-            this, &PlayerEngine::onAudioPosition);
-    connect(m_audioRenderer.get(), &AudioRenderer::errorOccurred,
-            this, &PlayerEngine::onDecoderError);
+    connect(m_audioRenderer.get(), &AudioRenderer::positionChanged, this,
+            &PlayerEngine::onAudioPosition);
+    connect(m_audioRenderer.get(), &AudioRenderer::errorOccurred, this,
+            &PlayerEngine::onDecoderError);
 
     // ── VideoRenderer 信号 ────────────────────────────────────────────────────
-    connect(m_videoRenderer.get(), &VideoRenderer::endOfVideo,
-            this, &PlayerEngine::onEndOfVideo);
+    connect(m_videoRenderer.get(), &VideoRenderer::endOfVideo, this, &PlayerEngine::onEndOfVideo);
 
     LOG_DEBUG("PlayerEngine created");
     PlaybackContext::instance().registerEngine(this);
@@ -50,14 +48,14 @@ void PlayerEngine::setSurface(FFmpegSurface* surface)
 {
     // 断开旧的连接
     if (m_surface)
-        disconnect(m_videoRenderer.get(), &VideoRenderer::frameReady,
-                   m_surface.data(), &FFmpegSurface::onFrameReady);
+        disconnect(m_videoRenderer.get(), &VideoRenderer::frameReady, m_surface.data(),
+                   &FFmpegSurface::onFrameReady);
 
     m_surface = surface;
 
     if (m_surface)
-        connect(m_videoRenderer.get(), &VideoRenderer::frameReady,
-                m_surface.data(), &FFmpegSurface::onFrameReady,
+        connect(m_videoRenderer.get(), &VideoRenderer::frameReady, m_surface.data(),
+                &FFmpegSurface::onFrameReady,
                 Qt::DirectConnection); // 主线程 → 主线程，直接调用
 }
 
@@ -67,7 +65,8 @@ void PlayerEngine::setSurface(FFmpegSurface* surface)
 void PlayerEngine::setVolume(float v)
 {
     v = qBound(0.0f, v, 1.0f);
-    if (qFuzzyCompare(m_volume, v)) return;
+    if (qFuzzyCompare(m_volume, v))
+        return;
     m_volume = v;
     m_audioRenderer->setVolume(v);
     emit volumeChanged(m_volume);
@@ -75,7 +74,8 @@ void PlayerEngine::setVolume(float v)
 
 void PlayerEngine::setMuted(bool m)
 {
-    if (m_muted == m) return;
+    if (m_muted == m)
+        return;
     m_muted = m;
     m_audioRenderer->setMuted(m);
     emit mutedChanged(m_muted);
@@ -89,7 +89,12 @@ void PlayerEngine::open(const QUrl& url)
     LOG_INFO("PlayerEngine: open({})", url.toString().toStdString());
     stop();
 
+    if (m_surface)
+        m_surface->clear();
+
     m_currentUrl = url;
+    m_hasAudio = false;
+    m_seekGeneration = 0;
 
     // 重置队列 abort 状态（stop 时 abort 了，open 前需要恢复）
     m_videoQueue.resetAbort();
@@ -109,7 +114,8 @@ void PlayerEngine::open(const QUrl& url)
 
 void PlayerEngine::play()
 {
-    if (m_state == Playing) return;
+    if (m_state == Playing)
+        return;
     m_decoder->setPaused(false);
     m_audioRenderer->setPaused(false);
     // VideoRenderer 定时器持续运行：
@@ -121,9 +127,12 @@ void PlayerEngine::play()
 
 void PlayerEngine::pause()
 {
-    if (m_state != Playing) return;
-    if(m_decoder) m_decoder->setPaused(true);
-    if(m_audioRenderer) m_audioRenderer->setPaused(true);
+    if (m_state != Playing)
+        return;
+    if (m_decoder)
+        m_decoder->setPaused(true);
+    if (m_audioRenderer)
+        m_audioRenderer->setPaused(true);
     // m_decoder->setPaused(true);
     // m_audioRenderer->setPaused(true);
     // VideoRenderer 定时器刻意不停：
@@ -136,24 +145,33 @@ void PlayerEngine::pause()
 
 void PlayerEngine::stop()
 {
-    if (m_state == Stopped) return;
+    if (m_state == Stopped)
+        return;
     stopAllComponents();
     setState(Stopped);
     m_position = 0;
     m_duration = 0;
+    m_hasAudio = false;
     delete m_mediaInfo;
     m_mediaInfo = nullptr;
+
     emit currentMediaChanged(nullptr);
+    if (m_surface)
+        m_surface->clear();
     LOG_INFO("PlayerEngine: stop");
 }
 
 void PlayerEngine::seek(qint64 positionMs)
 {
-    if (m_state == Stopped) return;
+    if (m_state == Stopped)
+        return;
     LOG_INFO("PlayerEngine: seek to {}ms", positionMs);
 
+    const int seekGeneration = ++m_seekGeneration;
+
     // 通知各组件 seek
-    m_decoder->seekTo(positionMs);
+    m_videoRenderer->beginSeek(seekGeneration);
+    m_decoder->seekTo(positionMs, seekGeneration);
     m_audioRenderer->flush();
     m_videoRenderer->flush();
 
@@ -167,8 +185,10 @@ void PlayerEngine::seek(qint64 positionMs)
 
 void PlayerEngine::togglePlayPause()
 {
-    if (m_state == Playing) pause();
-    else if (m_state == Paused) play();
+    if (m_state == Playing)
+        pause();
+    else if (m_state == Paused)
+        play();
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -186,6 +206,7 @@ void PlayerEngine::stopAllComponents()
 
     // 视频渲染器（主线程，只需停止定时器）
     m_videoRenderer->stop();
+    m_videoRenderer->reset();
 
     // 清空队列
     m_videoQueue.flush();
@@ -199,22 +220,22 @@ void PlayerEngine::stopAllComponents()
 // ─────────────────────────────────────────────────────────────────────────────
 // 来自 FFmpegDecoder 的信号处理
 // ─────────────────────────────────────────────────────────────────────────────
-void PlayerEngine::onMediaInfoReady(qint64 durationMs,
-                                    int width, int height,
-                                    double fps,
-                                    int sampleRate, int channels,
-                                    int sampleFmt,
+void PlayerEngine::onMediaInfoReady(qint64 durationMs, int width, int height, double fps,
+                                    int sampleRate, int channels, int sampleFmt,
                                     const QString& format)
 {
-    LOG_INFO("PlayerEngine: mediaInfoReady dur={}ms {}x{} @{:.1f}fps {}Hz {}ch fmt={}",
-             durationMs, width, height, fps, sampleRate, channels, sampleFmt);
+    LOG_INFO("PlayerEngine: mediaInfoReady dur={}ms {}x{} @{:.1f}fps {}Hz {}ch fmt={}", durationMs,
+             width, height, fps, sampleRate, channels, sampleFmt);
 
     m_duration = durationMs;
     emit durationChanged(m_duration);
 
     // VideoRenderer 会在真正消费 AVFrame 时读取颜色范围 / 色彩空间等信息，
     // 这里不再提前做 CPU 侧的视频格式初始化。
-    if (sampleRate > 0 && channels > 0) {
+    m_hasAudio = sampleRate > 0 && channels > 0;
+
+    if (m_hasAudio)
+    {
         m_audioRenderer->setSourceFormat(sampleRate, channels,
                                          static_cast<AVSampleFormat>(sampleFmt));
         if (!m_audioRenderer->isRunning())
@@ -224,14 +245,8 @@ void PlayerEngine::onMediaInfoReady(qint64 durationMs,
     // 更新 MediaInfo（QML 侧显示文件信息）
     // onMediaInfoReady 通过 Qt::AutoConnection 在主线程执行，安全
     delete m_mediaInfo;
-    m_mediaInfo = new MediaInfo(
-        m_currentUrl,
-        QFileInfo(m_currentUrl.toLocalFile()).baseName(),
-        durationMs,
-        width, height,
-        format,
-        this
-    );
+    m_mediaInfo = new MediaInfo(m_currentUrl, QFileInfo(m_currentUrl.toLocalFile()).baseName(),
+                                durationMs, width, height, format, this);
     emit currentMediaChanged(m_mediaInfo);
 }
 
@@ -246,6 +261,20 @@ void PlayerEngine::onEndOfFile()
     // 不立即 stop，等 VideoRenderer 处理完剩余帧后发 endOfVideo
     // 如果是纯音频文件（无视频流），直接发 endOfMedia
     emit endOfMedia();
+}
+
+void PlayerEngine::onDecoderPosition(qint64 posMs)
+{
+    if (m_hasAudio)
+        return;
+
+    m_position = posMs;
+    emit positionChanged(m_position);
+}
+
+void PlayerEngine::onDecoderSeekCompleted(int generation)
+{
+    m_videoRenderer->completeSeek(generation);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -271,7 +300,8 @@ void PlayerEngine::onEndOfVideo()
 // ─────────────────────────────────────────────────────────────────────────────
 void PlayerEngine::setState(PlaybackState s)
 {
-    if (m_state == s) return;
+    if (m_state == s)
+        return;
     m_state = s;
     emit playbackStateChanged(static_cast<int>(m_state));
 }

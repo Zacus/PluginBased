@@ -1,10 +1,20 @@
+/*
+ * @Author: zs
+ * @Date: 2026-04-07 15:41:46
+ * @LastEditors: zs
+ * @LastEditTime: 2026-05-07 16:35:19
+ * @FilePath: /VideoPlayer/plugins/PlayPlugin/src/FFmpegSurface.h
+ * @Description:
+ *
+ * Copyright (c) 2026 by zs, All Rights Reserved.
+ */
 #pragma once
 
 #include "FFmpegUtils.h"
 
-#include <QQuickItem>
 #include <QMutex>
 #include <QQmlEngine>
+#include <QQuickItem>
 
 /**
  * @brief FFmpegSurface — QML 视频渲染组件
@@ -30,30 +40,34 @@ class FFmpegSurface : public QQuickItem
     Q_OBJECT
     QML_ELEMENT
 
-    Q_PROPERTY(Qt::AspectRatioMode aspectRatioMode
-               READ aspectRatioMode WRITE setAspectRatioMode
-               NOTIFY aspectRatioModeChanged)
+    Q_PROPERTY(Qt::AspectRatioMode aspectRatioMode READ aspectRatioMode WRITE setAspectRatioMode
+                   NOTIFY aspectRatioModeChanged)
 
-public:
+  public:
     explicit FFmpegSurface(QQuickItem* parent = nullptr);
 
-    Qt::AspectRatioMode aspectRatioMode() const { return m_aspectRatioMode; }
+    Qt::AspectRatioMode aspectRatioMode() const
+    {
+        return m_aspectRatioMode;
+    }
     void setAspectRatioMode(Qt::AspectRatioMode mode);
 
-public slots:
+  public slots:
     /** 接收 VideoRenderer::frameReady 信号 */
     void onFrameReady(const VideoFrameDataPtr& frame);
+    void clear();
 
-signals:
+  signals:
     void aspectRatioModeChanged();
 
-protected:
+  protected:
     QSGNode* updatePaintNode(QSGNode* old, UpdatePaintNodeData*) override;
 
-private:
-    QMutex            m_mutex;
-    VideoFrameDataPtr m_pendingFrame;   // 待上屏的帧（主线程写，渲染线程读）
-    bool              m_dirty = false;  // 是否有新帧待渲染
+  private:
+    QMutex m_mutex;
+    VideoFrameDataPtr m_pendingFrame; // 待上屏的帧（主线程写，渲染线程读）
+    bool m_dirty = false;             // 是否有新帧待渲染
+    bool m_clearPending = false;
 
     Qt::AspectRatioMode m_aspectRatioMode = Qt::KeepAspectRatio;
 };

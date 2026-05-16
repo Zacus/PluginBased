@@ -40,7 +40,8 @@ Rectangle {
             Layout.fillWidth: true
             from:    0.0
             to:      1.0
-            value:   root.duration > 0 ? root.position / root.duration : 0
+            value:   seekBar.pressed ? seekBar.value
+                             : (root.duration > 0 ? root.position / root.duration : 0)
             enabled: root.duration > 0
 
             onMoved: root.seekRequested(value * root.duration)
