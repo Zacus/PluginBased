@@ -183,6 +183,7 @@ void AudioRenderer::run()
         {
             // 音频流结束，等待下一个文件
             m_clock->invalidate();
+            emit endOfAudio();
             continue;
         }
 

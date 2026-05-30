@@ -26,6 +26,8 @@ PlayerEngine::PlayerEngine(QObject* parent) : QObject(parent)
             &PlayerEngine::onAudioPosition);
     connect(m_audioRenderer.get(), &AudioRenderer::errorOccurred, this,
             &PlayerEngine::onDecoderError);
+    connect(m_audioRenderer.get(), &AudioRenderer::endOfAudio, this,
+            &PlayerEngine::onEndOfAudio);
 
     // ── VideoRenderer 信号 ────────────────────────────────────────────────────
     connect(m_videoRenderer.get(), &VideoRenderer::endOfVideo, this, &PlayerEngine::onEndOfVideo);
@@ -94,6 +96,11 @@ void PlayerEngine::open(const QUrl& url)
 
     m_currentUrl = url;
     m_hasAudio = false;
+    m_hasVideo = false;
+    m_decoderFinished = false;
+    m_audioFinished = false;
+    m_videoFinished = false;
+    m_mediaFinished = false;
     m_seekGeneration = 0;
 
     // 重置队列 abort 状态（stop 时 abort 了，open 前需要恢复）
@@ -152,9 +159,16 @@ void PlayerEngine::stop()
     m_position = 0;
     m_duration = 0;
     m_hasAudio = false;
+    m_hasVideo = false;
+    m_decoderFinished = false;
+    m_audioFinished = false;
+    m_videoFinished = false;
+    m_mediaFinished = true;
     delete m_mediaInfo;
     m_mediaInfo = nullptr;
 
+    emit positionChanged(m_position);
+    emit durationChanged(m_duration);
     emit currentMediaChanged(nullptr);
     if (m_surface)
         m_surface->clear();
@@ -163,9 +177,18 @@ void PlayerEngine::stop()
 
 void PlayerEngine::seek(qint64 positionMs)
 {
-    if (m_state == Stopped)
+    if (m_state == Stopped && !m_mediaFinished)
         return;
     LOG_INFO("PlayerEngine: seek to {}ms", positionMs);
+
+    const bool resumeAfterSeek = m_mediaFinished;
+    if (m_mediaFinished)
+    {
+        m_decoderFinished = false;
+        m_audioFinished = !m_hasAudio;
+        m_videoFinished = !m_hasVideo;
+        m_mediaFinished = false;
+    }
 
     const int seekGeneration = ++m_seekGeneration;
 
@@ -181,6 +204,13 @@ void PlayerEngine::seek(qint64 positionMs)
     // 立即更新 UI 进度条（不等音频时钟重建）
     m_position = positionMs;
     emit positionChanged(m_position);
+
+    if (resumeAfterSeek)
+    {
+        m_decoder->setPaused(false);
+        m_audioRenderer->setPaused(false);
+        setState(Playing);
+    }
 }
 
 void PlayerEngine::togglePlayPause()
@@ -233,6 +263,7 @@ void PlayerEngine::onMediaInfoReady(qint64 durationMs, int width, int height, do
     // VideoRenderer 会在真正消费 AVFrame 时读取颜色范围 / 色彩空间等信息，
     // 这里不再提前做 CPU 侧的视频格式初始化。
     m_hasAudio = sampleRate > 0 && channels > 0;
+    m_hasVideo = width > 0 && height > 0;
 
     if (m_hasAudio)
     {
@@ -253,14 +284,31 @@ void PlayerEngine::onMediaInfoReady(qint64 durationMs, int width, int height, do
 void PlayerEngine::onDecoderError(const QString& msg)
 {
     setError(msg);
+    stopAllComponents();
+    setState(Stopped);
+    m_position = 0;
+    m_duration = 0;
+    m_hasAudio = false;
+    m_hasVideo = false;
+    m_decoderFinished = false;
+    m_audioFinished = false;
+    m_videoFinished = false;
+    m_mediaFinished = true;
+    emit positionChanged(m_position);
+    emit durationChanged(m_duration);
 }
 
 void PlayerEngine::onEndOfFile()
 {
     LOG_INFO("PlayerEngine: end of file");
     // 不立即 stop，等 VideoRenderer 处理完剩余帧后发 endOfVideo
-    // 如果是纯音频文件（无视频流），直接发 endOfMedia
-    emit endOfMedia();
+    // 如果有音频，也要等 AudioRenderer 消费到 EOF，避免截断音频缓冲。
+    m_decoderFinished = true;
+    if (!m_hasAudio)
+        m_audioFinished = true;
+    if (!m_hasVideo)
+        m_videoFinished = true;
+    maybeFinishMedia();
 }
 
 void PlayerEngine::onDecoderPosition(qint64 posMs)
@@ -286,13 +334,21 @@ void PlayerEngine::onAudioPosition(qint64 posMs)
     emit positionChanged(m_position);
 }
 
+void PlayerEngine::onEndOfAudio()
+{
+    LOG_INFO("PlayerEngine: end of audio");
+    m_audioFinished = true;
+    maybeFinishMedia();
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // 来自 VideoRenderer 的信号处理
 // ─────────────────────────────────────────────────────────────────────────────
 void PlayerEngine::onEndOfVideo()
 {
     LOG_INFO("PlayerEngine: end of video");
-    emit endOfMedia();
+    m_videoFinished = true;
+    maybeFinishMedia();
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -311,4 +367,28 @@ void PlayerEngine::setError(const QString& msg)
     m_errorString = msg;
     LOG_ERROR("PlayerEngine error: {}", msg.toStdString());
     emit errorOccurred(msg);
+}
+
+void PlayerEngine::maybeFinishMedia()
+{
+    if (!m_decoderFinished)
+        return;
+    if (m_hasAudio && !m_audioFinished)
+        return;
+    if (m_hasVideo && !m_videoFinished)
+        return;
+
+    finishMedia();
+}
+
+void PlayerEngine::finishMedia()
+{
+    if (m_mediaFinished)
+        return;
+
+    m_mediaFinished = true;
+    m_decoder->setPaused(true);
+    m_audioRenderer->setPaused(true);
+    setState(Paused);
+    emit endOfMedia();
 }

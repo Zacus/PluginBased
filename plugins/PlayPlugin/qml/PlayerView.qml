@@ -1,5 +1,5 @@
 // PlayerView.qml —— PlayPlugin 模块内部组件
-// 只依赖 PlayPlugin 1.0、AppLog 1.0 和 Qt 标准模块，对宿主模块零感知。
+// 依赖 PlayPlugin 1.0、AppLog 1.0、Qt 标准模块，以及子组件使用的 QuickUI.Components。
 
 import QtQuick
 import QtQuick.Controls.Basic
@@ -10,6 +10,9 @@ import PlayPlugin 1.0          // PlayerEngine、PlaylistModel、MediaInfo、Pla
 
 Item {
     id: root
+
+    property bool playlistOpen: false
+    signal playlistToggleRequested()
 
     PlayerEngine {
         id: engine
@@ -45,6 +48,11 @@ Item {
         }
     }
 
+    Rectangle {
+        anchors.fill: parent
+        color: "#0b0c10"
+    }
+
     // ── 视频输出 ──────────────────────────────────────────────────────────
     FFmpegSurface {
         id: videoSurface
@@ -54,22 +62,32 @@ Item {
         // 无媒体时的占位提示
         Rectangle {
             anchors.fill: parent
-            color: "#08080e"
+            color: "#0b0c10"
             visible: engine.playbackState === 0 && engine.currentMedia === null
 
             Column {
                 anchors.centerIn: parent
-                spacing: 18
-                Text { anchors.horizontalCenter: parent.horizontalCenter; text: "▶"; font.pixelSize: 64; color: "#ffffff18" }
-                Text { anchors.horizontalCenter: parent.horizontalCenter; text: "Open a file to start playing"; color: "#ffffff40"; font.pixelSize: 15 }
+                spacing: 12
+                Text {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    text: "▶"
+                    font.pixelSize: 52
+                    color: "#ffffff22"
+                }
+                Text {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    text: "打开一个媒体文件开始播放"
+                    color: "#d7dce680"
+                    font.pixelSize: 14
+                }
             }
         }
 
         // 标题（暂停时显示）
         Text {
-            anchors { top: parent.top; left: parent.left; margins: 20 }
+            anchors { top: parent.top; left: parent.left; margins: 24 }
             text: engine.currentMedia ? engine.currentMedia.title : ""
-            color: "#ffffffcc"; font.pixelSize: 16; font.bold: true
+            color: "#f5f7facc"; font.pixelSize: 15; font.bold: true
             opacity: engine.playbackState === 1 ? 0 : 1
             Behavior on opacity { NumberAnimation { duration: 600 } }
         }
@@ -104,6 +122,7 @@ Item {
         duration:      engine.duration
         volume:        engine.volume
         muted:         engine.muted
+        playlistOpen:  root.playlistOpen
         onPlayPauseRequested: engine.togglePlayPause()
         onStopRequested:      engine.stop()
         onSeekRequested:      (ms) => engine.seek(ms)
@@ -112,5 +131,6 @@ Item {
         onOpenRequested:      fileDlg.open()
         onPreviousRequested:  playlist.previous()
         onNextRequested:      playlist.next()
+        onPlaylistRequested:  root.playlistToggleRequested()
     }
 }

@@ -64,6 +64,7 @@ class AudioRenderer : public QThread
   signals:
     void positionChanged(qint64 posMs); // 当前音频播放位置（毫秒）
     void errorOccurred(const QString& msg);
+    void endOfAudio();
 
   protected:
     void run() override;

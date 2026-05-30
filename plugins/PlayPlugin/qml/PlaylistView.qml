@@ -6,110 +6,187 @@ import QuickUI.Components 1.0
 Item {
     id: root
 
-    // 由父级 PlayerView 注入
     property var playlistModel: null
+    signal closeRequested()
 
     Rectangle {
         anchors.fill: parent
-        color: "#0e0e15"
+        color: "#15171d"
+    }
 
-        ColumnLayout {
-            anchors.fill: parent
-            spacing: 0
+    ColumnLayout {
+        anchors.fill: parent
+        spacing: 0
 
-            // ── 标题栏 ────────────────────────────────────────────────────
-            Rectangle {
-                Layout.fillWidth: true
-                height: 42
-                color: "#16161e"
+        Rectangle {
+            Layout.fillWidth: true
+            height: 58
+            color: "#181b22"
 
-                RowLayout {
-                    anchors { fill: parent; leftMargin: 14; rightMargin: 10 }
+            RowLayout {
+                anchors.fill: parent
+                anchors.leftMargin: 18
+                anchors.rightMargin: 12
+                spacing: 8
+
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    spacing: 1
+
                     Text {
-                        text: "PLAYLIST"
-                        color: "#6060a0"; font.pixelSize: 11; font.bold: true; font.letterSpacing: 2
+                        text: "播放列表"
+                        color: "#f4f7fb"
+                        font.pixelSize: 15
+                        font.bold: true
                     }
-                    Item { Layout.fillWidth: true }
-                    IconButton {
-                        iconText: "🗑"; tooltip: "Clear playlist"; fontSize: 13
-                        onClicked: { if (root.playlistModel) root.playlistModel.clear() }
+
+                    Text {
+                        text: listView.count + " 个项目"
+                        color: "#8f98a8"
+                        font.pixelSize: 11
                     }
                 }
-                Rectangle {
-                    anchors.bottom: parent.bottom
-                    width: parent.width; height: 1; color: "#ffffff0e"
+
+                IconButton {
+                    iconText: "⌫"
+                    tooltip: "Clear playlist"
+                    fontSize: 14
+                    enabled: listView.count > 0
+                    onClicked: {
+                        if (root.playlistModel)
+                            root.playlistModel.clear()
+                    }
+                }
+
+                IconButton {
+                    iconText: "×"
+                    tooltip: "Close playlist"
+                    fontSize: 17
+                    onClicked: root.closeRequested()
                 }
             }
 
-            // ── 列表 ──────────────────────────────────────────────────────
-            ListView {
-                id: listView
-                Layout.fillWidth: true
-                Layout.fillHeight: true
-                clip: true
-                model: root.playlistModel
+            Rectangle {
+                anchors.bottom: parent.bottom
+                width: parent.width
+                height: 1
+                color: "#ffffff10"
+            }
+        }
 
-                ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+        ListView {
+            id: listView
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            clip: true
+            model: root.playlistModel
+            boundsBehavior: Flickable.StopAtBounds
 
-                Text {
-                    anchors.centerIn: parent
-                    visible: listView.count === 0
-                    text: "No items\nUse 📂 to open files"
-                    horizontalAlignment: Text.AlignHCenter
-                    color: "#ffffff25"; font.pixelSize: 13; lineHeight: 1.6
+            ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+
+            Text {
+                anchors.centerIn: parent
+                width: parent.width - 48
+                visible: listView.count === 0
+                text: "暂无播放项目\n点击左下角 ＋ 添加媒体文件"
+                horizontalAlignment: Text.AlignHCenter
+                color: "#8f98a870"
+                font.pixelSize: 13
+                lineHeight: 1.5
+            }
+
+            delegate: Rectangle {
+                id: row
+                width: listView.width
+                height: 58
+                color: model.isCurrent ? "#202936" : (delegateMouse.containsMouse ? "#1b2029" : "transparent")
+
+                Rectangle {
+                    x: 0
+                    y: 10
+                    width: 3
+                    height: parent.height - 20
+                    radius: 2
+                    color: model.isCurrent ? "#79a8ff" : "transparent"
                 }
 
-                delegate: Rectangle {
-                    width: listView.width
-                    height: 52
-                    color: model.isCurrent ? "#1e1e35" : (delegateMouse.containsMouse ? "#17171f" : "transparent")
+                RowLayout {
+                    anchors.fill: parent
+                    anchors.leftMargin: 16
+                    anchors.rightMargin: 10
+                    spacing: 10
 
-                    Rectangle {
-                        width: 3; height: parent.height
-                        color: model.isCurrent ? "#7c6fff" : "transparent"
-                        radius: 1
+                    Text {
+                        text: model.isCurrent ? "▶" : (index + 1).toString()
+                        color: model.isCurrent ? "#9fc1ff" : "#626b79"
+                        font.pixelSize: model.isCurrent ? 13 : 11
+                        Layout.preferredWidth: 24
+                        horizontalAlignment: Text.AlignHCenter
                     }
 
-                    RowLayout {
-                        anchors { fill: parent; leftMargin: 14; rightMargin: 8 }
-                        spacing: 10
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        spacing: 2
 
-                        Text {
-                            text: model.isCurrent ? "▶" : (index + 1).toString()
-                            color: model.isCurrent ? "#7c6fff" : "#505070"
-                            font.pixelSize: model.isCurrent ? 14 : 11
-                            width: 20; horizontalAlignment: Text.AlignHCenter
-                        }
                         Text {
                             Layout.fillWidth: true
                             text: model.title
-                            color: model.isCurrent ? "#e0e0f8" : "#a0a0c0"
-                            font.pixelSize: 13; elide: Text.ElideRight
+                            color: model.isCurrent ? "#f4f7fb" : "#c6ccd6"
+                            font.pixelSize: 13
+                            elide: Text.ElideRight
                         }
-                        IconButton {
-                            iconText: "✕"; fontSize: 11; visible: delegateMouse.containsMouse; tooltip: "Remove"
-                            onClicked: { if (root.playlistModel) root.playlistModel.remove(index) }
+
+                        Text {
+                            Layout.fillWidth: true
+                            text: model.url
+                            color: "#77808e"
+                            font.pixelSize: 10
+                            elide: Text.ElideMiddle
                         }
                     }
 
-                    MouseArea {
-                        id: delegateMouse
-                        anchors.fill: parent; hoverEnabled: true
-                        onDoubleClicked: { if (root.playlistModel) root.playlistModel.currentIndex = index }
+                    IconButton {
+                        iconText: "×"
+                        fontSize: 13
+                        visible: delegateMouse.containsMouse
+                        tooltip: "Remove"
+                        onClicked: {
+                            if (root.playlistModel)
+                                root.playlistModel.remove(index)
+                        }
+                    }
+                }
+
+                MouseArea {
+                    id: delegateMouse
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    acceptedButtons: Qt.LeftButton
+                    onDoubleClicked: {
+                        if (root.playlistModel)
+                            root.playlistModel.currentIndex = index
                     }
                 }
             }
+        }
 
-            // ── 底部提示 ──────────────────────────────────────────────────
+        Rectangle {
+            Layout.fillWidth: true
+            height: 34
+            color: "#181b22"
+
             Rectangle {
-                Layout.fillWidth: true
-                height: 36; color: "#16161e"
-                Rectangle { anchors.top: parent.top; width: parent.width; height: 1; color: "#ffffff0e" }
-                Text {
-                    anchors.centerIn: parent
-                    text: "Double-click to play  ·  ✕ to remove"
-                    color: "#ffffff25"; font.pixelSize: 11
-                }
+                anchors.top: parent.top
+                width: parent.width
+                height: 1
+                color: "#ffffff0f"
+            }
+
+            Text {
+                anchors.centerIn: parent
+                text: "双击播放，悬停后可移除"
+                color: "#8f98a870"
+                font.pixelSize: 11
             }
         }
     }

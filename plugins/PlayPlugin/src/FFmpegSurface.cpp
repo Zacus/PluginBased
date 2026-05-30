@@ -297,9 +297,25 @@ bool updateUniformData(RenderState& state,
             const int cw = mat->fmtInfo.chromaWidth(w);
             const int ch = mat->fmtInfo.chromaHeight(h);
 
-            // 8bit: Y=16 U/V=128；10bit R16 纹理同样用这个值，视觉上都是纯黑
-            const QByteArray black_y(w  * h,  char(16));
-            const QByteArray black_uv(cw * ch, char(128));
+            const int bytesPerSample = mat->fmtInfo.rhiFormat == QRhiTexture::R16 ? 2 : 1;
+            auto makePlane = [&](int samples, quint16 value) {
+                QByteArray data;
+                data.resize(samples * bytesPerSample);
+                if (bytesPerSample == 1) {
+                    memset(data.data(), static_cast<int>(value & 0xff), data.size());
+                    return data;
+                }
+
+                auto* dst = reinterpret_cast<quint16*>(data.data());
+                for (int i = 0; i < samples; ++i)
+                    dst[i] = value;
+                return data;
+            };
+
+            const QByteArray black_y =
+                makePlane(w * h, mat->fmtInfo.is10bit ? 64 : 16);
+            const QByteArray black_uv =
+                makePlane(cw * ch, mat->fmtInfo.is10bit ? 512 : 128);
 
             auto* batch = state.resourceUpdateBatch();
             auto upload = [&](QRhiTexture* tex, const QByteArray& data, QSize sz) {

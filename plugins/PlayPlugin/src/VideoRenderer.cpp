@@ -96,12 +96,6 @@ void VideoRenderer::onTimer()
 
         const ClockSync::Action action = m_clock->decide(framePtsUs);
 
-                // ← 加这行，每次决策都打出来
-        LOG_DEBUG("VideoRenderer: pts={}µs clock={}µs action={}",
-                  framePtsUs, m_clock->audioClock(),
-                  action == ClockSync::Action::Wait   ? "Wait" :
-                  action == ClockSync::Action::Drop   ? "Drop" : "Render");
-
         if (action == ClockSync::Action::Wait) {
             // 帧还没到时间：暂存起来，8ms 后再判断，不丢弃
             m_heldEntry = std::move(entry);

@@ -1,33 +1,65 @@
 // PlayPluginView.qml —— PlayPlugin 插件 QML 入口
 // 宿主通过 Loader { source: plugin.qmlComponentUrl() } 加载本文件。
-// 只依赖 PlayPlugin 1.0 和 Qt 标准模块，对宿主模块零感知。
+// 依赖 PlayPlugin 1.0、Qt 标准模块，以及宿主提供的 QuickUI.Components。
 
 import QtQuick
-import QtQuick.Layouts
-import PlayPlugin 1.0          // PlayerEngine、PlaylistModel、PlaybackContext 等
+import PlayPlugin 1.0
 
 Item {
     id: root
 
-    // 宿主读取此属性作为顶部工具栏副标题
     property string pageTitle: "视频播放器"
+    property bool playlistOpen: false
+    readonly property int drawerWidth: Math.min(340, Math.max(292, Math.round(width * 0.28)))
 
-    RowLayout {
+    Rectangle {
         anchors.fill: parent
-        spacing: 0
+        color: "#0b0c10"
+    }
 
-        PlayerView {
-            id: playerView
-            Layout.fillWidth: true
-            Layout.fillHeight: true
+    PlayerView {
+        id: playerView
+        anchors.fill: parent
+        playlistOpen: root.playlistOpen
+        onPlaylistToggleRequested: root.playlistOpen = !root.playlistOpen
+    }
+
+    Rectangle {
+        anchors.fill: parent
+        color: "#000000"
+        opacity: root.playlistOpen ? 0.24 : 0
+        visible: opacity > 0
+        Behavior on opacity { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
+
+        MouseArea {
+            anchors.fill: parent
+            enabled: root.playlistOpen
+            onClicked: root.playlistOpen = false
+        }
+    }
+
+    Item {
+        id: playlistDrawer
+        width: root.drawerWidth
+        height: parent.height
+        x: root.playlistOpen ? parent.width - width : parent.width + 8
+        y: 0
+        clip: true
+
+        Behavior on x {
+            NumberAnimation { duration: 220; easing.type: Easing.OutCubic }
         }
 
-        Rectangle { width: 1; Layout.fillHeight: true; color: "#ffffff10" }
+        Rectangle {
+            anchors.fill: parent
+            color: "#15171d"
+            border.color: "#ffffff12"
+        }
 
         PlaylistView {
-            width: 280
-            Layout.fillHeight: true
+            anchors.fill: parent
             playlistModel: playerView.playlistModel
+            onCloseRequested: root.playlistOpen = false
         }
     }
 }

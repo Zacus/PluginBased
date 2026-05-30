@@ -92,6 +92,7 @@ private:
     void doSeek(qint64 posMs);
     bool sendPacketToDecoder(AVCodecContext* ctx, AVPacket* pkt,
                              FrameQueue<AVFramePtr>* queue, int serial);
+    AVFramePtr normalizeVideoFrame(AVFramePtr frame);
     void closeInternal();
 
     // ── 队列（外部持有，不拥有所有权）───────────────────────────────────────
@@ -102,6 +103,7 @@ private:
     AVFormatContextPtr m_fmtCtx;
     AVCodecContextPtr  m_videoCodecCtx;
     AVCodecContextPtr  m_audioCodecCtx;
+    SwsContextPtr      m_videoSwsCtx;
     int  m_videoStreamIdx = -1;
     int  m_audioStreamIdx = -1;
 
