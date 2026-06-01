@@ -106,6 +106,9 @@ def main():
     require("playlistToggleRequested" in player_qml and
             "showPlaylistButton" in control_qml,
             "player controls should expose a playlist toggle")
+    require("HoverHandler" in playlist_qml and "TapHandler" in playlist_qml and
+            "id: delegateMouse" not in playlist_qml,
+            "playlist row hover/double-click handling should not cover remove buttons")
     require("normalizeVideoFrame" in decoder_h and "sws_getCachedContext" in decoder_cpp,
             "unsupported video pixel formats should be converted before rendering")
 

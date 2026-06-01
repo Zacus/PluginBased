@@ -99,7 +99,19 @@ Item {
                 id: row
                 width: listView.width
                 height: 58
-                color: model.isCurrent ? "#202936" : (delegateMouse.containsMouse ? "#1b2029" : "transparent")
+                color: model.isCurrent ? "#202936" : (delegateHover.hovered ? "#1b2029" : "transparent")
+
+                HoverHandler {
+                    id: delegateHover
+                }
+
+                TapHandler {
+                    acceptedButtons: Qt.LeftButton
+                    onDoubleTapped: {
+                        if (root.playlistModel)
+                            root.playlistModel.currentIndex = index
+                    }
+                }
 
                 Rectangle {
                     x: 0
@@ -148,23 +160,12 @@ Item {
                     IconButton {
                         iconText: "×"
                         fontSize: 13
-                        visible: delegateMouse.containsMouse
+                        visible: delegateHover.hovered
                         tooltip: "Remove"
                         onClicked: {
                             if (root.playlistModel)
                                 root.playlistModel.remove(index)
                         }
-                    }
-                }
-
-                MouseArea {
-                    id: delegateMouse
-                    anchors.fill: parent
-                    hoverEnabled: true
-                    acceptedButtons: Qt.LeftButton
-                    onDoubleClicked: {
-                        if (root.playlistModel)
-                            root.playlistModel.currentIndex = index
                     }
                 }
             }
