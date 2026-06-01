@@ -29,6 +29,8 @@ def main():
     playlist_qml = read("plugins/PlayPlugin/qml/PlaylistView.qml")
     playplugin_qml = read("plugins/PlayPlugin/qml/PlayPluginView.qml")
     player_qml = read("plugins/PlayPlugin/qml/PlayerView.qml")
+    playplugin_cpp = read("plugins/PlayPlugin/PlayPlugin.cpp")
+    context_h = read("plugins/PlayPlugin/src/PlaybackContext.h")
 
     require("finishMedia()" in engine_h, "PlayerEngine should centralize media completion")
     require("maybeFinishMedia()" in engine_h, "PlayerEngine should wait for active streams to drain")
@@ -79,6 +81,12 @@ def main():
             "av_channel_layout_from_mask" in audio_cpp and
             "av_channel_layout_default(&srcLayout, m_srcChannels)" in audio_cpp,
             "AudioRenderer should initialize swresample from the real or default source layout")
+    require("setPendingOpenUrl" in context_h and "takePendingOpenUrl" in context_h,
+            "PlaybackContext should store a pending host open request")
+    require("PlaybackContext::instance().setPendingOpenUrl(url)" in playplugin_cpp,
+            "PlayPlugin::open should cache host open requests before PlayerEngine exists")
+    require("takePendingOpenUrl" in engine_cpp and "QMetaObject::invokeMethod" in engine_cpp,
+            "PlayerEngine should consume pending host open requests after QML construction")
 
     require("import QuickUI.Components 1.0" in control_qml and
             "import QuickUI.Components 1.0" in playlist_qml,

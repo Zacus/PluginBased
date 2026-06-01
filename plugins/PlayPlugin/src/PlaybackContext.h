@@ -48,6 +48,16 @@ public:
         return m_finder ? m_finder(url) : nullptr;
     }
 
+    // ── 宿主 open 时序容错 ───────────────────────────────────────────────
+    void setPendingOpenUrl(const QUrl& url) { m_pendingOpenUrl = url; }
+    QUrl takePendingOpenUrl()
+    {
+        const QUrl url = m_pendingOpenUrl;
+        m_pendingOpenUrl = QUrl();
+        return url;
+    }
+    void clearPendingOpenUrl() { m_pendingOpenUrl = QUrl(); }
+
     // ── PlayerEngine 注册（由 PlayerEngine 构造/析构时调用）──────────────
     // 使用裸指针+手动注册，避免头文件循环依赖
     // PlayPlugin 通过此接口查询状态，无需 #include "PlayerEngine.h"
@@ -60,4 +70,5 @@ private:
 
     PluginFinder  m_finder;
     PlayerEngine* m_engine = nullptr;
+    QUrl          m_pendingOpenUrl;
 };

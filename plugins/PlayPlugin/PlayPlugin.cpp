@@ -49,6 +49,7 @@ void PlayPlugin::shutdown()
     LOG_INFO("PlayPlugin::shutdown()");
     if (auto* e = engine())
         e->stop();
+    PlaybackContext::instance().clearPendingOpenUrl();
     PlaybackContext::instance().clearFinder();
 }
 
@@ -75,8 +76,9 @@ bool PlayPlugin::open(const QUrl& url)
         e->open(url);
         return true;
     }
-    LOG_WARN("PlayPlugin::open() — PlayerEngine not available yet (QML not loaded)");
-    return false;
+    PlaybackContext::instance().setPendingOpenUrl(url);
+    LOG_WARN("PlayPlugin::open() — PlayerEngine not available yet, deferred until QML loads");
+    return true;
 }
 
 void PlayPlugin::play()
