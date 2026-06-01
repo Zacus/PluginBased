@@ -96,6 +96,7 @@ private slots:
     void onEndOfAudio();
 
     // 来自 VideoRenderer 的信号
+    void onVideoPosition(qint64 posMs);
     void onEndOfVideo();
 
 private:

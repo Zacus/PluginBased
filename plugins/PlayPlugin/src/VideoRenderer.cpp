@@ -29,18 +29,52 @@ void VideoRenderer::stop()
     LOG_DEBUG("VideoRenderer: stopped");
 }
 
+void VideoRenderer::setPaused(bool paused)
+{
+    if (m_paused == paused)
+        return;
+
+    if (!m_audioClockEnabled && m_videoClock.isValid())
+    {
+        if (paused)
+        {
+            m_videoClockPausedUs = m_videoClockBaseUs + m_videoClock.nsecsElapsed() / 1000;
+        }
+        else if (m_videoClockPausedUs != AV_NOPTS_VALUE)
+        {
+            m_videoClockBaseUs = m_videoClockPausedUs;
+            m_videoClock.restart();
+            m_videoClockPausedUs = AV_NOPTS_VALUE;
+        }
+    }
+
+    m_paused = paused;
+}
+
+void VideoRenderer::setAudioClockEnabled(bool enabled)
+{
+    if (m_audioClockEnabled == enabled)
+        return;
+
+    m_audioClockEnabled = enabled;
+    resetVideoClock();
+}
+
 void VideoRenderer::flush()
 {
     // seek 时清空，旧帧由 FrameQueue::flush() 已经丢弃
     // 丢弃暂存的旧帧（serial 已过期）
     m_hasHeld = false;
     m_heldEntry = {};
+    resetVideoClock();
 }
 
 void VideoRenderer::reset()
 {
     m_hasHeld = false;
     m_heldEntry = {};
+    m_paused = false;
+    resetVideoClock();
     m_pendingSeekGeneration = 0;
     m_seekPending = false;
 }
@@ -61,11 +95,39 @@ void VideoRenderer::completeSeek(int generation)
     m_seekPending = false;
 }
 
+void VideoRenderer::resetVideoClock()
+{
+    m_videoClock.invalidate();
+    m_videoClockBaseUs = AV_NOPTS_VALUE;
+    m_videoClockPausedUs = AV_NOPTS_VALUE;
+}
+
+ClockSync::Action VideoRenderer::decideVideoOnly(qint64 framePtsUs)
+{
+    if (m_videoClockBaseUs == AV_NOPTS_VALUE)
+    {
+        m_videoClockBaseUs = framePtsUs;
+        m_videoClock.restart();
+        return ClockSync::Action::Render;
+    }
+
+    const qint64 clockUs = m_videoClockBaseUs + m_videoClock.nsecsElapsed() / 1000;
+    const qint64 diff = framePtsUs - clockUs;
+    if (diff > ClockSync::EARLY_THRESHOLD_US)
+        return ClockSync::Action::Wait;
+    if (diff < -ClockSync::LATE_THRESHOLD_US)
+        return ClockSync::Action::Drop;
+    return ClockSync::Action::Render;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // 定时器回调（主线程）
 // ─────────────────────────────────────────────────────────────────────────────
 void VideoRenderer::onTimer()
 {
+    if (m_paused)
+        return;
+
     if (m_seekPending)
         return;
 
@@ -94,7 +156,9 @@ void VideoRenderer::onTimer()
         qint64 framePtsUs = entry.frame->pts;
         if (framePtsUs == AV_NOPTS_VALUE) framePtsUs = 0;
 
-        const ClockSync::Action action = m_clock->decide(framePtsUs);
+        const ClockSync::Action action = m_audioClockEnabled
+            ? m_clock->decide(framePtsUs)
+            : decideVideoOnly(framePtsUs);
 
         if (action == ClockSync::Action::Wait) {
             // 帧还没到时间：暂存起来，8ms 后再判断，不丢弃
@@ -113,6 +177,7 @@ void VideoRenderer::onTimer()
             entry.frame->colorspace == AVCOL_SPC_BT709 ||
             (entry.frame->colorspace == AVCOL_SPC_UNSPECIFIED &&
              entry.frame->width >= 1280);
+        emit positionChanged(framePtsUs / 1000);
         emit frameReady(make_video_frame(std::move(entry.frame), fullRange, bt709));
         return; // 每次定时器只渲染一帧
     }

@@ -5,6 +5,7 @@
 #include "FFmpegUtils.h"
 
 #include <QObject>
+#include <QElapsedTimer>
 #include <QTimer>
 
 /**
@@ -35,6 +36,8 @@ public:
 
     void start();                // 开始渲染定时器
     void stop();                 // 停止渲染定时器
+    void setPaused(bool paused); // 暂停/恢复渲染推进
+    void setAudioClockEnabled(bool enabled);
     void flush();                // seek 时调用
     void reset();                // 新媒体/停止时重置跨文件状态
     void beginSeek(int generation);
@@ -46,6 +49,9 @@ signals:
 
     /** 视频流 EOF */
     void endOfVideo();
+
+    /** 实际上屏的视频帧位置 */
+    void positionChanged(qint64 posMs);
 
 private slots:
     void onTimer();
@@ -60,6 +66,15 @@ private:
     VideoFrameQueue::Entry m_heldEntry;
     bool                   m_hasHeld = false;
 
+    QElapsedTimer m_videoClock;
+    qint64 m_videoClockBaseUs = AV_NOPTS_VALUE;
+    qint64 m_videoClockPausedUs = AV_NOPTS_VALUE;
+    bool   m_audioClockEnabled = true;
+    bool   m_paused = false;
+
     int  m_pendingSeekGeneration = 0;
     bool m_seekPending = false;
+
+    void resetVideoClock();
+    ClockSync::Action decideVideoOnly(qint64 framePtsUs);
 };

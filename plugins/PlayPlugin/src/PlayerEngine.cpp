@@ -30,6 +30,8 @@ PlayerEngine::PlayerEngine(QObject* parent) : QObject(parent)
             &PlayerEngine::onEndOfAudio);
 
     // ── VideoRenderer 信号 ────────────────────────────────────────────────────
+    connect(m_videoRenderer.get(), &VideoRenderer::positionChanged, this,
+            &PlayerEngine::onVideoPosition);
     connect(m_videoRenderer.get(), &VideoRenderer::endOfVideo, this, &PlayerEngine::onEndOfVideo);
 
     LOG_DEBUG("PlayerEngine created");
@@ -110,9 +112,6 @@ void PlayerEngine::open(const QUrl& url)
     // 重置时钟
     m_clock.invalidate();
 
-    // 启动视频渲染定时器
-    m_videoRenderer->start();
-
     // 通知解码器打开文件（异步，解码器线程内执行）
     m_decoder->openFile(url);
 
@@ -125,6 +124,7 @@ void PlayerEngine::play()
         return;
     m_decoder->setPaused(false);
     m_audioRenderer->setPaused(false);
+    m_videoRenderer->setPaused(false);
     // VideoRenderer 定时器持续运行：
     //   暂停期间音频时钟冻结，held 帧的 decide() 始终返回 Wait，定时器空转不渲染。
     //   恢复后时钟继续，held 帧正常渲染，无需额外控制定时器。
@@ -140,6 +140,8 @@ void PlayerEngine::pause()
         m_decoder->setPaused(true);
     if (m_audioRenderer)
         m_audioRenderer->setPaused(true);
+    if (m_videoRenderer)
+        m_videoRenderer->setPaused(true);
     // m_decoder->setPaused(true);
     // m_audioRenderer->setPaused(true);
     // VideoRenderer 定时器刻意不停：
@@ -209,6 +211,7 @@ void PlayerEngine::seek(qint64 positionMs)
     {
         m_decoder->setPaused(false);
         m_audioRenderer->setPaused(false);
+        m_videoRenderer->setPaused(false);
         setState(Playing);
     }
 }
@@ -264,6 +267,8 @@ void PlayerEngine::onMediaInfoReady(qint64 durationMs, int width, int height, do
     // 这里不再提前做 CPU 侧的视频格式初始化。
     m_hasAudio = sampleRate > 0 && channels > 0;
     m_hasVideo = width > 0 && height > 0;
+    m_videoRenderer->setAudioClockEnabled(m_hasAudio);
+    m_videoRenderer->setPaused(false);
 
     if (m_hasAudio)
     {
@@ -272,6 +277,9 @@ void PlayerEngine::onMediaInfoReady(qint64 durationMs, int width, int height, do
         if (!m_audioRenderer->isRunning())
             m_audioRenderer->start(QThread::HighPriority);
     }
+
+    if (m_hasVideo)
+        m_videoRenderer->start();
 
     // 更新 MediaInfo（QML 侧显示文件信息）
     // onMediaInfoReady 通过 Qt::AutoConnection 在主线程执行，安全
@@ -313,7 +321,7 @@ void PlayerEngine::onEndOfFile()
 
 void PlayerEngine::onDecoderPosition(qint64 posMs)
 {
-    if (m_hasAudio)
+    if (m_hasAudio || m_hasVideo)
         return;
 
     m_position = posMs;
@@ -344,6 +352,15 @@ void PlayerEngine::onEndOfAudio()
 // ─────────────────────────────────────────────────────────────────────────────
 // 来自 VideoRenderer 的信号处理
 // ─────────────────────────────────────────────────────────────────────────────
+void PlayerEngine::onVideoPosition(qint64 posMs)
+{
+    if (m_hasAudio)
+        return;
+
+    m_position = posMs;
+    emit positionChanged(m_position);
+}
+
 void PlayerEngine::onEndOfVideo()
 {
     LOG_INFO("PlayerEngine: end of video");
@@ -389,6 +406,7 @@ void PlayerEngine::finishMedia()
     m_mediaFinished = true;
     m_decoder->setPaused(true);
     m_audioRenderer->setPaused(true);
+    m_videoRenderer->setPaused(true);
     setState(Paused);
     emit endOfMedia();
 }
