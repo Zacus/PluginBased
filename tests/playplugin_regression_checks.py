@@ -55,12 +55,19 @@ def main():
             "black placeholder upload should account for R16 byte width")
     require('LOG_DEBUG("VideoRenderer: pts=' not in renderer_cpp,
             "per-frame video sync debug logging should be removed or throttled")
+    require('LOG_DEBUG("VideoRenderer: drop frame' not in renderer_cpp,
+            "per-frame drop logging should stay out of the render loop")
     require("setAudioClockEnabled" in renderer_h and "m_audioClockEnabled" in renderer_h,
             "VideoRenderer should explicitly support video-only clocking")
     require("m_videoClock.restart()" in renderer_cpp and "m_videoClockBaseUs" in renderer_cpp,
             "video-only playback should establish a local clock from the first rendered frame")
     require("m_videoRenderer->setAudioClockEnabled(m_hasAudio)" in engine_cpp,
             "PlayerEngine should configure VideoRenderer clock mode from detected streams")
+    require("m_hasRenderedFrame" in renderer_h and
+            "m_consecutiveDroppedFrames" in renderer_h and
+            "MaxConsecutiveDropsBeforeRender" in renderer_cpp and
+            "m_consecutiveDroppedFrames < MaxConsecutiveDropsBeforeRender" in renderer_cpp,
+            "VideoRenderer should bound late-frame drops so slow 4K/60 videos keep updating")
     require("seekCompleted(int generation, int serial)" in decoder_h,
             "decoder should report the frame serial produced after seek")
     require("setAcceptedSerial" in read("plugins/PlayPlugin/src/AudioRenderer.h") and

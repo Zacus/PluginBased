@@ -73,6 +73,8 @@ private:
     bool   m_audioClockEnabled = true;
     bool   m_paused = false;
     int    m_acceptedSerial = 0;
+    bool   m_hasRenderedFrame = false;
+    int    m_consecutiveDroppedFrames = 0;
 
     int  m_pendingSeekGeneration = 0;
     bool m_seekPending = false;

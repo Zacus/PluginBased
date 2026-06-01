@@ -1,6 +1,10 @@
 #include "VideoRenderer.h"
 #include "Logger.h"
 
+namespace {
+constexpr int MaxConsecutiveDropsBeforeRender = 8;
+}
+
 VideoRenderer::VideoRenderer(VideoFrameQueue* queue,
                              ClockSync*       clock,
                              QObject*         parent)
@@ -76,6 +80,8 @@ void VideoRenderer::flush()
     // 丢弃暂存的旧帧（serial 已过期）
     m_hasHeld = false;
     m_heldEntry = {};
+    m_hasRenderedFrame = false;
+    m_consecutiveDroppedFrames = 0;
     resetVideoClock();
 }
 
@@ -85,6 +91,8 @@ void VideoRenderer::reset()
     m_heldEntry = {};
     m_paused = false;
     m_acceptedSerial = 0;
+    m_hasRenderedFrame = false;
+    m_consecutiveDroppedFrames = 0;
     resetVideoClock();
     m_pendingSeekGeneration = 0;
     m_seekPending = false;
@@ -94,6 +102,8 @@ void VideoRenderer::beginSeek(int generation)
 {
     m_hasHeld = false;
     m_heldEntry = {};
+    m_hasRenderedFrame = false;
+    m_consecutiveDroppedFrames = 0;
     setAcceptedSerial(generation);
     m_pendingSeekGeneration = generation;
     m_seekPending = true;
@@ -184,8 +194,10 @@ void VideoRenderer::onTimer()
             return;
         }
 
-        if (action == ClockSync::Action::Drop) {
-            LOG_DEBUG("VideoRenderer: drop frame pts={}", framePtsUs);
+        if (action == ClockSync::Action::Drop &&
+            m_hasRenderedFrame &&
+            m_consecutiveDroppedFrames < MaxConsecutiveDropsBeforeRender) {
+            ++m_consecutiveDroppedFrames;
             continue; // 丢帧，取下一帧
         }
 
@@ -196,6 +208,8 @@ void VideoRenderer::onTimer()
              entry.frame->width >= 1280);
         emit positionChanged(framePtsUs / 1000);
         emit frameReady(make_video_frame(std::move(entry.frame), fullRange, bt709));
+        m_hasRenderedFrame = true;
+        m_consecutiveDroppedFrames = 0;
         return; // 每次定时器只渲染一帧
     }
 }
