@@ -79,8 +79,8 @@ signals:
     /** 当前解码位置更新（毫秒），供主线程同步进度条 */
     void positionChanged(qint64 posMs);
 
-    /** seek 已在解码线程完成，generation 对应 seekTo() 的调用方标识 */
-    void seekCompleted(int generation);
+    /** seek 已在解码线程完成，generation 对应 seekTo() 的调用方标识，serial 为新帧序列 */
+    void seekCompleted(int generation, int serial);
 
 protected:
     void run() override;
@@ -89,7 +89,7 @@ private:
     // ── 内部方法 ─────────────────────────────────────────────────────────────
     bool openInternal(const QString& path);
     void decodeLoop();
-    void doSeek(qint64 posMs);
+    void doSeek(qint64 posMs, int serial);
     bool sendPacketToDecoder(AVCodecContext* ctx, AVPacket* pkt,
                              FrameQueue<AVFramePtr>* queue, int serial);
     AVFramePtr normalizeVideoFrame(AVFramePtr frame);

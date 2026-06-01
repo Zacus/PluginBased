@@ -60,6 +60,16 @@ void VideoRenderer::setAudioClockEnabled(bool enabled)
     resetVideoClock();
 }
 
+void VideoRenderer::setAcceptedSerial(int serial)
+{
+    m_acceptedSerial = serial;
+    if (m_hasHeld && m_heldEntry.serial != m_acceptedSerial)
+    {
+        m_hasHeld = false;
+        m_heldEntry = {};
+    }
+}
+
 void VideoRenderer::flush()
 {
     // seek 时清空，旧帧由 FrameQueue::flush() 已经丢弃
@@ -74,6 +84,7 @@ void VideoRenderer::reset()
     m_hasHeld = false;
     m_heldEntry = {};
     m_paused = false;
+    m_acceptedSerial = 0;
     resetVideoClock();
     m_pendingSeekGeneration = 0;
     m_seekPending = false;
@@ -83,15 +94,17 @@ void VideoRenderer::beginSeek(int generation)
 {
     m_hasHeld = false;
     m_heldEntry = {};
+    setAcceptedSerial(generation);
     m_pendingSeekGeneration = generation;
     m_seekPending = true;
 }
 
-void VideoRenderer::completeSeek(int generation)
+void VideoRenderer::completeSeek(int generation, int serial)
 {
     if (!m_seekPending || generation != m_pendingSeekGeneration)
         return;
 
+    setAcceptedSerial(serial);
     m_seekPending = false;
 }
 
@@ -142,6 +155,10 @@ void VideoRenderer::onTimer()
         } else {
             if (!m_queue->tryPop(entry)) return; // 队列空，下次再来
         }
+
+        // EOF 帧
+        if (entry.serial != m_acceptedSerial)
+            continue;
 
         // EOF 帧
         if (entry.eof) {

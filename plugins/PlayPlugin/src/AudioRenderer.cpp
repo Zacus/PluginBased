@@ -42,6 +42,11 @@ void AudioRenderer::setPaused(bool paused)
     m_paused.storeRelaxed(paused ? 1 : 0);
 }
 
+void AudioRenderer::setAcceptedSerial(int serial)
+{
+    m_acceptedSerial.storeRelaxed(serial);
+}
+
 void AudioRenderer::stopRenderer()
 {
     m_stop.storeRelaxed(1);
@@ -178,6 +183,9 @@ void AudioRenderer::run()
 
         if (!m_queue->pop(entry))
             break; // abort
+
+        if (entry.serial != m_acceptedSerial.loadRelaxed())
+            continue;
 
         if (entry.eof)
         {

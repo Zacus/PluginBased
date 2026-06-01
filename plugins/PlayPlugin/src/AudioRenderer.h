@@ -55,6 +55,7 @@ class AudioRenderer : public QThread
     void setVolume(float v); // 0.0 ~ 1.0
     void setMuted(bool muted);
     void setPaused(bool paused);
+    void setAcceptedSerial(int serial);
     void stopRenderer();
     void flush(); // seek 时清空，配合 FrameQueue::flush()
 
@@ -100,6 +101,7 @@ class AudioRenderer : public QThread
     QAtomicInt m_stop{0};
     QAtomicInt m_paused{0};
     QAtomicInt m_flush{0};
+    QAtomicInt m_acceptedSerial{0};
 
     float m_volume = 1.0f;
     bool m_muted = false;

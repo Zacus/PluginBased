@@ -89,7 +89,7 @@ private slots:
     void onDecoderError(const QString& msg);
     void onEndOfFile();
     void onDecoderPosition(qint64 posMs);
-    void onDecoderSeekCompleted(int generation);
+    void onDecoderSeekCompleted(int generation, int serial);
 
     // 来自 AudioRenderer 的信号
     void onAudioPosition(qint64 posMs);

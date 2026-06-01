@@ -300,8 +300,8 @@ void FFmpegDecoder::decodeLoop()
                 const int seekGeneration = m_seekGeneration;
                 m_seekRequested = false;
                 lk.unlock();
-                doSeek(seekTargetMs);
-                emit seekCompleted(seekGeneration);
+                doSeek(seekTargetMs, seekGeneration);
+                emit seekCompleted(seekGeneration, m_flushSerial);
                 continue;
             }
         }
@@ -331,8 +331,8 @@ void FFmpegDecoder::decodeLoop()
                         const int seekGeneration = m_seekGeneration;
                         m_seekRequested = false;
                         lk.unlock();
-                        doSeek(seekTargetMs);
-                        emit seekCompleted(seekGeneration);
+                        doSeek(seekTargetMs, seekGeneration);
+                        emit seekCompleted(seekGeneration, m_flushSerial);
                         break;
                     }
                 }
@@ -522,7 +522,7 @@ AVFramePtr FFmpegDecoder::normalizeVideoFrame(AVFramePtr frame)
 // ─────────────────────────────────────────────────────────────────────────────
 // seek 实现
 // ─────────────────────────────────────────────────────────────────────────────
-void FFmpegDecoder::doSeek(qint64 posMs)
+void FFmpegDecoder::doSeek(qint64 posMs, int serial)
 {
 
     LOG_INFO("FFmpegDecoder: seek to {}ms", posMs);
@@ -543,8 +543,8 @@ void FFmpegDecoder::doSeek(qint64 posMs)
     if (m_audioCodecCtx)
         avcodec_flush_buffers(m_audioCodecCtx.get());
 
-    // 递增 serial，通知渲染侧丢弃旧帧
-    ++m_flushSerial;
+    // 切换 serial，通知消费侧丢弃旧帧
+    m_flushSerial = serial;
     m_videoQueue->flush();
     m_audioQueue->flush();
 

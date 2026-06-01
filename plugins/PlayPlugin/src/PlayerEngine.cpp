@@ -104,6 +104,8 @@ void PlayerEngine::open(const QUrl& url)
     m_videoFinished = false;
     m_mediaFinished = false;
     m_seekGeneration = 0;
+    m_audioRenderer->setAcceptedSerial(0);
+    m_videoRenderer->setAcceptedSerial(0);
 
     // 重置队列 abort 状态（stop 时 abort 了，open 前需要恢复）
     m_videoQueue.resetAbort();
@@ -196,6 +198,7 @@ void PlayerEngine::seek(qint64 positionMs)
 
     // 通知各组件 seek
     m_videoRenderer->beginSeek(seekGeneration);
+    m_audioRenderer->setAcceptedSerial(seekGeneration);
     m_decoder->seekTo(positionMs, seekGeneration);
     m_audioRenderer->flush();
     m_videoRenderer->flush();
@@ -328,9 +331,10 @@ void PlayerEngine::onDecoderPosition(qint64 posMs)
     emit positionChanged(m_position);
 }
 
-void PlayerEngine::onDecoderSeekCompleted(int generation)
+void PlayerEngine::onDecoderSeekCompleted(int generation, int serial)
 {
-    m_videoRenderer->completeSeek(generation);
+    m_audioRenderer->setAcceptedSerial(serial);
+    m_videoRenderer->completeSeek(generation, serial);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

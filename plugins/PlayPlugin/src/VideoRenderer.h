@@ -38,10 +38,11 @@ public:
     void stop();                 // 停止渲染定时器
     void setPaused(bool paused); // 暂停/恢复渲染推进
     void setAudioClockEnabled(bool enabled);
+    void setAcceptedSerial(int serial);
     void flush();                // seek 时调用
     void reset();                // 新媒体/停止时重置跨文件状态
     void beginSeek(int generation);
-    void completeSeek(int generation);
+    void completeSeek(int generation, int serial);
 
 signals:
     /** 每一帧待显示的视频帧，发给 FFmpegSurface */
@@ -71,6 +72,7 @@ private:
     qint64 m_videoClockPausedUs = AV_NOPTS_VALUE;
     bool   m_audioClockEnabled = true;
     bool   m_paused = false;
+    int    m_acceptedSerial = 0;
 
     int  m_pendingSeekGeneration = 0;
     bool m_seekPending = false;

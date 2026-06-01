@@ -57,6 +57,17 @@ def main():
             "video-only playback should establish a local clock from the first rendered frame")
     require("m_videoRenderer->setAudioClockEnabled(m_hasAudio)" in engine_cpp,
             "PlayerEngine should configure VideoRenderer clock mode from detected streams")
+    require("seekCompleted(int generation, int serial)" in decoder_h,
+            "decoder should report the frame serial produced after seek")
+    require("setAcceptedSerial" in read("plugins/PlayPlugin/src/AudioRenderer.h") and
+            "setAcceptedSerial" in renderer_h,
+            "audio and video renderers should track the currently accepted frame serial")
+    require("m_audioRenderer->setAcceptedSerial(serial)" in engine_cpp and
+            "m_videoRenderer->completeSeek(generation, serial)" in engine_cpp,
+            "PlayerEngine should apply seek serial to all frame consumers")
+    require("entry.serial != m_acceptedSerial" in read("plugins/PlayPlugin/src/AudioRenderer.cpp") and
+            "entry.serial != m_acceptedSerial" in renderer_cpp,
+            "frame consumers should discard stale frames from older seek serials")
 
     require("import QuickUI.Components 1.0" in control_qml and
             "import QuickUI.Components 1.0" in playlist_qml,
