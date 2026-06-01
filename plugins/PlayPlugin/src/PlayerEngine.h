@@ -85,7 +85,8 @@ private slots:
     // 来自 FFmpegDecoder 的信号
     void onMediaInfoReady(qint64 durationMs, int width, int height,
                           double fps, int sampleRate, int channels,
-                          int sampleFmt, const QString& format);
+                          quint64 channelLayoutMask, int sampleFmt,
+                          const QString& format);
     void onDecoderError(const QString& msg);
     void onEndOfFile();
     void onDecoderPosition(qint64 posMs);

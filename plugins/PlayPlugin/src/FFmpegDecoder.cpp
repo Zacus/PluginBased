@@ -150,7 +150,8 @@ void FFmpegDecoder::run()
 
         // 发送媒体信息
         emit mediaInfoReady(m_durationMs, m_videoWidth, m_videoHeight, m_videoFps,
-                            m_audioSampleRate, m_audioChannels, m_audioSampleFmt, m_formatName);
+                            m_audioSampleRate, m_audioChannels, m_audioChannelLayoutMask,
+                            m_audioSampleFmt, m_formatName);
 
         decodeLoop();
         closeInternal();
@@ -255,6 +256,10 @@ bool FFmpegDecoder::openInternal(const QString& path)
                 m_audioCodecCtx.reset(actx);
                 m_audioChannels = actx->ch_layout.nb_channels;
                 m_audioSampleRate = actx->sample_rate;
+                m_audioChannelLayoutMask =
+                    (actx->ch_layout.order == AV_CHANNEL_ORDER_NATIVE)
+                        ? static_cast<quint64>(actx->ch_layout.u.mask)
+                        : 0;
                 m_audioSampleFmt = static_cast<int>(actx->sample_fmt);
             }
         }
@@ -568,6 +573,7 @@ void FFmpegDecoder::closeInternal()
     m_videoFps = 0.0;
     m_audioChannels = 0;
     m_audioSampleRate = 0;
+    m_audioChannelLayoutMask = 0;
     m_audioSampleFmt = AV_SAMPLE_FMT_FLTP;
     LOG_DEBUG("FFmpegDecoder: closed");
 }

@@ -257,8 +257,8 @@ void PlayerEngine::stopAllComponents()
 // 来自 FFmpegDecoder 的信号处理
 // ─────────────────────────────────────────────────────────────────────────────
 void PlayerEngine::onMediaInfoReady(qint64 durationMs, int width, int height, double fps,
-                                    int sampleRate, int channels, int sampleFmt,
-                                    const QString& format)
+                                    int sampleRate, int channels, quint64 channelLayoutMask,
+                                    int sampleFmt, const QString& format)
 {
     LOG_INFO("PlayerEngine: mediaInfoReady dur={}ms {}x{} @{:.1f}fps {}Hz {}ch fmt={}", durationMs,
              width, height, fps, sampleRate, channels, sampleFmt);
@@ -276,7 +276,8 @@ void PlayerEngine::onMediaInfoReady(qint64 durationMs, int width, int height, do
     if (m_hasAudio)
     {
         m_audioRenderer->setSourceFormat(sampleRate, channels,
-                                         static_cast<AVSampleFormat>(sampleFmt));
+                                         static_cast<AVSampleFormat>(sampleFmt),
+                                         channelLayoutMask);
         if (!m_audioRenderer->isRunning())
             m_audioRenderer->start(QThread::HighPriority);
     }

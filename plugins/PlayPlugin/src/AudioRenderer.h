@@ -60,7 +60,8 @@ class AudioRenderer : public QThread
     void flush(); // seek 时清空，配合 FrameQueue::flush()
 
     // 通知渲染器音频流参数（解码器 open 后调用）
-    void setSourceFormat(int sampleRate, int channels, AVSampleFormat fmt);
+    void setSourceFormat(int sampleRate, int channels, AVSampleFormat fmt,
+                         quint64 channelLayoutMask = 0);
 
   signals:
     void positionChanged(qint64 posMs); // 当前音频播放位置（毫秒）
@@ -90,6 +91,7 @@ class AudioRenderer : public QThread
     // 源格式（由 setSourceFormat 设置）
     int m_srcSampleRate = 44100;
     int m_srcChannels = 2;
+    quint64 m_srcChannelLayoutMask = 0;
     AVSampleFormat m_srcFmt = AV_SAMPLE_FMT_FLTP;
 
     // 音频时钟（上次发信号的时间，避免过于频繁 emit）

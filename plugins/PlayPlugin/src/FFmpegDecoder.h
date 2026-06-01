@@ -67,6 +67,7 @@ signals:
     /** 文件打开成功，媒体信息已就绪 */
     void mediaInfoReady(qint64 durationMs, int width, int height,
                         double fps, int sampleRate, int channels,
+                        quint64 channelLayoutMask,
                         int sampleFmt,       // AVSampleFormat，用 int 传递避免跨模块枚举依赖
                         const QString& format);
 
@@ -114,6 +115,7 @@ private:
     double  m_videoFps        = 0.0;
     int     m_audioChannels   = 0;
     int     m_audioSampleRate = 0;
+    quint64 m_audioChannelLayoutMask = 0;
     int     m_audioSampleFmt  = AV_SAMPLE_FMT_FLTP; // AVSampleFormat，存 int 避免枚举依赖
     QString m_formatName;
 

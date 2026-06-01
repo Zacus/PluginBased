@@ -61,10 +61,12 @@ void AudioRenderer::flush()
     m_clock->invalidate();
 }
 
-void AudioRenderer::setSourceFormat(int sampleRate, int channels, AVSampleFormat fmt)
+void AudioRenderer::setSourceFormat(int sampleRate, int channels, AVSampleFormat fmt,
+                                    quint64 channelLayoutMask)
 {
     m_srcSampleRate = sampleRate;
     m_srcChannels = channels;
+    m_srcChannelLayoutMask = channelLayoutMask;
     m_srcFmt = fmt;
 }
 
@@ -216,15 +218,21 @@ bool AudioRenderer::initSwrContext()
 {
     SwrContext* swr = nullptr;
 
-    // 源声道布局
-    AVChannelLayout srcLayout = AV_CHANNEL_LAYOUT_STEREO;
-    if (m_srcChannels == 1)
-        srcLayout = AV_CHANNEL_LAYOUT_MONO;
+    AVChannelLayout srcLayout {};
+    int ret = 0;
+    if (m_srcChannelLayoutMask != 0)
+        ret = av_channel_layout_from_mask(&srcLayout, m_srcChannelLayoutMask);
+
+    if (m_srcChannelLayoutMask == 0 || ret < 0)
+    {
+        av_channel_layout_default(&srcLayout, m_srcChannels);
+        ret = 0;
+    }
 
     // 目标声道布局（固定立体声）
     AVChannelLayout dstLayout = AV_CHANNEL_LAYOUT_STEREO;
 
-    int ret = swr_alloc_set_opts2(
+    ret = swr_alloc_set_opts2(
         &swr,
         &dstLayout,         // 目标声道布局
         AV_SAMPLE_FMT_FLT,  // 目标格式：packed float（交织），单 buffer 即可
@@ -235,6 +243,8 @@ bool AudioRenderer::initSwrContext()
         m_srcFmt,           // 源格式
         m_srcSampleRate,    // 源采样率
         0, nullptr);
+
+    av_channel_layout_uninit(&srcLayout);
 
     if (ret < 0 || !swr)
     {

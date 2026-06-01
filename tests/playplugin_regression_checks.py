@@ -20,6 +20,8 @@ def main():
     engine_cpp = read("plugins/PlayPlugin/src/PlayerEngine.cpp")
     decoder_h = read("plugins/PlayPlugin/src/FFmpegDecoder.h")
     decoder_cpp = read("plugins/PlayPlugin/src/FFmpegDecoder.cpp")
+    audio_cpp = read("plugins/PlayPlugin/src/AudioRenderer.cpp")
+    audio_h = read("plugins/PlayPlugin/src/AudioRenderer.h")
     surface_cpp = read("plugins/PlayPlugin/src/FFmpegSurface.cpp")
     renderer_cpp = read("plugins/PlayPlugin/src/VideoRenderer.cpp")
     renderer_h = read("plugins/PlayPlugin/src/VideoRenderer.h")
@@ -68,6 +70,15 @@ def main():
     require("entry.serial != m_acceptedSerial" in read("plugins/PlayPlugin/src/AudioRenderer.cpp") and
             "entry.serial != m_acceptedSerial" in renderer_cpp,
             "frame consumers should discard stale frames from older seek serials")
+    require("quint64 channelLayoutMask" in decoder_h and
+            "m_audioChannelLayoutMask" in decoder_h,
+            "decoder should expose the source audio channel layout mask")
+    require("actx->ch_layout.u.mask" in decoder_cpp,
+            "decoder should capture FFmpeg's native channel layout mask")
+    require("m_srcChannelLayoutMask" in audio_h and
+            "av_channel_layout_from_mask" in audio_cpp and
+            "av_channel_layout_default(&srcLayout, m_srcChannels)" in audio_cpp,
+            "AudioRenderer should initialize swresample from the real or default source layout")
 
     require("import QuickUI.Components 1.0" in control_qml and
             "import QuickUI.Components 1.0" in playlist_qml,
