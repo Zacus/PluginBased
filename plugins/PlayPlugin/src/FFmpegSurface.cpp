@@ -15,54 +15,6 @@ extern "C" {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-// 颜色空间矩阵
-//
-// 将 R8 纹理采样到的归一化 YCbCr [0,1] 转换为 RGB。
-// 矩阵编码为 mat4，shader 里：rgb = (colorMatrix * vec4(y, cb, cr, 1.0)).rgb
-//
-// 支持四种组合：BT.601 / BT.709  ×  limited / full range。
-// ══════════════════════════════════════════════════════════════════════════════
-
-static QMatrix4x4 buildColorMatrix(bool fullRange, bool bt709)
-{
-    // Luma 偏移（[0,1] 归一化）
-    const float y_off = fullRange ? 0.0f           : 16.0f  / 255.0f;
-    const float c_off =             128.0f / 255.0f;                    // Cb/Cr 始终以 128 为中心
-    const float ky    = fullRange ? 1.0f            : 255.0f / 219.0f;  // limited: ~1.1644
-
-    // 色度系数（来源：ITU-R BT.601 / BT.709）
-    float kr_cr, kg_cb, kg_cr, kb_cb;
-    if (bt709) {
-        kr_cr = fullRange ? 1.5748f : 1.7927f;
-        kg_cb = fullRange ? 0.1873f : 0.2132f;
-        kg_cr = fullRange ? 0.4681f : 0.5329f;
-        kb_cb = fullRange ? 1.8556f : 2.1124f;
-    } else {                                    // BT.601
-        kr_cr = fullRange ? 1.4020f : 1.5960f;
-        kg_cb = fullRange ? 0.3441f : 0.3917f;
-        kg_cr = fullRange ? 0.7141f : 0.8129f;
-        kb_cb = fullRange ? 1.7720f : 2.0172f;
-    }
-
-    // 展开常数项，合并到矩阵第四列（w=1 的乘积即常数）：
-    //   R = ky*(y - y_off) +  kr_cr*(cr - c_off)
-    //   G = ky*(y - y_off) - kg_cb*(cb - c_off) - kg_cr*(cr - c_off)
-    //   B = ky*(y - y_off) + kb_cb*(cb - c_off)
-    const float r_c = -ky * y_off - kr_cr * c_off;
-    const float g_c = -ky * y_off + kg_cb * c_off + kg_cr * c_off;
-    const float b_c = -ky * y_off - kb_cb * c_off;
-
-    // QMatrix4x4 构造函数按行优先（row-major）填充：
-    //           Y        Cb        Cr      常数
-    return QMatrix4x4(
-         ky,    0.0f,   kr_cr,    r_c,   // → R
-         ky,  -kg_cb,  -kg_cr,   g_c,   // → G
-         ky,   kb_cb,   0.0f,    b_c,   // → B
-        0.0f,  0.0f,    0.0f,   1.0f   // → w（保留）
-    );
-}
-
-// ══════════════════════════════════════════════════════════════════════════════
 // RhiTextureWrapper
 //
 // 将裸 QRhiTexture* 非拥有地包装为 QSGTexture*，
@@ -212,13 +164,13 @@ public:
 //
 // Uniform buffer 布局（std140）：
 //   offset  0 : mat4 qt_Matrix    (64 bytes) — MVP
-//   offset 64 : mat4 colorMatrix  (64 bytes) — YCbCr → RGB
-//   total     : 128 bytes
+//   offset 64 : vec4 params       (16 bytes) — opacity/range/space/bit-depth
+//   total     : 80 bytes
 //
 // 对应 GLSL：
 //   layout(std140, binding = 0) uniform buf {
 //       mat4 qt_Matrix;
-//       mat4 colorMatrix;
+//       vec4 params;
 //   };
 // ══════════════════════════════════════════════════════════════════════════════
 
@@ -485,17 +437,7 @@ private:
 
         // ✅ 填充占位数据：Y=16, U=128, V=128 → 纯黑（limited range）
         m_material_.pendingBlackFrame = true; // ← 只立 flag，不再填 QByteArray
-        m_material_.paramsDirty = true;
-        m_material_.cachedFullRange = !m_material_.fullRange;
-        m_material_.cachedBt709     = !m_material_.bt709;
-
-        // // 纹理重建后颜色矩阵需重新写入 uniform buffer
-        // m_material_.colorMatrixDirty = true;
-        // // 纹理重建后强制重新检查色彩空间标志（下一帧重建矩阵）
-        // m_material_.colorFlagsInited = false;
-        // 纹理重建后强制重新写入 uniform buffer
         m_material_.paramsDirty     = true;
-        // 纹理重建后强制重新检查色彩空间标志
         m_material_.cachedFullRange = !m_material_.fullRange;  // 故意与当前值不同，触发下一帧重建
         m_material_.cachedBt709     = !m_material_.bt709;
     }

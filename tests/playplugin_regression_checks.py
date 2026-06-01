@@ -87,6 +87,14 @@ def main():
             "PlayPlugin::open should cache host open requests before PlayerEngine exists")
     require("takePendingOpenUrl" in engine_cpp and "QMetaObject::invokeMethod" in engine_cpp,
             "PlayerEngine should consume pending host open requests after QML construction")
+    require("buildColorMatrix" not in surface_cpp and "colorMatrix" not in surface_cpp,
+            "FFmpegSurface should not keep obsolete color matrix code or comments")
+    ensure_textures = surface_cpp[surface_cpp.find("void ensureTextures"):
+                                  surface_cpp.find("void releaseTextures")]
+    require(ensure_textures.count("m_material_.paramsDirty") == 1 and
+            ensure_textures.count("m_material_.cachedFullRange") == 1 and
+            ensure_textures.count("m_material_.cachedBt709") == 1,
+            "texture recreation should mark material state dirty once")
 
     require("import QuickUI.Components 1.0" in control_qml and
             "import QuickUI.Components 1.0" in playlist_qml,
