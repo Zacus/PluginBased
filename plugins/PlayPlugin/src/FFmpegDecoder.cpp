@@ -613,8 +613,6 @@ AVFramePtr FFmpegDecoder::normalizeVideoFrame(AVFramePtr frame)
         return {};
     }
 
-    LOG_DEBUG("FFmpegDecoder: converted video pixel format {} to yuv420p",
-              frame->format);
     return converted;
 }
 

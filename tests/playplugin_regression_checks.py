@@ -66,6 +66,8 @@ def main():
             "per-frame video sync debug logging should be removed or throttled")
     require('LOG_DEBUG("VideoRenderer: drop frame' not in renderer_cpp,
             "per-frame drop logging should stay out of the render loop")
+    require('LOG_DEBUG("FFmpegDecoder: converted video pixel format' not in decoder_cpp,
+            "per-frame pixel format conversion logging should stay out of the decode loop")
     require("setAudioClockEnabled" in renderer_h and "m_audioClockEnabled" in renderer_h,
             "VideoRenderer should explicitly support video-only clocking")
     require("m_videoClock.restart()" in renderer_cpp and "m_videoClockBaseUs" in renderer_cpp,
