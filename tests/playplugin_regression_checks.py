@@ -196,6 +196,17 @@ def main():
             "VideoToolbox backend should force FFmpeg to choose the hardware pixel format")
     require("codecContext->hw_device_ctx = av_buffer_ref" in videotoolbox_cpp,
             "VideoToolbox backend should attach hardware device to AVCodecContext")
+    require("av_hwframe_transfer_data" in videotoolbox_cpp,
+            "VideoToolbox backend should transfer hardware frames to CPU frames")
+    require("copyFrameMetadata" in decoder_cpp,
+            "FFmpegDecoder should preserve timing and color metadata after hardware transfer")
+    require("prepareVideoFrameForQueue" in decoder_h and "prepareVideoFrameForQueue(std::move(frame))" in decoder_cpp,
+            "FFmpegDecoder should prepare video frames through a single helper before queueing")
+    prepare_body = decoder_cpp[decoder_cpp.find("AVFramePtr FFmpegDecoder::prepareVideoFrameForQueue"):
+                               decoder_cpp.find("AVFramePtr FFmpegDecoder::normalizeVideoFrame")]
+    require("transferHardwareFrameToCpu" in prepare_body and
+            prepare_body.find("transferHardwareFrameToCpu") < prepare_body.find("normalizeVideoFrame"),
+            "hardware frames should be transferred before normalizeVideoFrame")
 
 
 if __name__ == "__main__":

@@ -476,7 +476,7 @@ bool FFmpegDecoder::sendPacketToDecoder(AVCodecContext* ctx, AVPacket* pkt,
             if (frame->pts != AV_NOPTS_VALUE)
                 emit positionChanged(frame->pts / 1000);
 
-            frame = normalizeVideoFrame(std::move(frame));
+            frame = prepareVideoFrameForQueue(std::move(frame));
             if (!frame)
                 continue;
 
@@ -501,6 +501,38 @@ bool FFmpegDecoder::sendPacketToDecoder(AVCodecContext* ctx, AVPacket* pkt,
         }
     }
     return true;
+}
+
+void FFmpegDecoder::copyFrameMetadata(const AVFrame* source, AVFrame* destination) const
+{
+    destination->pts = source->pts;
+    destination->sample_aspect_ratio = source->sample_aspect_ratio;
+    destination->color_range = source->color_range;
+    destination->colorspace = source->colorspace;
+    destination->color_primaries = source->color_primaries;
+    destination->color_trc = source->color_trc;
+    destination->chroma_location = source->chroma_location;
+}
+
+AVFramePtr FFmpegDecoder::transferHardwareFrameToCpu(AVFramePtr frame)
+{
+    if (!m_hardwareDecoder || !m_hardwareDecoder->isHardwareFrame(frame.get()))
+        return frame;
+
+    AVFramePtr cpuFrame = m_hardwareDecoder->transferToCpuFrame(frame.get());
+    if (!cpuFrame)
+        return {};
+
+    copyFrameMetadata(frame.get(), cpuFrame.get());
+    return cpuFrame;
+}
+
+AVFramePtr FFmpegDecoder::prepareVideoFrameForQueue(AVFramePtr frame)
+{
+    frame = transferHardwareFrameToCpu(std::move(frame));
+    if (!frame)
+        return {};
+    return normalizeVideoFrame(std::move(frame));
 }
 
 AVFramePtr FFmpegDecoder::normalizeVideoFrame(AVFramePtr frame)

@@ -98,6 +98,9 @@ private:
     void doSeek(qint64 posMs, int serial);
     bool sendPacketToDecoder(AVCodecContext* ctx, AVPacket* pkt,
                              FrameQueue<AVFramePtr>* queue, int serial);
+    AVFramePtr prepareVideoFrameForQueue(AVFramePtr frame);
+    AVFramePtr transferHardwareFrameToCpu(AVFramePtr frame);
+    void copyFrameMetadata(const AVFrame* source, AVFrame* destination) const;
     AVFramePtr normalizeVideoFrame(AVFramePtr frame);
     void closeInternal();
 
