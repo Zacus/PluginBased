@@ -58,6 +58,15 @@ private slots:
     void onTimer();
 
 private:
+    struct VideoRenderPerformanceStats {
+        qint64 renderedFrames = 0;
+        qint64 droppedFrames = 0;
+        qint64 waitFrames = 0;
+        qint64 queueEmptyPolls = 0;
+        qint64 staleFrames = 0;
+        qint64 forcedRenderFrames = 0;
+    };
+
     VideoFrameQueue* m_queue = nullptr;
     ClockSync*       m_clock = nullptr;
 
@@ -75,10 +84,14 @@ private:
     int    m_acceptedSerial = 0;
     bool   m_hasRenderedFrame = false;
     int    m_consecutiveDroppedFrames = 0;
+    VideoRenderPerformanceStats m_renderPerf;
+    QElapsedTimer m_renderPerfLogTimer;
 
     int  m_pendingSeekGeneration = 0;
     bool m_seekPending = false;
 
     void resetVideoClock();
     ClockSync::Action decideVideoOnly(qint64 framePtsUs);
+    void resetRenderPerformanceStats();
+    void maybeLogRenderPerformance();
 };

@@ -68,6 +68,23 @@ def main():
             "per-frame drop logging should stay out of the render loop")
     require('LOG_DEBUG("FFmpegDecoder: converted video pixel format' not in decoder_cpp,
             "per-frame pixel format conversion logging should stay out of the decode loop")
+    require("DecodePerformanceStats" in decoder_h and
+            "maybeLogDecodePerformance" in decoder_cpp and
+            "PlayPerf: decoder" in decoder_cpp,
+            "decoder should report throttled playback performance summaries")
+    require("m_decodePerfLogTimer" in decoder_h and
+            "PerformanceLogIntervalMs" in decoder_cpp,
+            "decode performance logs should be time-throttled")
+    require("VideoRenderPerformanceStats" in renderer_h and
+            "maybeLogRenderPerformance" in renderer_cpp and
+            "PlayPerf: renderer" in renderer_cpp,
+            "renderer should report throttled playback performance summaries")
+    require("m_renderPerfLogTimer" in renderer_h and
+            "PerformanceLogIntervalMs" in renderer_cpp,
+            "render performance logs should be time-throttled")
+    require('LOG_DEBUG("PlayPerf: decoder frame' not in decoder_cpp and
+            'LOG_DEBUG("PlayPerf: renderer frame' not in renderer_cpp,
+            "playback performance logging should not run per frame")
     require("setAudioClockEnabled" in renderer_h and "m_audioClockEnabled" in renderer_h,
             "VideoRenderer should explicitly support video-only clocking")
     require("m_videoClock.restart()" in renderer_cpp and "m_videoClockBaseUs" in renderer_cpp,

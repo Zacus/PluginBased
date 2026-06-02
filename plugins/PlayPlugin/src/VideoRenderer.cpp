@@ -2,6 +2,7 @@
 #include "Logger.h"
 
 namespace {
+constexpr int PerformanceLogIntervalMs = 2000;
 constexpr int MaxConsecutiveDropsBeforeRender = 8;
 }
 
@@ -23,6 +24,7 @@ VideoRenderer::~VideoRenderer()
 
 void VideoRenderer::start()
 {
+    resetRenderPerformanceStats();
     m_timer.start();
     LOG_DEBUG("VideoRenderer: started");
 }
@@ -82,6 +84,7 @@ void VideoRenderer::flush()
     m_heldEntry = {};
     m_hasRenderedFrame = false;
     m_consecutiveDroppedFrames = 0;
+    resetRenderPerformanceStats();
     resetVideoClock();
 }
 
@@ -93,6 +96,7 @@ void VideoRenderer::reset()
     m_acceptedSerial = 0;
     m_hasRenderedFrame = false;
     m_consecutiveDroppedFrames = 0;
+    resetRenderPerformanceStats();
     resetVideoClock();
     m_pendingSeekGeneration = 0;
     m_seekPending = false;
@@ -104,6 +108,7 @@ void VideoRenderer::beginSeek(int generation)
     m_heldEntry = {};
     m_hasRenderedFrame = false;
     m_consecutiveDroppedFrames = 0;
+    resetRenderPerformanceStats();
     setAcceptedSerial(generation);
     m_pendingSeekGeneration = generation;
     m_seekPending = true;
@@ -143,6 +148,53 @@ ClockSync::Action VideoRenderer::decideVideoOnly(qint64 framePtsUs)
     return ClockSync::Action::Render;
 }
 
+void VideoRenderer::resetRenderPerformanceStats()
+{
+    m_renderPerf = {};
+    m_renderPerfLogTimer.restart();
+}
+
+void VideoRenderer::maybeLogRenderPerformance()
+{
+    if (!m_renderPerfLogTimer.isValid())
+        m_renderPerfLogTimer.start();
+
+    const qint64 elapsedMs = m_renderPerfLogTimer.elapsed();
+    if (elapsedMs < PerformanceLogIntervalMs)
+        return;
+
+    const qint64 totalEvents =
+        m_renderPerf.renderedFrames +
+        m_renderPerf.droppedFrames +
+        m_renderPerf.waitFrames +
+        m_renderPerf.queueEmptyPolls +
+        m_renderPerf.staleFrames;
+    if (totalEvents <= 0)
+    {
+        m_renderPerfLogTimer.restart();
+        return;
+    }
+
+    const double renderFps = elapsedMs > 0
+        ? (static_cast<double>(m_renderPerf.renderedFrames) * 1000.0 /
+           static_cast<double>(elapsedMs))
+        : 0.0;
+
+    LOG_INFO("PlayPerf: renderer rendered={} fps={:.1f} drop={} wait={} empty={} "
+             "stale={} forced={} audio_clock={}",
+             m_renderPerf.renderedFrames,
+             renderFps,
+             m_renderPerf.droppedFrames,
+             m_renderPerf.waitFrames,
+             m_renderPerf.queueEmptyPolls,
+             m_renderPerf.staleFrames,
+             m_renderPerf.forcedRenderFrames,
+             m_audioClockEnabled);
+
+    m_renderPerf = {};
+    m_renderPerfLogTimer.restart();
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // 定时器回调（主线程）
 // ─────────────────────────────────────────────────────────────────────────────
@@ -163,20 +215,30 @@ void VideoRenderer::onTimer()
             entry     = std::move(m_heldEntry);
             m_hasHeld = false;
         } else {
-            if (!m_queue->tryPop(entry)) return; // 队列空，下次再来
+            if (!m_queue->tryPop(entry)) {
+                ++m_renderPerf.queueEmptyPolls;
+                maybeLogRenderPerformance();
+                return; // 队列空，下次再来
+            }
         }
 
         // EOF 帧
-        if (entry.serial != m_acceptedSerial)
+        if (entry.serial != m_acceptedSerial) {
+            ++m_renderPerf.staleFrames;
             continue;
+        }
 
         // EOF 帧
         if (entry.eof) {
+            maybeLogRenderPerformance();
             emit endOfVideo();
             return;
         }
 
-        if (!entry.frame) continue;
+        if (!entry.frame) {
+            ++m_renderPerf.staleFrames;
+            continue;
+        }
 
         // ── 音视频同步决策 ────────────────────────────────────────────────────
         // frame->pts 已由 FFmpegDecoder 统一换算为微秒（AV_TIME_BASE = 1000000）
@@ -191,6 +253,8 @@ void VideoRenderer::onTimer()
             // 帧还没到时间：暂存起来，8ms 后再判断，不丢弃
             m_heldEntry = std::move(entry);
             m_hasHeld   = true;
+            ++m_renderPerf.waitFrames;
+            maybeLogRenderPerformance();
             return;
         }
 
@@ -198,8 +262,12 @@ void VideoRenderer::onTimer()
             m_hasRenderedFrame &&
             m_consecutiveDroppedFrames < MaxConsecutiveDropsBeforeRender) {
             ++m_consecutiveDroppedFrames;
+            ++m_renderPerf.droppedFrames;
             continue; // 丢帧，取下一帧
         }
+
+        if (action == ClockSync::Action::Drop)
+            ++m_renderPerf.forcedRenderFrames;
 
         const bool fullRange = entry.frame->color_range == AVCOL_RANGE_JPEG;
         const bool bt709 =
@@ -210,6 +278,8 @@ void VideoRenderer::onTimer()
         emit frameReady(make_video_frame(std::move(entry.frame), fullRange, bt709));
         m_hasRenderedFrame = true;
         m_consecutiveDroppedFrames = 0;
+        ++m_renderPerf.renderedFrames;
+        maybeLogRenderPerformance();
         return; // 每次定时器只渲染一帧
     }
 }
