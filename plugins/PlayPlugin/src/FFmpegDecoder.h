@@ -114,6 +114,7 @@ private:
     AVCodecContextPtr  m_audioCodecCtx;
     SwsContextPtr      m_videoSwsCtx;
     std::unique_ptr<HardwareDecoderBackend> m_hardwareDecoder;
+    int m_hardwareTransferFailureCount = 0;
     int  m_videoStreamIdx = -1;
     int  m_audioStreamIdx = -1;
 

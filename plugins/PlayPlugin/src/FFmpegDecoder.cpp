@@ -19,6 +19,8 @@ static bool isRendererSupportedVideoFormat(int format)
     }
 }
 
+constexpr int MaxHardwareTransferFailureLogs = 3;
+
 // ─────────────────────────────────────────────────────────────────────────────
 // 构造 / 析构
 // ─────────────────────────────────────────────────────────────────────────────
@@ -521,8 +523,16 @@ AVFramePtr FFmpegDecoder::transferHardwareFrameToCpu(AVFramePtr frame)
 
     AVFramePtr cpuFrame = m_hardwareDecoder->transferToCpuFrame(frame.get());
     if (!cpuFrame)
+    {
+        ++m_hardwareTransferFailureCount;
+        if (m_hardwareTransferFailureCount <= MaxHardwareTransferFailureLogs)
+        {
+            LOG_WARN("FFmpegDecoder: hardware frame transfer failed, dropping frame");
+        }
         return {};
+    }
 
+    m_hardwareTransferFailureCount = 0;
     copyFrameMetadata(frame.get(), cpuFrame.get());
     return cpuFrame;
 }
@@ -662,5 +672,6 @@ void FFmpegDecoder::closeInternal()
     m_audioSampleRate = 0;
     m_audioChannelLayoutMask = 0;
     m_audioSampleFmt = AV_SAMPLE_FMT_FLTP;
+    m_hardwareTransferFailureCount = 0;
     LOG_DEBUG("FFmpegDecoder: closed");
 }

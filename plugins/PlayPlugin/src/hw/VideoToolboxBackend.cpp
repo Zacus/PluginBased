@@ -87,10 +87,7 @@ AVFramePtr VideoToolboxBackend::transferToCpuFrame(const AVFrame* frame)
     auto cpuFrame = make_frame();
     const int ret = av_hwframe_transfer_data(cpuFrame.get(), frame, 0);
     if (ret < 0)
-    {
-        LOG_WARN("VideoToolboxBackend: av_hwframe_transfer_data failed: {}", av_err(ret));
         return {};
-    }
 
     return cpuFrame;
 }

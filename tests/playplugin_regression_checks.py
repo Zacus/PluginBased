@@ -207,6 +207,14 @@ def main():
     require("transferHardwareFrameToCpu" in prepare_body and
             prepare_body.find("transferHardwareFrameToCpu") < prepare_body.find("normalizeVideoFrame"),
             "hardware frames should be transferred before normalizeVideoFrame")
+    require("m_hardwareTransferFailureCount" in decoder_h,
+            "FFmpegDecoder should count hardware transfer failures")
+    require("MaxHardwareTransferFailureLogs" in decoder_cpp,
+            "hardware transfer failure logs should be throttled")
+    require("hardware frame transfer failed" in decoder_cpp,
+            "decoder should log hardware transfer failures at the decode boundary")
+    require("LOG_WARN(\"VideoToolboxBackend: av_hwframe_transfer_data failed" not in videotoolbox_cpp,
+            "backend should not emit one warning for every failed transfer")
 
 
 if __name__ == "__main__":
