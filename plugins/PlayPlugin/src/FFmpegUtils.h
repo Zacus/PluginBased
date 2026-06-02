@@ -8,7 +8,9 @@
 extern "C" {
 #include <libavformat/avformat.h>
 #include <libavcodec/avcodec.h>
+#include <libavutil/buffer.h>
 #include <libavutil/avutil.h>
+#include <libavutil/hwcontext.h>
 #include <libavutil/imgutils.h>
 #include <libavutil/pixdesc.h>
 #include <libswscale/swscale.h>
@@ -46,6 +48,12 @@ struct AVPacketDeleter {
     }
 };
 
+struct AVBufferRefDeleter {
+    void operator()(AVBufferRef* ref) const {
+        if (ref) av_buffer_unref(&ref);
+    }
+};
+
 struct SwsContextDeleter {
     void operator()(SwsContext* ctx) const {
         if (ctx) sws_freeContext(ctx);
@@ -63,6 +71,7 @@ using AVFormatContextPtr = std::unique_ptr<AVFormatContext, AVFormatContextDelet
 using AVCodecContextPtr  = std::unique_ptr<AVCodecContext,  AVCodecContextDeleter>;
 using AVFramePtr         = std::unique_ptr<AVFrame,         AVFrameDeleter>;
 using AVPacketPtr        = std::unique_ptr<AVPacket,        AVPacketDeleter>;
+using AVBufferRefPtr     = std::unique_ptr<AVBufferRef,     AVBufferRefDeleter>;
 using SwsContextPtr      = std::unique_ptr<SwsContext,      SwsContextDeleter>;
 using SwrContextPtr      = std::unique_ptr<SwrContext,      SwrContextDeleter>;
 

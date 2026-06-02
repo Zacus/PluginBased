@@ -11,4 +11,7 @@ public:
     bool isHardwareFrame(const AVFrame* frame) const override;
     AVFramePtr transferToCpuFrame(const AVFrame* frame) override;
     void reset() override;
+
+private:
+    AVBufferRefPtr m_deviceContext;
 };

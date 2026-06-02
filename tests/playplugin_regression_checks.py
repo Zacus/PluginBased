@@ -18,11 +18,13 @@ def require(condition, message):
 def main():
     engine_h = read("plugins/PlayPlugin/src/PlayerEngine.h")
     engine_cpp = read("plugins/PlayPlugin/src/PlayerEngine.cpp")
+    ffmpeg_utils_h = read("plugins/PlayPlugin/src/FFmpegUtils.h")
     decoder_h = read("plugins/PlayPlugin/src/FFmpegDecoder.h")
     decoder_cpp = read("plugins/PlayPlugin/src/FFmpegDecoder.cpp")
     hw_backend_h = read("plugins/PlayPlugin/src/hw/HardwareDecoderBackend.h")
     hw_factory_h = read("plugins/PlayPlugin/src/hw/HardwareDecoderFactory.h")
     hw_factory_cpp = read("plugins/PlayPlugin/src/hw/HardwareDecoderFactory.cpp")
+    videotoolbox_h = read("plugins/PlayPlugin/src/hw/VideoToolboxBackend.h")
     videotoolbox_cpp = read("plugins/PlayPlugin/src/hw/VideoToolboxBackend.cpp")
     d3d11va_cpp = read("plugins/PlayPlugin/src/hw/D3D11VABackend.cpp")
     vaapi_cpp = read("plugins/PlayPlugin/src/hw/VaapiBackend.cpp")
@@ -177,6 +179,23 @@ def main():
     require("AVCodecContext* FFmpegDecoder::createVideoCodecContext" in decoder_cpp and
             "vctx = createVideoCodecContext(stream, codec)" in decoder_cpp,
             "software fallback should rebuild a clean AVCodecContext")
+    require("#include <libavutil/hwcontext.h>" in ffmpeg_utils_h,
+            "FFmpegUtils should expose FFmpeg hardware context APIs")
+    require("AVBufferRefPtr" in ffmpeg_utils_h,
+            "FFmpegUtils should provide RAII for AVBufferRef")
+    require("AVBufferRefPtr m_deviceContext" in videotoolbox_h,
+            "VideoToolbox backend should own the hardware device context")
+    require("av_hwdevice_ctx_create" in videotoolbox_cpp and
+            "AV_HWDEVICE_TYPE_VIDEOTOOLBOX" in videotoolbox_cpp,
+            "VideoToolbox backend should create a VideoToolbox hardware device")
+    require("avcodec_get_hw_config" in videotoolbox_cpp and
+            "AV_PIX_FMT_VIDEOTOOLBOX" in videotoolbox_cpp,
+            "VideoToolbox backend should verify decoder hardware config")
+    require("selectVideoToolboxFormat" in videotoolbox_cpp and
+            "codecContext->get_format = selectVideoToolboxFormat" in videotoolbox_cpp,
+            "VideoToolbox backend should force FFmpeg to choose the hardware pixel format")
+    require("codecContext->hw_device_ctx = av_buffer_ref" in videotoolbox_cpp,
+            "VideoToolbox backend should attach hardware device to AVCodecContext")
 
 
 if __name__ == "__main__":
