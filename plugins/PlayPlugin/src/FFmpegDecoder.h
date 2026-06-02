@@ -2,6 +2,7 @@
 
 #include "FFmpegUtils.h"
 #include "FrameQueue.h"
+#include "hw/HardwareDecoderBackend.h"
 
 #include <QThread>
 #include <QUrl>
@@ -9,6 +10,8 @@
 #include <QMutex>
 #include <QAtomicInt>
 #include <QWaitCondition>
+
+#include <memory>
 
 /**
  * @brief FFmpegDecoder — 独立解码线程
@@ -105,6 +108,7 @@ private:
     AVCodecContextPtr  m_videoCodecCtx;
     AVCodecContextPtr  m_audioCodecCtx;
     SwsContextPtr      m_videoSwsCtx;
+    std::unique_ptr<HardwareDecoderBackend> m_hardwareDecoder;
     int  m_videoStreamIdx = -1;
     int  m_audioStreamIdx = -1;
 

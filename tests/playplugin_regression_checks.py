@@ -154,6 +154,18 @@ def main():
             "VAAPI backend should be explicitly unavailable in phase 1")
     require("videotoolbox" in videotoolbox_cpp,
             "VideoToolbox backend should expose a stable backend name")
+    require('#include "hw/HardwareDecoderFactory.h"' in decoder_cpp,
+            "FFmpegDecoder should include the hardware backend factory")
+    require("std::unique_ptr<HardwareDecoderBackend> m_hardwareDecoder" in decoder_h,
+            "FFmpegDecoder should own the selected hardware backend")
+    require("createHardwareDecoderBackend(vcodec, vs->codecpar->codec_id)" in decoder_cpp,
+            "FFmpegDecoder should ask the factory for video hardware decoding")
+    require("m_hardwareDecoder.reset();" in decoder_cpp[decoder_cpp.find("void FFmpegDecoder::closeInternal"):],
+            "FFmpegDecoder should release hardware backend on close")
+    require("Q_OS_APPLE" not in decoder_cpp and
+            "Q_OS_WIN" not in decoder_cpp and
+            "Q_OS_LINUX" not in decoder_cpp,
+            "FFmpegDecoder should not contain platform branching for hardware backend selection")
 
 
 if __name__ == "__main__":

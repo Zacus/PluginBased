@@ -1,5 +1,6 @@
 #include "FFmpegDecoder.h"
 #include "Logger.h"
+#include "hw/HardwareDecoderFactory.h"
 
 #include <QFileInfo>
 
@@ -209,6 +210,12 @@ bool FFmpegDecoder::openInternal(const QString& path)
             AVCodecContext* vctx = avcodec_alloc_context3(vcodec);
             avcodec_parameters_to_context(vctx, vs->codecpar);
             vctx->thread_count = 0; // 自动选择线程数（通常 = CPU 核心数）
+            m_hardwareDecoder = createHardwareDecoderBackend(vcodec, vs->codecpar->codec_id);
+            if (m_hardwareDecoder)
+            {
+                LOG_INFO("FFmpegDecoder: hardware decoder candidate {}",
+                         m_hardwareDecoder->name().toStdString());
+            }
             ret = avcodec_open2(vctx, vcodec, nullptr);
             if (ret < 0)
             {
@@ -561,6 +568,9 @@ void FFmpegDecoder::doSeek(qint64 posMs, int serial)
 // ─────────────────────────────────────────────────────────────────────────────
 void FFmpegDecoder::closeInternal()
 {
+    if (m_hardwareDecoder)
+        m_hardwareDecoder->reset();
+    m_hardwareDecoder.reset();
     m_videoCodecCtx.reset();
     m_audioCodecCtx.reset();
     m_videoSwsCtx.reset();
