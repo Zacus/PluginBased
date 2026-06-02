@@ -21,6 +21,11 @@ def main():
     decoder_h = read("plugins/PlayPlugin/src/FFmpegDecoder.h")
     decoder_cpp = read("plugins/PlayPlugin/src/FFmpegDecoder.cpp")
     hw_backend_h = read("plugins/PlayPlugin/src/hw/HardwareDecoderBackend.h")
+    hw_factory_h = read("plugins/PlayPlugin/src/hw/HardwareDecoderFactory.h")
+    hw_factory_cpp = read("plugins/PlayPlugin/src/hw/HardwareDecoderFactory.cpp")
+    videotoolbox_cpp = read("plugins/PlayPlugin/src/hw/VideoToolboxBackend.cpp")
+    d3d11va_cpp = read("plugins/PlayPlugin/src/hw/D3D11VABackend.cpp")
+    vaapi_cpp = read("plugins/PlayPlugin/src/hw/VaapiBackend.cpp")
     cmake = read("plugins/PlayPlugin/CMakeLists.txt")
     audio_cpp = read("plugins/PlayPlugin/src/AudioRenderer.cpp")
     audio_h = read("plugins/PlayPlugin/src/AudioRenderer.h")
@@ -134,6 +139,21 @@ def main():
             "hardware backend should transfer hardware frames to CPU frames")
     require("src/hw/HardwareDecoderBackend.h" in cmake,
             "PlayPlugin target should include hardware backend interface")
+    require("createHardwareDecoderBackend" in hw_factory_h and
+            "std::unique_ptr<HardwareDecoderBackend>" in hw_factory_h,
+            "hardware decoder factory should return an optional backend")
+    require("#if defined(Q_OS_APPLE)" in hw_factory_cpp and "VideoToolboxBackend" in hw_factory_cpp,
+            "factory should select VideoToolbox only on Apple platforms")
+    require("#if defined(Q_OS_WIN)" in hw_factory_cpp and "D3D11VABackend" in hw_factory_cpp,
+            "factory should know the Windows skeleton backend")
+    require("#if defined(Q_OS_LINUX)" in hw_factory_cpp and "VaapiBackend" in hw_factory_cpp,
+            "factory should know the Linux skeleton backend")
+    require("return false;" in d3d11va_cpp and "d3d11va" in d3d11va_cpp,
+            "D3D11VA backend should be explicitly unavailable in phase 1")
+    require("return false;" in vaapi_cpp and "vaapi" in vaapi_cpp,
+            "VAAPI backend should be explicitly unavailable in phase 1")
+    require("videotoolbox" in videotoolbox_cpp,
+            "VideoToolbox backend should expose a stable backend name")
 
 
 if __name__ == "__main__":

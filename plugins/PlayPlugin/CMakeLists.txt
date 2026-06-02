@@ -76,6 +76,10 @@ qt_add_qml_module(PlayPlugin
         src/FrameQueue.h
         src/FFmpegDecoder.h    src/FFmpegDecoder.cpp
         src/hw/HardwareDecoderBackend.h
+        src/hw/HardwareDecoderFactory.h src/hw/HardwareDecoderFactory.cpp
+        src/hw/VideoToolboxBackend.h    src/hw/VideoToolboxBackend.cpp
+        src/hw/D3D11VABackend.h         src/hw/D3D11VABackend.cpp
+        src/hw/VaapiBackend.h           src/hw/VaapiBackend.cpp
         # Step 3 — 渲染器 + 时钟同步 + 视频输出组件
         src/ClockSync.h
         src/AudioRenderer.h    src/AudioRenderer.cpp
