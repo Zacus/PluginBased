@@ -92,6 +92,8 @@ protected:
 private:
     // ── 内部方法 ─────────────────────────────────────────────────────────────
     bool openInternal(const QString& path);
+    bool openVideoCodec(AVStream* stream, const AVCodec* codec);
+    AVCodecContext* createVideoCodecContext(AVStream* stream, const AVCodec* codec);
     void decodeLoop();
     void doSeek(qint64 posMs, int serial);
     bool sendPacketToDecoder(AVCodecContext* ctx, AVPacket* pkt,

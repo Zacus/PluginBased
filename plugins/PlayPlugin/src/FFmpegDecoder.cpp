@@ -164,6 +164,74 @@ void FFmpegDecoder::run()
 // ─────────────────────────────────────────────────────────────────────────────
 // 打开文件
 // ─────────────────────────────────────────────────────────────────────────────
+AVCodecContext* FFmpegDecoder::createVideoCodecContext(AVStream* stream, const AVCodec* codec)
+{
+    AVCodecContext* ctx = avcodec_alloc_context3(codec);
+    if (!ctx)
+        return nullptr;
+
+    const int ret = avcodec_parameters_to_context(ctx, stream->codecpar);
+    if (ret < 0)
+    {
+        LOG_WARN("FFmpegDecoder: avcodec_parameters_to_context for video failed: {}",
+                 av_err(ret));
+        avcodec_free_context(&ctx);
+        return nullptr;
+    }
+
+    ctx->thread_count = 0;
+    return ctx;
+}
+
+bool FFmpegDecoder::openVideoCodec(AVStream* stream, const AVCodec* codec)
+{
+    AVCodecContext* vctx = createVideoCodecContext(stream, codec);
+    if (!vctx)
+        return false;
+
+    m_hardwareDecoder = createHardwareDecoderBackend(codec, stream->codecpar->codec_id);
+    if (m_hardwareDecoder)
+    {
+        LOG_INFO("FFmpegDecoder: selected hardware decoder {}",
+                 m_hardwareDecoder->name().toStdString());
+        if (!m_hardwareDecoder->configureContext(vctx))
+        {
+            LOG_WARN("FFmpegDecoder: hardware setup failed, fallback to software decoding");
+            m_hardwareDecoder->reset();
+            m_hardwareDecoder.reset();
+        }
+    }
+
+    int ret = avcodec_open2(vctx, codec, nullptr);
+    if (ret < 0 && m_hardwareDecoder)
+    {
+        LOG_WARN("FFmpegDecoder: hardware codec open failed: {}, fallback to software decoding",
+                 av_err(ret));
+        avcodec_free_context(&vctx);
+        m_hardwareDecoder->reset();
+        m_hardwareDecoder.reset();
+
+        vctx = createVideoCodecContext(stream, codec);
+        if (!vctx)
+            return false;
+        ret = avcodec_open2(vctx, codec, nullptr);
+    }
+
+    if (ret < 0)
+    {
+        avcodec_free_context(&vctx);
+        LOG_WARN("FFmpegDecoder: failed to open video decoder: {}", av_err(ret));
+        return false;
+    }
+
+    m_videoCodecCtx.reset(vctx);
+    m_videoWidth = vctx->width;
+    m_videoHeight = vctx->height;
+    AVRational fr = stream->avg_frame_rate;
+    m_videoFps = (fr.den > 0) ? av_q2d(fr) : 25.0;
+    return true;
+}
+
 bool FFmpegDecoder::openInternal(const QString& path)
 {
     LOG_INFO("FFmpegDecoder: opening {}", path.toStdString());
@@ -207,31 +275,8 @@ bool FFmpegDecoder::openInternal(const QString& path)
         }
         else
         {
-            AVCodecContext* vctx = avcodec_alloc_context3(vcodec);
-            avcodec_parameters_to_context(vctx, vs->codecpar);
-            vctx->thread_count = 0; // 自动选择线程数（通常 = CPU 核心数）
-            m_hardwareDecoder = createHardwareDecoderBackend(vcodec, vs->codecpar->codec_id);
-            if (m_hardwareDecoder)
-            {
-                LOG_INFO("FFmpegDecoder: hardware decoder candidate {}",
-                         m_hardwareDecoder->name().toStdString());
-            }
-            ret = avcodec_open2(vctx, vcodec, nullptr);
-            if (ret < 0)
-            {
-                avcodec_free_context(&vctx);
-                LOG_WARN("FFmpegDecoder: failed to open video decoder: {}", av_err(ret));
+            if (!openVideoCodec(vs, vcodec))
                 m_videoStreamIdx = -1;
-            }
-            else
-            {
-                m_videoCodecCtx.reset(vctx);
-                m_videoWidth = vctx->width;
-                m_videoHeight = vctx->height;
-                // 计算帧率
-                AVRational fr = vs->avg_frame_rate;
-                m_videoFps = (fr.den > 0) ? av_q2d(fr) : 25.0;
-            }
         }
     }
 
