@@ -20,6 +20,8 @@ def main():
     engine_cpp = read("plugins/PlayPlugin/src/PlayerEngine.cpp")
     decoder_h = read("plugins/PlayPlugin/src/FFmpegDecoder.h")
     decoder_cpp = read("plugins/PlayPlugin/src/FFmpegDecoder.cpp")
+    hw_backend_h = read("plugins/PlayPlugin/src/hw/HardwareDecoderBackend.h")
+    cmake = read("plugins/PlayPlugin/CMakeLists.txt")
     audio_cpp = read("plugins/PlayPlugin/src/AudioRenderer.cpp")
     audio_h = read("plugins/PlayPlugin/src/AudioRenderer.h")
     surface_cpp = read("plugins/PlayPlugin/src/FFmpegSurface.cpp")
@@ -118,6 +120,20 @@ def main():
             "playlist row hover/double-click handling should not cover remove buttons")
     require("normalizeVideoFrame" in decoder_h and "sws_getCachedContext" in decoder_cpp,
             "unsupported video pixel formats should be converted before rendering")
+    require("class HardwareDecoderBackend" in hw_backend_h,
+            "hardware decoder backend interface should exist")
+    require("virtual QString name() const = 0" in hw_backend_h,
+            "hardware backend should expose a stable log name")
+    require("virtual bool isAvailableForCodec" in hw_backend_h,
+            "hardware backend should decide codec availability")
+    require("virtual bool configureContext(AVCodecContext* codecContext) = 0" in hw_backend_h,
+            "hardware backend should configure AVCodecContext before avcodec_open2")
+    require("virtual bool isHardwareFrame(const AVFrame* frame) const = 0" in hw_backend_h,
+            "hardware backend should identify frames that need transfer")
+    require("virtual AVFramePtr transferToCpuFrame(const AVFrame* frame) = 0" in hw_backend_h,
+            "hardware backend should transfer hardware frames to CPU frames")
+    require("src/hw/HardwareDecoderBackend.h" in cmake,
+            "PlayPlugin target should include hardware backend interface")
 
 
 if __name__ == "__main__":
