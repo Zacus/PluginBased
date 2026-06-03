@@ -55,6 +55,7 @@ def main():
     context_h = read("plugins/PlayPlugin/src/PlaybackContext.h")
     app_plugin_h = read("plugin/IAppPlugin.h")
     plugin_cmake = read("plugin/CMakeLists.txt")
+    dummy_cmake = read("plugins/DummyPlugin/CMakeLists.txt")
     manager_h = read("core/PluginManager.h")
     manager_cpp = read("core/PluginManager.cpp")
     playplugin_h = read("plugins/PlayPlugin/PlayPlugin.h")
@@ -101,6 +102,10 @@ def main():
             "config filename should be pluginbased.ini")
     require('qrc:/PluginBased/qml/main.qml' in main_cpp,
             "QML entry URL should use PluginBased")
+    require('LOG_INFO("PluginBased starting")' in main_cpp,
+            "startup log should use PluginBased")
+    require('LOG_INFO("PluginBased exiting")' in main_cpp,
+            "shutdown log should use PluginBased")
     require('QStringLiteral("PluginBased")' in app_controller_h,
             "AppController should expose PluginBased as app name")
     require('"/pluginbased.log"' in logger_cpp,
@@ -110,6 +115,8 @@ def main():
     require("name: PluginBased" in package_yml and "binary: PluginBasedApp" in package_yml and
             "bundle_id: com.pluginbased.app" in package_yml,
             "packaging metadata should use PluginBased")
+    require("- PluginBased" in package_yml,
+            "packaging QML modules should include PluginBased")
     require("PluginBasedApp" in package_sh and "project(PluginBased VERSION" in package_sh,
             "package.sh should discover the renamed project and app bundle")
     require('exec "${DIR}/bin/PluginBasedApp" "$@"' in deploy_py,
@@ -123,6 +130,7 @@ def main():
         ("logger/CMakeLists.txt", logger_cmake),
         ("plugin/CMakeLists.txt", plugin_cmake),
         ("plugins/PlayPlugin/CMakeLists.txt", cmake),
+        ("plugins/DummyPlugin/CMakeLists.txt", dummy_cmake),
         ("package.sh", package_sh),
     ]
     active_runtime_files = [
@@ -152,6 +160,10 @@ def main():
                    "old host QML output directory should be removed from active app CMake")
     require_absent('qrc:/VideoPlayer/qml/main.qml', [("app/main.cpp", main_cpp)],
                    "old QML entry URL should be removed from active startup code")
+    require_absent("VideoPlayer starting", [("app/main.cpp", main_cpp)],
+                   "old startup log text should be removed from active startup code")
+    require_absent("VideoPlayer exiting", [("app/main.cpp", main_cpp)],
+                   "old shutdown log text should be removed from active startup code")
     require_absent("import VideoPlayer 1.0",
                    [("app/qml/main.qml", app_qml),
                     ("app/qml/HomePanel.qml", home_panel_qml)],
@@ -171,6 +183,8 @@ def main():
                    "old package binary should be removed from active packaging metadata")
     require_absent("bundle_id: com.myorg.videoplayer", [("tools/package.yml", package_yml)],
                    "old bundle id should be removed from active packaging metadata")
+    require_absent("- VideoPlayer", [("tools/package.yml", package_yml)],
+                   "old QML module entry should be removed from active packaging metadata")
     require_absent('exec "${DIR}/bin/VideoPlayerApp" "$@"', [("tools/deploy.py", deploy_py)],
                    "old deployment wrapper target should be removed from active deployment script")
 
