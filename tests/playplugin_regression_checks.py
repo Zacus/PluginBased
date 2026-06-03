@@ -59,12 +59,62 @@ def main():
     playplugin_json = read("plugins/PlayPlugin/PlayPlugin.json")
     readme = read("README.md")
     build_md = read("BUILD.md")
+    root_cmake = read("CMakeLists.txt")
+    app_cmake = read("app/CMakeLists.txt")
+    core_cmake = read("core/CMakeLists.txt")
+    logger_cmake = read("logger/CMakeLists.txt")
+    main_cpp = read("app/main.cpp")
+    app_controller_h = read("app/AppController.h")
+    logger_cpp = read("logger/Logger.cpp")
+    app_qml = read("app/qml/main.qml")
+    home_panel_qml = read("app/qml/HomePanel.qml")
+    package_yml = read("tools/package.yml")
+    package_sh = read("package.sh")
+    deploy_py = read("tools/deploy.py")
+
+    require("project(PluginBased VERSION" in root_cmake,
+            "top-level CMake project should be renamed to PluginBased")
+    require("qt_add_executable(PluginBasedApp" in app_cmake,
+            "host executable target should be PluginBasedApp")
+    require('URI     "PluginBased"' in app_cmake,
+            "host QML URI should be PluginBased")
+    require('${CMAKE_BINARY_DIR}/PluginBased' in app_cmake,
+            "host QML output directory should be PluginBased")
+    require("PluginBasedLogger" in app_cmake and "PluginBasedPlugin" in app_cmake and
+            "PluginBasedCore" in app_cmake,
+            "host app should link renamed internal targets")
+    require("PluginBasedCore" in core_cmake and "PluginBasedLogger" in core_cmake and
+            "PluginBasedPlugin" in core_cmake,
+            "core CMake target and dependencies should use PluginBased names")
+    require("qt_add_qml_module(PluginBasedLogger" in logger_cmake,
+            "logger target should be PluginBasedLogger")
+    require('app.setOrganizationName("PluginBased")' in main_cpp,
+            "Qt organization name should be PluginBased")
+    require('app.setApplicationName("PluginBased")' in main_cpp,
+            "Qt application name should be PluginBased")
+    require('cfg.load(dataDir + "/config/pluginbased.ini")' in main_cpp,
+            "config filename should be pluginbased.ini")
+    require('qrc:/PluginBased/qml/main.qml' in main_cpp,
+            "QML entry URL should use PluginBased")
+    require('QStringLiteral("PluginBased")' in app_controller_h,
+            "AppController should expose PluginBased as app name")
+    require('"/pluginbased.log"' in logger_cpp,
+            "logger should write pluginbased.log")
+    require("import PluginBased 1.0" in app_qml and "import PluginBased 1.0" in home_panel_qml,
+            "host QML files should import PluginBased 1.0")
+    require("name: PluginBased" in package_yml and "binary: PluginBasedApp" in package_yml and
+            "bundle_id: com.pluginbased.app" in package_yml,
+            "packaging metadata should use PluginBased")
+    require("PluginBasedApp" in package_sh and "project(PluginBased VERSION" in package_sh,
+            "package.sh should discover the renamed project and app bundle")
+    require('exec "${DIR}/bin/PluginBasedApp" "$@"' in deploy_py,
+            "deployment wrapper should launch PluginBasedApp")
 
     require("class IAppPlugin" in app_plugin_h,
             "generic app plugin interface should exist")
     require("#define IAppPlugin_IID" in app_plugin_h and
-            "com.videoplayer.IAppPlugin/1.0" in app_plugin_h,
-            "IAppPlugin should expose the generic plugin IID")
+            "com.pluginbased.IAppPlugin/1.0" in app_plugin_h,
+            "IAppPlugin should expose the generic PluginBased plugin IID")
     require("struct PluginContext" in app_plugin_h,
             "IAppPlugin should define the minimal host context")
     require(not file_exists("plugin/IPlayerPlugin.h"),
@@ -79,8 +129,8 @@ def main():
             "IAppPlugin initialize should receive PluginContext")
     require("Q_DECLARE_INTERFACE(IAppPlugin, IAppPlugin_IID)" in app_plugin_h,
             "IAppPlugin should be declared as a Qt plugin interface")
-    require("IAppPlugin.h" in plugin_cmake,
-            "VideoPlayerPlugin interface target should publish IAppPlugin.h")
+    require("PluginBasedPlugin" in plugin_cmake,
+            "PluginBasedPlugin interface target should publish IAppPlugin.h")
     require("IPlayerPlugin" not in plugin_cmake,
             "VideoPlayerPlugin target should not publish IPlayerPlugin.h")
     require('#include "IAppPlugin.h"' in manager_h,
@@ -107,8 +157,8 @@ def main():
             "PlayPlugin should not expose a player plugin Qt interface")
     require("Q_PLUGIN_METADATA(IID IAppPlugin_IID FILE \"PlayPlugin.json\")" in playplugin_h,
             "PlayPlugin metadata should use the generic app plugin IID")
-    require("com.videoplayer.IAppPlugin/1.0" in playplugin_json,
-            "PlayPlugin JSON metadata should use the generic app plugin IID")
+    require("com.pluginbased.IAppPlugin/1.0" in playplugin_json,
+            "PlayPlugin JSON metadata should use the generic PluginBased app plugin IID")
     require("QString id()          const override" in playplugin_h,
             "PlayPlugin should expose a stable app plugin id")
     require("bool initialize(const PluginContext& context) override" in playplugin_h,
@@ -125,8 +175,8 @@ def main():
             "DummyPlugin should expose only the generic app plugin interface")
     require("Q_PLUGIN_METADATA(IID IAppPlugin_IID FILE \"DummyPlugin.json\")" in dummy_h,
             "DummyPlugin metadata should use generic app plugin IID")
-    require("com.videoplayer.IAppPlugin/1.0" in dummy_json,
-            "DummyPlugin JSON metadata should use generic app plugin IID")
+    require("com.pluginbased.IAppPlugin/1.0" in dummy_json,
+            "DummyPlugin JSON metadata should use generic PluginBased app plugin IID")
     require("bool initialize(const PluginContext& context) override" in dummy_h,
             "DummyPlugin should initialize from PluginContext")
     require("canHandle(" not in dummy_h and "open(const QUrl&" not in dummy_h,
