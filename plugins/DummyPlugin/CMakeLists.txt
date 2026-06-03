@@ -35,22 +35,22 @@ target_include_directories(DummyPlugin PRIVATE
 
 target_link_libraries(DummyPlugin PRIVATE
     Qt6::Core
-    VideoPlayerPlugin
-    VideoPlayerLogger
+    PluginBasedPlugin
+    PluginBasedLogger
     QtQuickComponents
 )
 
 # ── 安装规则（make install / CPack 打包时使用）────────────────
 # 发布包结构：
-#   bin/VideoPlayerApp
+#   bin/PluginBasedApp
 #   plugins/DummyPlugin.so   (Linux)
 #   plugins/DummyPlugin.dll  (Windows)
 # macOS .app bundle 结构：
-#   VideoPlayerApp.app/Contents/MacOS/VideoPlayerApp
-#   VideoPlayerApp.app/Contents/PlugIns/DummyPlugin.so
+#   PluginBasedApp.app/Contents/MacOS/PluginBasedApp
+#   PluginBasedApp.app/Contents/PlugIns/DummyPlugin.so
 if(APPLE)
     install(TARGETS DummyPlugin
-        LIBRARY DESTINATION "$<TARGET_BUNDLE_DIR:VideoPlayerApp>/Contents/PlugIns"
+        LIBRARY DESTINATION "$<TARGET_BUNDLE_DIR:PluginBasedApp>/Contents/PlugIns"
     )
 else()
     install(TARGETS DummyPlugin

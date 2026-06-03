@@ -7,7 +7,7 @@
 struct PluginContext
 {};
 
-#define IAppPlugin_IID "com.videoplayer.IAppPlugin/1.0"
+#define IAppPlugin_IID "com.pluginbased.IAppPlugin/1.0"
 
 class IAppPlugin
 {

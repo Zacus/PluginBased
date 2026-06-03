@@ -3,7 +3,7 @@
  * @Date: 2026-04-25 07:19:02
  * @LastEditors: zs
  * @LastEditTime: 2026-05-05 22:46:29
- * @FilePath: /VideoPlayer/plugins/PlayPlugin/src/AudioRenderer.h
+ * @FilePath: /PluginBased/plugins/PlayPlugin/src/AudioRenderer.h
  * @Description:
  *
  * Copyright (c) 2026 by zs, All Rights Reserved.

@@ -122,10 +122,10 @@ target_link_libraries(PlayPlugin PRIVATE
     Qt6::GuiPrivate
     Qt6::Quick
     Qt6::Multimedia
-    VideoPlayerPlugin                   # IAppPlugin 接口（INTERFACE）
-    VideoPlayerLogger                   # spdlog 封装（STATIC）
+    PluginBasedPlugin                   # IAppPlugin 接口（INTERFACE）
+    PluginBasedLogger                   # spdlog 封装（STATIC）
     FFmpeg::all                         # avformat / avcodec / avutil / swscale / swresample
-    # 不链接 VideoPlayerCore：PluginManager 符号由主程序 -rdynamic 在运行时提供
+    # 不链接 PluginBasedCore：PluginManager 符号由主程序 -rdynamic 在运行时提供
 )
 
 if(APPLE)
@@ -148,10 +148,10 @@ endif()
 # ── 安装规则 ─────────────────────────────────────────────────
 if(APPLE)
     install(TARGETS PlayPlugin
-        LIBRARY DESTINATION "$<TARGET_BUNDLE_DIR:VideoPlayerApp>/Contents/PlugIns"
+        LIBRARY DESTINATION "$<TARGET_BUNDLE_DIR:PluginBasedApp>/Contents/PlugIns"
     )
     install(DIRECTORY "${CMAKE_BINARY_DIR}/PlayPlugin"
-        DESTINATION "$<TARGET_BUNDLE_DIR:VideoPlayerApp>/Contents/Resources"
+        DESTINATION "$<TARGET_BUNDLE_DIR:PluginBasedApp>/Contents/Resources"
     )
 else()
     install(TARGETS PlayPlugin

@@ -1,5 +1,5 @@
 {
-    "IID": "com.videoplayer.IAppPlugin/1.0",
+    "IID": "com.pluginbased.IAppPlugin/1.0",
     "MetaData": {
         "name":        "PlayPlugin",
         "version":     "1.0.0",

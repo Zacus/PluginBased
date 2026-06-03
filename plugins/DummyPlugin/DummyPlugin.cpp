@@ -3,7 +3,7 @@
  * @Date: 2026-03-25 19:18:22
  * @LastEditors: zs
  * @LastEditTime: 2026-03-27 20:28:55
- * @FilePath: /VideoPlayer/plugins/DummyPlugin/DummyPlugin.cpp
+ * @FilePath: /PluginBased/plugins/DummyPlugin/DummyPlugin.cpp
  * @Description: 
  * 
  * Copyright (c) 2026 by zs, All Rights Reserved. 
