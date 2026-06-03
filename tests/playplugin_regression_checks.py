@@ -102,9 +102,9 @@ def main():
             "config filename should be pluginbased.ini")
     require('qrc:/PluginBased/qml/main.qml' in main_cpp,
             "QML entry URL should use PluginBased")
-    require('LOG_INFO("PluginBased starting")' in main_cpp,
+    require('LOG_INFO("=== PluginBased starting (v1.0.0) ===")' in main_cpp,
             "startup log should use PluginBased")
-    require('LOG_INFO("PluginBased exiting")' in main_cpp,
+    require('LOG_INFO("=== PluginBased exiting ({}) ===", ret)' in main_cpp,
             "shutdown log should use PluginBased")
     require('QStringLiteral("PluginBased")' in app_controller_h,
             "AppController should expose PluginBased as app name")
@@ -210,7 +210,7 @@ def main():
     require("PluginBasedPlugin" in plugin_cmake,
             "PluginBasedPlugin interface target should publish IAppPlugin.h")
     require("IPlayerPlugin" not in plugin_cmake,
-            "VideoPlayerPlugin target should not publish IPlayerPlugin.h")
+            "PluginBasedPlugin target should not publish IPlayerPlugin.h")
     require('#include "IAppPlugin.h"' in manager_h,
             "PluginManager should include the generic app plugin interface")
     require("IAppPlugin*" in manager_h,
