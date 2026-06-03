@@ -55,21 +55,22 @@ bool PluginManager::loadPlugin(const QString& filePath)
         return false;
     }
 
-    auto* plugin = qobject_cast<IPlayerPlugin*>(obj);
+    auto* plugin = qobject_cast<IAppPlugin*>(obj);
     if (!plugin) {
-        LOG_ERROR("PluginManager: {} does not implement IPlayerPlugin",
-                  filePath.toStdString());
+        const QString err = QStringLiteral("%1 does not implement IAppPlugin")
+                                .arg(filePath);
+        LOG_ERROR("PluginManager: {}", err.toStdString());
         loader->unload();
+        emit pluginLoadFailed(filePath, err);
         return false;
     }
 
-    // 构造 PluginFinder 并注入：插件通过此 lambda 查找其他已加载插件，
-    // 无需 #include PluginManager.h，彻底断开对宿主层的静态依赖。
-    IPlayerPlugin::PluginFinder finder = [this](const QUrl& url) -> IPlayerPlugin* {
-        return this->findPlugin(url);
+    PluginContext context;
+    context.findPlayerPlugin = [this](const QUrl& url) -> IPlayerPlugin* {
+        return this->findPlayerPlugin(url);
     };
 
-    if (!plugin->initialize(finder)) {
+    if (!plugin->initialize(context)) {
         LOG_ERROR("PluginManager: plugin {} initialize() failed",
                   plugin->name().toStdString());
         loader->unload();
@@ -89,13 +90,20 @@ bool PluginManager::loadPlugin(const QString& filePath)
     return true;
 }
 
-IPlayerPlugin* PluginManager::findPlugin(const QUrl& url) const
+IPlayerPlugin* PluginManager::findPlayerPlugin(const QUrl& url) const
 {
     for (const auto& entry : m_plugins) {
-        if (entry.plugin && entry.plugin->canHandle(url))
-            return entry.plugin;
+        if (!entry.loader)
+            continue;
+
+        QObject* obj = entry.loader->instance();
+        auto* player = qobject_cast<IPlayerPlugin*>(obj);
+        if (player && player->canHandle(url))
+            return player;
     }
-    LOG_WARN("PluginManager: no plugin found for {}", url.toString().toStdString());
+
+    LOG_WARN("PluginManager: no player plugin found for {}",
+             url.toString().toStdString());
     return nullptr;
 }
 

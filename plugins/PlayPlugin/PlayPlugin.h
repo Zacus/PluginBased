@@ -2,6 +2,7 @@
 
 #include <QObject>
 #include <QUrl>
+#include "IAppPlugin.h"
 #include "IPlayerPlugin.h"
 
 /**
@@ -16,17 +17,18 @@
  *   宿主卸载 → 调用 shutdown()
  *   PlayerEngine 由 QML 引擎管理，生命周期独立于 PlayPlugin
  */
-class PlayPlugin : public QObject, public IPlayerPlugin
+class PlayPlugin : public QObject, public IAppPlugin, public IPlayerPlugin
 {
     Q_OBJECT
-    Q_INTERFACES(IPlayerPlugin)
-    Q_PLUGIN_METADATA(IID IPlayerPlugin_IID FILE "PlayPlugin.json")
+    Q_INTERFACES(IAppPlugin IPlayerPlugin)
+    Q_PLUGIN_METADATA(IID IAppPlugin_IID FILE "PlayPlugin.json")
 
 public:
     explicit PlayPlugin(QObject* parent = nullptr);
     ~PlayPlugin() override;
 
     // ── 元信息 ────────────────────────────────────────────────────────────
+    QString id()          const override { return QStringLiteral("play"); }
     QString name()        const override { return QStringLiteral("PlayPlugin"); }
     QString version()     const override { return QStringLiteral("1.0.0"); }
     QString description() const override { return QStringLiteral("内置播放器：视频 + 播放列表"); }
@@ -34,7 +36,7 @@ public:
     QString cardName()    const override { return QStringLiteral("视频播放器"); }
 
     // ── 生命周期 ──────────────────────────────────────────────────────────
-    bool initialize(PluginFinder finder = {}) override;
+    bool initialize(const PluginContext& context) override;
     void shutdown()                          override;
 
     // ── 能力查询 ──────────────────────────────────────────────────────────

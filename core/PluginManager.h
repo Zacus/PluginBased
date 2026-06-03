@@ -9,6 +9,7 @@
 #include <memory>
 #include <vector>
 
+#include "IAppPlugin.h"
 #include "IPlayerPlugin.h"
 
 class PluginManager : public QObject
@@ -36,7 +37,7 @@ public:
     void loadAll(const QString& pluginDir);
     bool loadPlugin(const QString& filePath);
     void unloadAll();
-    IPlayerPlugin* findPlugin(const QUrl& url) const;
+    IPlayerPlugin* findPlayerPlugin(const QUrl& url) const;
 
     int         pluginCount() const { return static_cast<int>(m_plugins.size()); }
     QStringList pluginNames() const;
@@ -68,7 +69,7 @@ private:
 
     struct PluginEntry {
         std::unique_ptr<QPluginLoader> loader;
-        IPlayerPlugin*                 plugin = nullptr;
+        IAppPlugin*                    plugin = nullptr;
         PluginEntry() = default;
         PluginEntry(PluginEntry&&) = default;
         PluginEntry& operator=(PluginEntry&&) = default;

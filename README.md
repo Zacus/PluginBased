@@ -36,7 +36,8 @@ VideoPlayer/
 │   └── CMakeLists.txt
 │
 ├── plugin/                      # 插件接口定义
-│   └── IPlayerPlugin.h          # 纯虚接口
+│   ├── IAppPlugin.h             # 通用插件接口
+│   └── IPlayerPlugin.h          # 可选播放能力接口
 │
 └── plugins/                     # 插件实现
     └── DummyPlugin/             # 示例插件
@@ -94,7 +95,7 @@ flush_on         = warn
 
 ### 插件系统
 
-实现 `IPlayerPlugin` 接口，编译为动态库，放入 `plugins/` 目录即可被自动扫描加载。卡片面板会在 `pluginsReady` 信号触发后动态渲染插件卡片。
+实现 `IAppPlugin` 通用插件接口，编译为动态库，放入 `plugins/` 目录即可被自动扫描加载。卡片面板会在 `pluginsReady` 信号触发后动态渲染插件卡片。需要处理媒体 URL 和播放控制的插件可额外实现 `IPlayerPlugin` 可选播放能力。
 
 ### QML 类型注册
 
@@ -117,13 +118,26 @@ flush_on         = warn
 
 ## 开发插件
 
+插件分为两层：
+
+- `IAppPlugin`：所有插件都必须实现的通用插件接口，负责元信息、生命周期、主页卡片和可选 QML 页面。
+- `IPlayerPlugin`：可选播放能力接口，只有需要处理媒体 URL 并提供播放控制的插件才实现。
+
 1. 在 `plugins/` 下新建目录，`CMakeLists.txt` 使用 `add_library(MyPlugin MODULE ...)`
-2. 继承 `IPlayerPlugin`，实现所有纯虚方法
-3. 在类声明中加入：
+2. 普通工具类插件继承 `IAppPlugin`，在类声明中加入：
    ```cpp
    Q_OBJECT
-   Q_INTERFACES(IPlayerPlugin)
-   Q_PLUGIN_METADATA(IID IPlayerPlugin_IID FILE "MyPlugin.json")
+   Q_INTERFACES(IAppPlugin)
+   Q_PLUGIN_METADATA(IID IAppPlugin_IID FILE "MyPlugin.json")
+   ```
+3. 播放器插件同时实现 `IAppPlugin` 和 `IPlayerPlugin`：
+   ```cpp
+   class MyPlayerPlugin : public QObject, public IAppPlugin, public IPlayerPlugin
+   {
+       Q_OBJECT
+       Q_INTERFACES(IAppPlugin IPlayerPlugin)
+       Q_PLUGIN_METADATA(IID IAppPlugin_IID FILE "MyPlayerPlugin.json")
+   };
    ```
 4. 编译产物放入 `plugins/` 目录，`PluginManager::loadAll()` 在启动时自动扫描
 

@@ -11,53 +11,35 @@
 #pragma once
 
 #include <QObject>
-#include "IPlayerPlugin.h"
+#include "IAppPlugin.h"
 
 /**
  * @brief 示例插件 —— 不做真实解码，仅验证插件框架运转
  *
  * 生产插件（如 FFmpeg 插件）照此接口实现即可。
  */
-class DummyPlugin : public QObject, public IPlayerPlugin
+class DummyPlugin : public QObject, public IAppPlugin
 {
     Q_OBJECT
-    Q_INTERFACES(IPlayerPlugin)
-    Q_PLUGIN_METADATA(IID IPlayerPlugin_IID FILE "DummyPlugin.json")
+    Q_INTERFACES(IAppPlugin)
+    Q_PLUGIN_METADATA(IID IAppPlugin_IID FILE "DummyPlugin.json")
 
 public:
     explicit DummyPlugin(QObject* parent = nullptr);
     ~DummyPlugin() override;
 
     // ── 元信息 ────────────────────────────────────────────────────────────
+    QString id()          const override { return QStringLiteral("dummy"); }
     QString name()        const override { return QStringLiteral("DummyPlugin"); }
     QString version()     const override { return QStringLiteral("1.0.0"); }
     QString description() const override { return QStringLiteral("Stub plugin for framework validation"); }
+    QString cardIcon()    const override { return QStringLiteral("⬡"); }
+    QString cardName()    const override { return QStringLiteral("示例插件"); }
 
     // ── 生命周期 ──────────────────────────────────────────────────────────
-    bool initialize(PluginFinder /*finder*/ = {}) override;
+    bool initialize(const PluginContext& context) override;
     void shutdown()   override;
-
-    // ── 能力查询 ──────────────────────────────────────────────────────────
-    bool canHandle(const QUrl& url) const override;
-
-    // ── 播放控制 ──────────────────────────────────────────────────────────
-    bool open(const QUrl& url) override;
-    void play()                override;
-    void pause()               override;
-    void stop()                override;
-    void seek(qint64 positionMs) override;
-
-    // ── 状态查询 ──────────────────────────────────────────────────────────
-    qint64 duration()  const override { return m_duration; }
-    qint64 position()  const override { return m_position; }
-    bool   isPlaying() const override { return m_playing; }
 
     bool hasQmlUI()        const override { return true; }
     QUrl qmlComponentUrl() const override;
-
-private:
-    QUrl   m_url;
-    qint64 m_duration = 60'000;   // 假设 60 秒
-    qint64 m_position = 0;
-    bool   m_playing  = false;
 };

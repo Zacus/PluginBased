@@ -37,10 +37,10 @@ PlayPlugin::~PlayPlugin()
 // ─────────────────────────────────────────────────────────────────────────────
 // 生命周期
 // ─────────────────────────────────────────────────────────────────────────────
-bool PlayPlugin::initialize(PluginFinder finder)
+bool PlayPlugin::initialize(const PluginContext& context)
 {
     LOG_INFO("PlayPlugin::initialize()");
-    PlaybackContext::instance().setFinder(std::move(finder));
+    PlaybackContext::instance().setFinder(context.findPlayerPlugin);
     return true;
 }
 

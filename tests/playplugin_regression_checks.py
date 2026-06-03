@@ -44,6 +44,107 @@ def main():
     player_qml = read("plugins/PlayPlugin/qml/PlayerView.qml")
     playplugin_cpp = read("plugins/PlayPlugin/PlayPlugin.cpp")
     context_h = read("plugins/PlayPlugin/src/PlaybackContext.h")
+    app_plugin_h = read("plugin/IAppPlugin.h")
+    iplayer_h = read("plugin/IPlayerPlugin.h")
+    plugin_cmake = read("plugin/CMakeLists.txt")
+    manager_h = read("core/PluginManager.h")
+    manager_cpp = read("core/PluginManager.cpp")
+    playplugin_h = read("plugins/PlayPlugin/PlayPlugin.h")
+    dummy_h = read("plugins/DummyPlugin/DummyPlugin.h")
+    dummy_cpp = read("plugins/DummyPlugin/DummyPlugin.cpp")
+    dummy_json = read("plugins/DummyPlugin/DummyPlugin.json")
+    playplugin_json = read("plugins/PlayPlugin/PlayPlugin.json")
+    readme = read("README.md")
+    build_md = read("BUILD.md")
+
+    require("class IAppPlugin" in app_plugin_h,
+            "generic app plugin interface should exist")
+    require("#define IAppPlugin_IID" in app_plugin_h and
+            "com.videoplayer.IAppPlugin/1.0" in app_plugin_h,
+            "IAppPlugin should expose the generic plugin IID")
+    require("struct PluginContext" in app_plugin_h,
+            "IAppPlugin should define the minimal host context")
+    require("using PlayerPluginFinder = std::function<IPlayerPlugin*(const QUrl&)>" in app_plugin_h,
+            "PluginContext should expose a player capability finder")
+    require("virtual QString id()          const = 0" in app_plugin_h,
+            "IAppPlugin should expose a stable plugin id")
+    require("virtual bool initialize(const PluginContext& context) = 0" in app_plugin_h,
+            "IAppPlugin initialize should receive PluginContext")
+    require("Q_DECLARE_INTERFACE(IAppPlugin, IAppPlugin_IID)" in app_plugin_h,
+            "IAppPlugin should be declared as a Qt plugin interface")
+    require("IAppPlugin.h" in plugin_cmake,
+            "VideoPlayerPlugin interface target should publish IAppPlugin.h")
+    require("PluginContext" not in iplayer_h,
+            "IPlayerPlugin should not own generic host context")
+    require("virtual QString name()" not in iplayer_h,
+            "IPlayerPlugin should not own generic metadata")
+    require("virtual QString version()" not in iplayer_h,
+            "IPlayerPlugin should not own generic version metadata")
+    require("virtual QString description()" not in iplayer_h,
+            "IPlayerPlugin should not own generic description metadata")
+    require("virtual bool initialize" not in iplayer_h,
+            "IPlayerPlugin should not own generic lifecycle")
+    require("virtual bool canHandle(const QUrl& url) const = 0" in iplayer_h,
+            "IPlayerPlugin should keep media handling capability")
+    require("virtual bool open(const QUrl& url) = 0" in iplayer_h,
+            "IPlayerPlugin should keep open capability")
+    require("Q_DECLARE_INTERFACE(IPlayerPlugin, IPlayerPlugin_IID)" in iplayer_h,
+            "IPlayerPlugin should remain a Qt-discoverable optional capability")
+    require('#include "IAppPlugin.h"' in manager_h,
+            "PluginManager should include the generic app plugin interface")
+    require("IAppPlugin*" in manager_h,
+            "PluginManager should store generic app plugins")
+    require("IPlayerPlugin*                 plugin" not in manager_h,
+            "PluginManager should not store IPlayerPlugin as the base plugin")
+    require("IPlayerPlugin* findPlayerPlugin(const QUrl& url) const" in manager_h,
+            "PluginManager should expose player capability lookup")
+    require("qobject_cast<IAppPlugin*>" in manager_cpp,
+            "PluginManager should load generic app plugins")
+    require("qobject_cast<IPlayerPlugin*>" in manager_cpp,
+            "PluginManager should discover optional player capability by cast")
+    require("PluginContext context" in manager_cpp and
+            "context.findPlayerPlugin" in manager_cpp,
+            "PluginManager should pass PluginContext into app plugin initialization")
+    require("#include \"IAppPlugin.h\"" in playplugin_h,
+            "PlayPlugin should include IAppPlugin")
+    require("public IAppPlugin, public IPlayerPlugin" in playplugin_h,
+            "PlayPlugin should implement app plugin and player capability")
+    require("Q_INTERFACES(IAppPlugin IPlayerPlugin)" in playplugin_h,
+            "PlayPlugin should expose both Qt interfaces")
+    require("Q_PLUGIN_METADATA(IID IAppPlugin_IID FILE \"PlayPlugin.json\")" in playplugin_h,
+            "PlayPlugin metadata should use the generic app plugin IID")
+    require("com.videoplayer.IAppPlugin/1.0" in playplugin_json,
+            "PlayPlugin JSON metadata should use the generic app plugin IID")
+    require("QString id()          const override" in playplugin_h,
+            "PlayPlugin should expose a stable app plugin id")
+    require("bool initialize(const PluginContext& context) override" in playplugin_h,
+            "PlayPlugin should initialize from PluginContext")
+    require("PlaybackContext::instance().setFinder(context.findPlayerPlugin)" in playplugin_cpp,
+            "PlayPlugin should pass the context player finder into PlaybackContext")
+    require("using PlayerPluginFinder = PluginContext::PlayerPluginFinder" in context_h,
+            "PlaybackContext should use PluginContext's player finder type")
+    require("#include \"IAppPlugin.h\"" in dummy_h,
+            "DummyPlugin should include IAppPlugin")
+    require("public IAppPlugin" in dummy_h and "public IPlayerPlugin" not in dummy_h,
+            "DummyPlugin should be a generic app plugin only")
+    require("Q_INTERFACES(IAppPlugin)" in dummy_h,
+            "DummyPlugin should expose only the generic app plugin interface")
+    require("Q_PLUGIN_METADATA(IID IAppPlugin_IID FILE \"DummyPlugin.json\")" in dummy_h,
+            "DummyPlugin metadata should use generic app plugin IID")
+    require("com.videoplayer.IAppPlugin/1.0" in dummy_json,
+            "DummyPlugin JSON metadata should use generic app plugin IID")
+    require("bool initialize(const PluginContext& context) override" in dummy_h,
+            "DummyPlugin should initialize from PluginContext")
+    require("canHandle(" not in dummy_h and "open(const QUrl&" not in dummy_h,
+            "DummyPlugin should not expose playback capability methods")
+    require("DummyPlugin::canHandle" not in dummy_cpp and "DummyPlugin::open" not in dummy_cpp,
+            "DummyPlugin implementation should not contain playback methods")
+    require("IAppPlugin" in readme and "IPlayerPlugin" in readme,
+            "README should document generic app plugins and optional player capability")
+    require("通用插件" in readme,
+            "README should describe the host plugin model as generic")
+    require("IAppPlugin" in build_md and "可选播放能力" in build_md,
+            "BUILD.md should document app plugin development and optional player capability")
 
     require("finishMedia()" in engine_h, "PlayerEngine should centralize media completion")
     require("maybeFinishMedia()" in engine_h, "PlayerEngine should wait for active streams to drain")

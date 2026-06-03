@@ -7,17 +7,17 @@
 # 为什么原来需要双 target：
 #   Qt6 的 qt_add_qml_module 默认会额外生成一个 QML plugin 入口文件，
 #   其中包含 qt_plugin_instance / qt_plugin_query_metadata_v2，
-#   与 PlayPlugin.cpp 里 Q_PLUGIN_METADATA(IID IPlayerPlugin_IID) 产生的同名符号冲突，
-#   不得不拆成 PlayPluginBackend（QML 类型注册）+ PlayPlugin（IPlayerPlugin 实现）。
+#   与 PlayPlugin.cpp 里 Q_PLUGIN_METADATA(IID IAppPlugin_IID) 产生的同名符号冲突，
+#   不得不拆成 PlayPluginBackend（QML 类型注册）+ PlayPlugin（宿主插件实现）。
 #
 # 单 target 可行的关键：NO_PLUGIN 参数
 #   NO_PLUGIN 告知 qt_add_qml_module 不生成 QML plugin 入口文件，
-#   PlayPlugin.so 里只有 IPlayerPlugin 那一个 qt_plugin_instance，冲突消除。
+#   PlayPlugin.so 里只有 IAppPlugin 那一个 qt_plugin_instance，冲突消除。
 #   QML 类型注册代码（Q_CONSTRUCTOR_FUNCTION）仍然生成并编译进 .so，
 #   在 QPluginLoader dlopen 时自动触发，QML 引擎 import PlayPlugin 1.0 正常工作。
 #
 # 最终 PlayPlugin.so 包含：
-#   ├─ PlayPlugin.cpp         IPlayerPlugin 实现（Q_PLUGIN_METADATA IPlayerPlugin_IID）
+#   ├─ PlayPlugin.cpp         IAppPlugin + IPlayerPlugin 实现（Q_PLUGIN_METADATA IAppPlugin_IID）
 #   ├─ PlayerEngine.cpp       播放引擎（QML_ELEMENT）
 #   ├─ PlaylistModel.cpp      播放列表模型（QML_ELEMENT）
 #   ├─ PlaybackContext.cpp    模块上下文单例（QML_SINGLETON）
@@ -37,13 +37,13 @@ add_library(PlayPlugin MODULE
 # NO_PLUGIN：不生成独立的 QML plugin 入口文件（*Plugin.cpp）。
 #
 # 为什么必须用 NO_PLUGIN：
-#   PlayPlugin.cpp 里有 Q_PLUGIN_METADATA(IID IPlayerPlugin_IID)，
+#   PlayPlugin.cpp 里有 Q_PLUGIN_METADATA(IID IAppPlugin_IID)，
 #   AUTOMOC 会为它生成 qt_plugin_instance / qt_plugin_query_metadata_v2。
 #   若同时指定 PLUGIN_TARGET PlayPlugin，qt_add_qml_module 还会生成
 #   PlayPlugin_PlayPluginPlugin.cpp，其中包含同名的 QML plugin 入口符号，
 #   导致链接时 duplicate symbol 报错。
 #   NO_PLUGIN 告知 qt_add_qml_module 跳过生成这个文件，
-#   PlayPlugin.so 里只保留 IPlayerPlugin 那一个 qt_plugin_instance。
+#   PlayPlugin.so 里只保留 IAppPlugin 那一个 qt_plugin_instance。
 #
 # QML 类型仍然正常注册：
 #   qmltyperegistrar 生成的注册代码里含 Q_CONSTRUCTOR_FUNCTION，
@@ -122,7 +122,7 @@ target_link_libraries(PlayPlugin PRIVATE
     Qt6::GuiPrivate
     Qt6::Quick
     Qt6::Multimedia
-    VideoPlayerPlugin                   # IPlayerPlugin.h（INTERFACE，零编译产物）
+    VideoPlayerPlugin                   # IAppPlugin / IPlayerPlugin 接口（INTERFACE）
     VideoPlayerLogger                   # spdlog 封装（STATIC）
     FFmpeg::all                         # avformat / avcodec / avutil / swscale / swresample
     # 不链接 VideoPlayerCore：PluginManager 符号由主程序 -rdynamic 在运行时提供

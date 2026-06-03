@@ -186,7 +186,7 @@ add_library(MyPlugin MODULE
     MyPlugin.cpp
 )
 target_link_libraries(MyPlugin PRIVATE
-    VideoPlayerPlugin   # IPlayerPlugin 接口库
+    VideoPlayerPlugin   # IAppPlugin / IPlayerPlugin 接口库
     VideoPlayerLogger   # 日志库
     Qt6::Core
 )
@@ -195,20 +195,41 @@ set_target_properties(MyPlugin PROPERTIES
 )
 ```
 
-2. 继承 `IPlayerPlugin`，在类声明中加入元数据：
+2. 继承 `IAppPlugin` 通用插件接口，在类声明中加入元数据：
 
 ```cpp
-class MyPlugin : public QObject, public IPlayerPlugin
+class MyPlugin : public QObject, public IAppPlugin
 {
     Q_OBJECT
-    Q_INTERFACES(IPlayerPlugin)
-    Q_PLUGIN_METADATA(IID IPlayerPlugin_IID FILE "MyPlugin.json")
+    Q_INTERFACES(IAppPlugin)
+    Q_PLUGIN_METADATA(IID IAppPlugin_IID FILE "MyPlugin.json")
 public:
+    QString id()          const override { return "my-plugin"; }
     QString name()        const override { return "MyPlugin"; }
     QString version()     const override { return "1.0.0"; }
     QString description() const override { return "我的插件"; }
-    bool    canHandle(const QUrl& url) const override;
     // ...
+};
+```
+
+`IPlayerPlugin` 是可选播放能力，不再是宿主加载插件的基础接口。需要处理媒体 URL 和播放控制的插件可同时实现 `IAppPlugin` 与 `IPlayerPlugin`：
+
+```cpp
+class MyPlayerPlugin : public QObject, public IAppPlugin, public IPlayerPlugin
+{
+    Q_OBJECT
+    Q_INTERFACES(IAppPlugin IPlayerPlugin)
+    Q_PLUGIN_METADATA(IID IAppPlugin_IID FILE "MyPlayerPlugin.json")
+public:
+    bool canHandle(const QUrl& url) const override;
+    bool open(const QUrl& url) override;
+    void play() override;
+    void pause() override;
+    void stop() override;
+    void seek(qint64 positionMs) override;
+    qint64 duration() const override;
+    qint64 position() const override;
+    bool isPlaying() const override;
 };
 ```
 
@@ -216,7 +237,7 @@ public:
 
 ```json
 {
-    "IID": "org.videoplayer.IPlayerPlugin/1.0",
+    "IID": "com.videoplayer.IAppPlugin/1.0",
     "MetaData": {
         "name":    "MyPlugin",
         "version": "1.0.0"

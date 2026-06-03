@@ -3,6 +3,7 @@
 #include <QObject>
 #include <QQmlEngine>
 #include <functional>
+#include "IAppPlugin.h"
 #include "IPlayerPlugin.h"
 
 // 前向声明，避免循环依赖
@@ -12,7 +13,7 @@ class PlayerEngine;
  * @brief PlaybackContext —— PlayPlugin 模块内部的播放上下文单例
  *
  * 职责：
- *   1. 持有 PluginFinder，供 PlayerEngine::open() 查找解码插件
+ *   1. 持有播放器能力查找器，供 PlayerEngine::open() 查找解码插件
  *   2. 持有 PlayerEngine* 弱引用，供 PlayPlugin（IPlayerPlugin 实现）
  *      查询 duration/position/isPlaying 状态，无需直接依赖 PlayerEngine.h
  */
@@ -23,7 +24,7 @@ class PlaybackContext : public QObject
     QML_SINGLETON
 
 public:
-    using PluginFinder = IPlayerPlugin::PluginFinder;
+    using PlayerPluginFinder = PluginContext::PlayerPluginFinder;
 
     static PlaybackContext* create(QQmlEngine*, QJSEngine*)
     {
@@ -38,8 +39,8 @@ public:
         return s;
     }
 
-    // ── PluginFinder ──────────────────────────────────────────────────────
-    void setFinder(PluginFinder finder) { m_finder = std::move(finder); }
+    // ── 播放器能力查找器 ─────────────────────────────────────────────────
+    void setFinder(PlayerPluginFinder finder) { m_finder = std::move(finder); }
     void clearFinder()                  { m_finder = {}; }
     bool hasFinder() const              { return static_cast<bool>(m_finder); }
 
@@ -68,7 +69,7 @@ public:
 private:
     explicit PlaybackContext(QObject* parent = nullptr) : QObject(parent) {}
 
-    PluginFinder  m_finder;
+    PlayerPluginFinder m_finder;
     PlayerEngine* m_engine = nullptr;
     QUrl          m_pendingOpenUrl;
 };
