@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# VideoPlayer 打包入口脚本
+# PluginBased 打包入口脚本
 #
 # 用法:
 #   ./package.sh [选项] [构建目录]
@@ -62,7 +62,7 @@ while [[ $# -gt 0 ]]; do
         --no-verify)   NO_VERIFY=true;       shift ;;
         --config)      CONFIG_FILE="$2";     shift 2 ;;
         -v|--version)
-            grep -m1 'project(VideoPlayer VERSION' "${SCRIPT_DIR}/CMakeLists.txt" \
+            grep -m1 'project(PluginBased VERSION' "${SCRIPT_DIR}/CMakeLists.txt" \
                 | sed -E 's/.*VERSION[[:space:]]+([0-9]+\.[0-9]+\.[0-9]+).*/\1/'
             exit 0
             ;;
@@ -125,11 +125,11 @@ if [[ "${NO_VERIFY}" == false ]]; then
     # 找到 staging 目录（DMG 前的 .app 或 staging 文件夹）
     case "$(uname -s)" in
         Darwin)
-            STAGE="${BUILD_DIR}/app/VideoPlayerApp.app"
+            STAGE="${BUILD_DIR}/app/PluginBasedApp.app"
             ;;
         Linux)
             # 找 _staging_linux 临时目录（若已清理则跳过）
-            STAGE="$(find "${BUILD_DIR}" -maxdepth 2 -name "VideoPlayer-*-linux*" \
+            STAGE="$(find "${BUILD_DIR}" -maxdepth 2 -name "PluginBased-*-linux*" \
                      -type d 2>/dev/null | head -1)"
             ;;
         *)

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-deploy.py — VideoPlayer 核心打包模块
+deploy.py — PluginBased 核心打包模块
 
 职责：
   1. 构建 staging 目录（主程序 / 业务插件 / QML 模块）
@@ -662,7 +662,7 @@ def package_linux(build_dir: Path, dist_dir: Path, cfg: dict, qt_dir: Optional[P
             'DIR="$(cd "$(dirname "$0")" && pwd)"\n'
             'export LD_LIBRARY_PATH="${DIR}/lib${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"\n'
             'export QT_PLUGIN_PATH="${DIR}/bin/plugins"\n'
-            'exec "${DIR}/bin/VideoPlayerApp" "$@"\n'
+            'exec "${DIR}/bin/PluginBasedApp" "$@"\n'
         )
         run_sh.chmod(0o755)
 
@@ -801,7 +801,7 @@ def load_config(config_path: Path) -> dict:
 # =============================================================================
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="VideoPlayer 打包工具",
+        description="PluginBased 打包工具",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument("--build-dir",  type=Path, required=True,  help="CMake 构建目录")

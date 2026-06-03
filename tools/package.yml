@@ -1,18 +1,18 @@
 # =============================================================================
-# VideoPlayer 打包配置
+# PluginBased 打包配置
 # 由 tools/deploy.py 读取，可随项目独立维护
 # =============================================================================
 
 app:
-  name: VideoPlayer
-  binary: VideoPlayerApp
-  bundle_id: com.myorg.videoplayer
+  name: PluginBased
+  binary: PluginBasedApp
+  bundle_id: com.pluginbased.app
 
 # QML 模块：构建目录下的子目录名，整目录打入发布包
 # main.cpp 的 addImportPath 会在运行时找到这些目录
 qml_modules:
   - AppLog
-  - VideoPlayer
+  - PluginBased
   - PlayPlugin
   - QuickUI
 

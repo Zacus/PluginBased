@@ -9,7 +9,7 @@ verify.py — 发布包完整性验证
 
 用法：
   python3 tools/verify.py --stage-dir /path/to/staging
-  python3 tools/verify.py --stage-dir VideoPlayerApp.app --platform macos
+  python3 tools/verify.py --stage-dir PluginBasedApp.app --platform macos
 """
 
 from __future__ import annotations
