@@ -3,7 +3,7 @@
  * @Date: 2026-05-16 21:53:22
  * @LastEditors: zs
  * @LastEditTime: 2026-05-16 22:31:04
- * @FilePath: /VideoPlayer/AGENTS.md
+ * @FilePath: /PluginBased/AGENTS.md
  * @Description: 
  * 
  * Copyright (c) 2026 by zs, All Rights Reserved. 
@@ -12,7 +12,7 @@
 
 ## Project Structure & Module Organization
 
-This is a Qt 6 / QML video player built with CMake and C++17. The main application lives in `app/`, with QML screens in `app/qml/`. Shared runtime logic is split into `core/` for plugin management and app services, `logger/` for the spdlog wrapper, and `plugin/` for the `IAppPlugin` interface. Plugin implementations are under `plugins/`: `DummyPlugin/` is the minimal reference and `PlayPlugin/` contains FFmpeg playback code, QML views, and shaders. Packaging and deployment helpers live in `tools/`, with `package.sh` as the top-level packaging entry point.
+This is a Qt 6 / QML generic plugin host built with CMake and C++17. The main application lives in `app/`, with QML screens in `app/qml/`. Shared runtime logic is split into `core/` for plugin management and app services, `logger/` for the spdlog wrapper, and `plugin/` for the `IAppPlugin` interface. Plugin implementations are under `plugins/`: `DummyPlugin/` is the minimal reference and `PlayPlugin/` contains FFmpeg playback code, QML views, and shaders. Packaging and deployment helpers live in `tools/`, with `package.sh` as the top-level packaging entry point.
 
 ## Build, Test, and Development Commands
 
@@ -32,7 +32,7 @@ cmake --build build --parallel
 Run the debug app:
 
 ```bash
-./build/app/VideoPlayerApp
+./build/app/PluginBasedApp
 ```
 
 Create release artifacts after a release build:
@@ -53,7 +53,7 @@ Use C++17, Qt idioms, and the existing brace style: function braces on their own
 
 ## Testing Guidelines
 
-No unit test framework or CTest targets are currently configured. For changes, at minimum run `cmake --build build --parallel` and manually launch `./build/app/VideoPlayerApp`. For plugin or packaging changes, also run `package.sh` and `tools/verify.py` against the generated staging directory. Place future automated tests in a dedicated `tests/` tree and wire them through CTest.
+No unit test framework or CTest targets are currently configured. For changes, at minimum run `cmake --build build --parallel` and manually launch `./build/app/PluginBasedApp`. For plugin or packaging changes, also run `package.sh` and `tools/verify.py` against the generated staging directory. Place future automated tests in a dedicated `tests/` tree and wire them through CTest.
 
 ## Commit & Pull Request Guidelines
 

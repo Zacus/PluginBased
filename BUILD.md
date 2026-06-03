@@ -83,33 +83,33 @@ export Qt6_DIR=~/Qt/6.7.2/gcc_64/lib/cmake/Qt6
 
 ```bash
 # Debug
-./build/app/VideoPlayerApp
+./build/app/PluginBasedApp
 
 # Release
-./build-release/app/VideoPlayerApp
+./build-release/app/PluginBasedApp
 ```
 
 首次运行会在 `<AppLocalDataLocation>` 下自动创建：
 
 ```
-logs/        — 日志文件（videoplayer.log，滚动 5MB × 3）
+logs/        — 日志文件（pluginbased.log，滚动 5MB × 3）
 dumps/       — Crash dump 文件
-config/      — 配置文件（videoplayer.ini）
+config/      — 配置文件（pluginbased.ini）
 ```
 
 各平台 `AppLocalDataLocation` 路径：
 
 | 平台 | 路径 |
 |---|---|
-| macOS | `~/Library/Application Support/MyOrg/VideoPlayer/` |
-| Linux | `~/.local/share/MyOrg/VideoPlayer/` |
-| Windows | `C:\Users\<User>\AppData\Local\MyOrg\VideoPlayer\` |
+| macOS | `~/Library/Application Support/PluginBased/PluginBased/` |
+| Linux | `~/.local/share/PluginBased/PluginBased/` |
+| Windows | `C:\Users\<User>\AppData\Local\PluginBased\PluginBased\` |
 
 ---
 
 ## 配置文件
 
-首次运行自动生成，路径为 `<AppLocalDataLocation>/config/videoplayer.ini`：
+首次运行自动生成，路径为 `<AppLocalDataLocation>/config/pluginbased.ini`：
 
 ```ini
 [log]
@@ -150,11 +150,11 @@ AppController.reloadConfig()
 
 | 平台 | 产物 | 依赖工具 |
 |---|---|---|
-| macOS | `dist/VideoPlayer-<ver>-macOS.dmg` | `macdeployqt`（Qt 自带）、`hdiutil`（系统自带）|
-| Linux | `dist/VideoPlayer-<ver>-linux-x86_64.tar.gz` | `linuxdeployqt`（可选，否则手动收集）|
-| Linux | `dist/VideoPlayer-<ver>-linux-x86_64.AppImage` | `appimagetool`（可选）|
-| Windows | `dist/VideoPlayer-<ver>-win64.zip` | `windeployqt`（Qt 自带）|
-| Windows | `dist/VideoPlayer-<ver>-win64-installer.exe` | NSIS `makensis`（可选）|
+| macOS | `dist/PluginBased-<ver>-macOS.dmg` | `macdeployqt`（Qt 自带）、`hdiutil`（系统自带）|
+| Linux | `dist/PluginBased-<ver>-linux-x86_64.tar.gz` | `linuxdeployqt`（可选，否则手动收集）|
+| Linux | `dist/PluginBased-<ver>-linux-x86_64.AppImage` | `appimagetool`（可选）|
+| Windows | `dist/PluginBased-<ver>-win64.zip` | `windeployqt`（Qt 自带）|
+| Windows | `dist/PluginBased-<ver>-win64-installer.exe` | NSIS `makensis`（可选）|
 
 ### macOS 注意事项
 
@@ -186,8 +186,8 @@ add_library(MyPlugin MODULE
     MyPlugin.cpp
 )
 target_link_libraries(MyPlugin PRIVATE
-    VideoPlayerPlugin   # IAppPlugin 接口库
-    VideoPlayerLogger   # 日志库
+    PluginBasedPlugin   # IAppPlugin 接口库
+    PluginBasedLogger   # 日志库
     Qt6::Core
 )
 set_target_properties(MyPlugin PROPERTIES
@@ -218,7 +218,7 @@ public:
 
 ```json
 {
-    "IID": "com.videoplayer.IAppPlugin/1.0",
+    "IID": "com.pluginbased.IAppPlugin/1.0",
     "MetaData": {
         "name":    "MyPlugin",
         "version": "1.0.0"
@@ -248,8 +248,8 @@ File → Open Crash Dump → 选择 dumps/crash_YYYYMMDD_HHMMSS.dmp
 
 ```bash
 ulimit -c unlimited          # 开启 core dump
-./VideoPlayerApp             # 崩溃后生成 core 文件
-gdb ./VideoPlayerApp core    # 加载调试
+./PluginBasedApp             # 崩溃后生成 core 文件
+gdb ./PluginBasedApp core    # 加载调试
 (gdb) bt                     # 打印调用栈
 ```
 
@@ -257,7 +257,7 @@ gdb ./VideoPlayerApp core    # 加载调试
 
 ## 日志
 
-文件位置：`<AppLocalDataLocation>/logs/videoplayer.log`（滚动，最大 5 MB × 3 个文件）
+文件位置：`<AppLocalDataLocation>/logs/pluginbased.log`（滚动，最大 5 MB × 3 个文件）
 
 格式：
 

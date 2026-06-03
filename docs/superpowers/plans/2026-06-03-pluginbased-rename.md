@@ -25,7 +25,7 @@
 - `tools/package.yml`, `tools/deploy.py`, `package.sh`, `tools/verify.py`: own deployment metadata, binary names, bundle IDs, wrapper launchers, and stage discovery.
 - `tests/playplugin_regression_checks.py`: acts as the source-level regression gate for this rename.
 - `README.md`, `BUILD.md`, `AGENTS.md`: user-facing commands, diagrams, paths, and plugin contract docs.
-- `docs/superpowers/specs/*.md`, `docs/superpowers/plans/*.md`: superpowers docs may keep old names when they describe previous work or explicit old-to-new rename mappings; active source, packaging, tests, README, BUILD, and AGENTS must use current names.
+- `docs/superpowers/specs/*.md`, `docs/superpowers/plans/*.md`: superpowers docs may keep old names when they describe previous work or explicit old-to-new rename mappings; active source, packaging, README, BUILD, and AGENTS must use current names. Tests may keep old names only as negative regression inputs.
 
 ## Task 1: Update Regression Checks First
 
@@ -417,7 +417,7 @@ Run:
 rg -n "VideoPlayer|VideoPlayerApp|videoplayer|com\\.videoplayer|MyOrg" -g '!build/**'
 ```
 
-Expected: only superpowers design/plan files may contain old names when describing earlier work or this rename mapping. No active source, packaging, test, README, BUILD, or AGENTS file should contain old names.
+Expected: only superpowers design/plan files and regression tests may contain old names when describing earlier work, this rename mapping, or negative assertions. No active source, packaging, README, BUILD, or AGENTS file should contain old names.
 
 - [ ] **Step 3: Run regression check**
 
@@ -493,7 +493,7 @@ Run:
 rg -n "VideoPlayer|VideoPlayerApp|videoplayer|com\\.videoplayer|MyOrg" -g '!build/**'
 ```
 
-Expected: only superpowers docs with historical context or explicit rename mappings may remain. If active files still contain old runtime names, fix them before reporting verification.
+Expected: only superpowers docs with historical context or explicit rename mappings, plus regression tests with negative assertions, may remain. If active source, packaging, README, BUILD, or AGENTS files still contain old runtime names, fix them before reporting verification.
 
 - [ ] **Step 6: Report verification**
 

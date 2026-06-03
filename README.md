@@ -1,13 +1,13 @@
-# VideoPlayer
+# PluginBased
 
-基于 Qt6 / QML 的插件化视频播放器框架。以**应用面板**为主页，插件以卡片形式展示，点击进入；内置播放器、播放列表管理，支持运行时动态加载 `.dll/.so/.dylib` 插件。
+基于 Qt6 / QML 的通用插件化应用宿主。以**应用面板**为主页，插件以卡片形式展示，点击进入；业务能力由插件提供，支持运行时动态加载 `.dll/.so/.dylib` 插件。
 
 ---
 
 ## 目录结构
 
 ```
-VideoPlayer/
+PluginBased/
 ├── CMakeLists.txt               # 顶层构建
 ├── README.md
 ├── BUILD.md                     # 详细构建 & 打包说明
@@ -31,7 +31,7 @@ VideoPlayer/
 │   ├── PlaylistModel.h/.cpp     # 播放列表（QAbstractListModel）
 │   └── PluginManager.h/.cpp     # 插件管理器，QML_SINGLETON
 │
-├── logger/                      # 共享日志库（VideoPlayerLogger）
+├── logger/                      # 共享日志库（PluginBasedLogger）
 │   ├── Logger.h/.cpp            # spdlog 封装，供 core/plugin 使用
 │   └── CMakeLists.txt
 │
@@ -66,7 +66,7 @@ cmake -B build -DCMAKE_BUILD_TYPE=Debug \
 cmake --build build --parallel
 
 # 运行
-./build/app/VideoPlayerApp
+./build/app/PluginBasedApp
 ```
 
 详细说明、Release 构建、打包步骤见 [BUILD.md](BUILD.md)。
@@ -81,7 +81,7 @@ cmake --build build --parallel
 
 ### 配置文件
 
-首次运行自动生成 `<AppLocalDataLocation>/config/videoplayer.ini`，支持运行时热重载（调用 `AppController.reloadConfig()`）：
+首次运行自动生成 `<AppLocalDataLocation>/config/pluginbased.ini`，支持运行时热重载（调用 `AppController.reloadConfig()`）：
 
 ```ini
 [log]
