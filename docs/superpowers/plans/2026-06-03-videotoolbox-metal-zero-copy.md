@@ -14,6 +14,7 @@
 
 - Modify `tests/playplugin_regression_checks.py`: static checks for native bridge, direct hardware frame preservation, fallback, and P010 high-bit handling.
 - Modify `plugins/PlayPlugin/src/FFmpegUtils.h`: add native frame metadata fields to `VideoFrameData`.
+- Modify `plugins/PlayPlugin/src/VideoRenderer.cpp`: derive native VideoToolbox metadata when creating `VideoFrameData`.
 - Modify `plugins/PlayPlugin/src/FFmpegDecoder.h`: add direct-render counters and helpers.
 - Modify `plugins/PlayPlugin/src/FFmpegDecoder.cpp`: preserve VideoToolbox frames when direct render is enabled and keep CPU fallback.
 - Modify `plugins/PlayPlugin/src/PlayerEngine.h`: route native-render capability and failure feedback between Surface and Decoder.
@@ -88,6 +89,7 @@ Expected: commit succeeds.
 **Files:**
 - Create: `plugins/PlayPlugin/src/native/NativeVideoFrame.h`
 - Modify: `plugins/PlayPlugin/src/FFmpegUtils.h`
+- Modify: `plugins/PlayPlugin/src/VideoRenderer.cpp`
 - Test: `tests/playplugin_regression_checks.py`
 
 - [ ] **Step 1: Create native metadata types**
@@ -153,6 +155,10 @@ inline VideoFrameDataPtr make_video_frame(AVFramePtr frame,
 
 - [ ] **Step 3: Run regression script**
 
+In `VideoRenderer.cpp`, add an Apple-only helper that reads `AV_PIX_FMT_VIDEOTOOLBOX` frames and derives `NativeVideoFrame` from `CVPixelBufferGetPixelFormatType(frame->data[3])`. Pass the resulting value to `make_video_frame(std::move(entry.frame), fullRange, bt709, native)`.
+
+- [ ] **Step 4: Run regression script**
+
 Run:
 
 ```bash
@@ -161,7 +167,7 @@ python3 tests/playplugin_regression_checks.py
 
 Expected: still FAIL because Apple bridge and decoder direct path are not implemented yet.
 
-- [ ] **Step 4: Commit metadata types**
+- [ ] **Step 5: Commit metadata types**
 
 Run:
 

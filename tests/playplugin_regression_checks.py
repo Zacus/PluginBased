@@ -26,6 +26,9 @@ def main():
     hw_factory_cpp = read("plugins/PlayPlugin/src/hw/HardwareDecoderFactory.cpp")
     videotoolbox_h = read("plugins/PlayPlugin/src/hw/VideoToolboxBackend.h")
     videotoolbox_cpp = read("plugins/PlayPlugin/src/hw/VideoToolboxBackend.cpp")
+    native_frame_h = read("plugins/PlayPlugin/src/native/NativeVideoFrame.h")
+    apple_bridge_h = read("plugins/PlayPlugin/src/native/AppleMetalVideoTextureBridge.h")
+    apple_bridge_mm = read("plugins/PlayPlugin/src/native/AppleMetalVideoTextureBridge.mm")
     d3d11va_cpp = read("plugins/PlayPlugin/src/hw/D3D11VABackend.cpp")
     vaapi_cpp = read("plugins/PlayPlugin/src/hw/VaapiBackend.cpp")
     cmake = read("plugins/PlayPlugin/CMakeLists.txt")
@@ -137,6 +140,25 @@ def main():
             "P010 should not reuse planar low-10bit expansion and cause color or brightness shifts")
     require(".rg" in shader_frag and "semiplanar" in shader_frag,
             "shader should sample NV12/P010 UV from texU.rg")
+    require("NativeVideoFrame" in native_frame_h and "NativeFrameKind" in native_frame_h,
+            "native video frame metadata should exist for hardware-backed frames")
+    require("CVMetalTextureCacheCreateTextureFromImage" in apple_bridge_mm,
+            "Apple bridge should create Metal textures from CVPixelBuffer planes")
+    require("QRhiTexture::NativeTexture" in apple_bridge_mm and "createFrom" in apple_bridge_mm,
+            "Apple bridge should wrap Metal textures with QRhiTexture::createFrom")
+    require("AV_PIX_FMT_VIDEOTOOLBOX" in decoder_cpp and
+            "shouldPreserveHardwareFrameForDirectRender" in decoder_cpp,
+            "decoder should preserve VideoToolbox frames when native render is enabled")
+    require("transferHardwareFrameToCpu" in decoder_cpp and "nativeFallbackVideoFrames" in decoder_h,
+            "native render failures should be observable and keep CPU fallback available")
+    require("AppleMetalVideoTextureBridge" in surface_cpp and "setNativeFrame" in surface_cpp,
+            "FFmpegSurface should consume native VideoToolbox frames")
+    require("supportsNativeVideoToolboxRendering" in surface_cpp and
+            "setVideoToolboxDirectRenderingEnabled" in decoder_h and
+            "nativeRenderingFailed" in surface_cpp,
+            "native rendering should be enabled by a Surface-to-Decoder capability handshake")
+    require("CoreVideo" in cmake and "Metal" in cmake and "QuartzCore" in cmake,
+            "PlayPlugin should link Apple frameworks for CVMetalTextureCache")
     ensure_textures = surface_cpp[surface_cpp.find("void ensureTextures"):
                                   surface_cpp.find("void releaseTextures")]
     require(ensure_textures.count("m_material_.paramsDirty") == 1 and

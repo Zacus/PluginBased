@@ -1,9 +1,42 @@
 #include "VideoRenderer.h"
 #include "Logger.h"
 
+#if defined(Q_OS_APPLE)
+#include <CoreVideo/CoreVideo.h>
+#endif
+
 namespace {
 constexpr int PerformanceLogIntervalMs = 2000;
 constexpr int MaxConsecutiveDropsBeforeRender = 8;
+
+NativeVideoFrame nativeVideoFrameFromFrame(const AVFrame* frame)
+{
+    NativeVideoFrame native;
+#if defined(Q_OS_APPLE)
+    if (!frame || frame->format != AV_PIX_FMT_VIDEOTOOLBOX)
+        return native;
+
+    auto* pixelBuffer = reinterpret_cast<CVPixelBufferRef>(frame->data[3]);
+    if (!pixelBuffer)
+        return native;
+
+    const OSType cvFormat = CVPixelBufferGetPixelFormatType(pixelBuffer);
+    native.kind = NativeFrameKind::VideoToolbox;
+    native.pixelFormat = static_cast<int>(cvFormat);
+    native.fullRange =
+        cvFormat == kCVPixelFormatType_420YpCbCr8BiPlanarFullRange ||
+        cvFormat == kCVPixelFormatType_420YpCbCr10BiPlanarFullRange;
+    native.is10bit =
+        cvFormat == kCVPixelFormatType_420YpCbCr10BiPlanarVideoRange ||
+        cvFormat == kCVPixelFormatType_420YpCbCr10BiPlanarFullRange;
+    native.bt709 =
+        frame->colorspace == AVCOL_SPC_BT709 ||
+        (frame->colorspace == AVCOL_SPC_UNSPECIFIED && frame->width >= 1280);
+#else
+    Q_UNUSED(frame);
+#endif
+    return native;
+}
 }
 
 VideoRenderer::VideoRenderer(VideoFrameQueue* queue,
@@ -269,13 +302,18 @@ void VideoRenderer::onTimer()
         if (action == ClockSync::Action::Drop)
             ++m_renderPerf.forcedRenderFrames;
 
-        const bool fullRange = entry.frame->color_range == AVCOL_RANGE_JPEG;
+        const NativeVideoFrame native = nativeVideoFrameFromFrame(entry.frame.get());
+        const bool fullRange = native.isValid()
+            ? native.fullRange
+            : entry.frame->color_range == AVCOL_RANGE_JPEG;
         const bool bt709 =
-            entry.frame->colorspace == AVCOL_SPC_BT709 ||
-            (entry.frame->colorspace == AVCOL_SPC_UNSPECIFIED &&
-             entry.frame->width >= 1280);
+            native.isValid()
+                ? native.bt709
+                : (entry.frame->colorspace == AVCOL_SPC_BT709 ||
+                   (entry.frame->colorspace == AVCOL_SPC_UNSPECIFIED &&
+                    entry.frame->width >= 1280));
         emit positionChanged(framePtsUs / 1000);
-        emit frameReady(make_video_frame(std::move(entry.frame), fullRange, bt709));
+        emit frameReady(make_video_frame(std::move(entry.frame), fullRange, bt709, native));
         m_hasRenderedFrame = true;
         m_consecutiveDroppedFrames = 0;
         ++m_renderPerf.renderedFrames;

@@ -59,16 +59,24 @@ PlayerEngine::~PlayerEngine()
 void PlayerEngine::setSurface(FFmpegSurface* surface)
 {
     // 断开旧的连接
-    if (m_surface)
+    if (m_surface) {
         disconnect(m_videoRenderer.get(), &VideoRenderer::frameReady, m_surface.data(),
                    &FFmpegSurface::onFrameReady);
+        disconnect(m_surface.data(), &FFmpegSurface::nativeRenderingFailed,
+                   this, &PlayerEngine::onNativeRenderingFailed);
+    }
 
     m_surface = surface;
 
-    if (m_surface)
+    if (m_surface) {
         connect(m_videoRenderer.get(), &VideoRenderer::frameReady, m_surface.data(),
                 &FFmpegSurface::onFrameReady,
                 Qt::DirectConnection); // 主线程 → 主线程，直接调用
+        connect(m_surface.data(), &FFmpegSurface::nativeRenderingFailed,
+                this, &PlayerEngine::onNativeRenderingFailed);
+    }
+
+    updateNativeVideoRenderingEnabled();
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -121,6 +129,8 @@ void PlayerEngine::open(const QUrl& url)
 
     // 重置时钟
     m_clock.invalidate();
+
+    updateNativeVideoRenderingEnabled();
 
     // 通知解码器打开文件（异步，解码器线程内执行）
     m_decoder->openFile(url);
@@ -233,6 +243,28 @@ void PlayerEngine::togglePlayPause()
         pause();
     else if (m_state == Paused)
         play();
+}
+
+void PlayerEngine::updateNativeVideoRenderingEnabled()
+{
+    const bool enabled = m_surface && m_surface->supportsNativeVideoToolboxRendering();
+    if (m_nativeVideoRenderingEnabled == enabled)
+        return;
+
+    m_nativeVideoRenderingEnabled = enabled;
+    m_decoder->setVideoToolboxDirectRenderingEnabled(enabled);
+    LOG_INFO("PlayerEngine: VideoToolbox native rendering {}",
+             enabled ? "enabled" : "disabled");
+}
+
+void PlayerEngine::onNativeRenderingFailed()
+{
+    if (!m_nativeVideoRenderingEnabled)
+        return;
+
+    m_nativeVideoRenderingEnabled = false;
+    m_decoder->setVideoToolboxDirectRenderingEnabled(false);
+    LOG_WARN("PlayerEngine: disabled VideoToolbox native rendering after Surface failure");
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -136,6 +136,11 @@ void FFmpegDecoder::stopDecoding()
     m_seekCond.wakeAll();
 }
 
+void FFmpegDecoder::setVideoToolboxDirectRenderingEnabled(bool enabled)
+{
+    m_videoToolboxDirectRenderingEnabled.storeRelaxed(enabled ? 1 : 0);
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // 线程主函数
 // ─────────────────────────────────────────────────────────────────────────────
@@ -591,10 +596,40 @@ AVFramePtr FFmpegDecoder::transferHardwareFrameToCpu(AVFramePtr frame)
 
 AVFramePtr FFmpegDecoder::prepareVideoFrameForQueue(AVFramePtr frame)
 {
+    if (shouldPreserveHardwareFrameForDirectRender(frame.get()))
+    {
+        ++m_decodePerf.nativeVideoFrames;
+        return frame;
+    }
+
+    if (m_hardwareDecoder && m_hardwareDecoder->isHardwareFrame(frame.get()))
+        ++m_decodePerf.nativeFallbackVideoFrames;
+
     frame = transferHardwareFrameToCpu(std::move(frame));
     if (!frame)
         return {};
     return normalizeVideoFrame(std::move(frame));
+}
+
+bool FFmpegDecoder::shouldPreserveHardwareFrameForDirectRender(const AVFrame* frame) const
+{
+    return m_videoToolboxDirectRenderingEnabled.loadRelaxed() &&
+           m_hardwareDecoder &&
+           frame &&
+           frame->format == AV_PIX_FMT_VIDEOTOOLBOX;
+}
+
+NativeVideoFrame FFmpegDecoder::makeNativeVideoFrameMetadata(const AVFrame* frame) const
+{
+    NativeVideoFrame native;
+    if (!frame || frame->format != AV_PIX_FMT_VIDEOTOOLBOX)
+        return native;
+
+    native.kind = NativeFrameKind::VideoToolbox;
+    native.bt709 =
+        frame->colorspace == AVCOL_SPC_BT709 ||
+        (frame->colorspace == AVCOL_SPC_UNSPECIFIED && frame->width >= 1280);
+    return native;
 }
 
 AVFramePtr FFmpegDecoder::normalizeVideoFrame(AVFramePtr frame)
@@ -696,12 +731,15 @@ void FFmpegDecoder::maybeLogDecodePerformance()
         return;
     }
 
-    LOG_INFO("PlayPerf: decoder backend={} decoded={} hw={} transfer={} fail={} "
+    LOG_INFO("PlayPerf: decoder backend={} decoded={} hw={} native={} native_fallback={} "
+             "transfer={} fail={} "
              "transfer_avg_us={} transfer_max_us={} normalize={} normalize_avg_us={} "
              "normalize_max_us={} queued={} queue_drop={} src_fmt={} cpu_fmt={}",
              m_activeVideoDecoderName.toStdString(),
              m_decodePerf.decodedVideoFrames,
              m_decodePerf.hardwareVideoFrames,
+             m_decodePerf.nativeVideoFrames,
+             m_decodePerf.nativeFallbackVideoFrames,
              m_decodePerf.transferredVideoFrames,
              m_decodePerf.transferFailures,
              averageUs(m_decodePerf.transferTotalUs, m_decodePerf.transferredVideoFrames),
@@ -773,6 +811,7 @@ void FFmpegDecoder::closeInternal()
     m_audioChannelLayoutMask = 0;
     m_audioSampleFmt = AV_SAMPLE_FMT_FLTP;
     m_hardwareTransferFailureCount = 0;
+    m_videoToolboxDirectRenderingEnabled.storeRelaxed(0);
     m_activeVideoDecoderName = QStringLiteral("software");
     resetDecodePerformanceStats();
     LOG_DEBUG("FFmpegDecoder: closed");

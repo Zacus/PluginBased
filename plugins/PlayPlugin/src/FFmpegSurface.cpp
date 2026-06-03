@@ -1,13 +1,20 @@
 #include "FFmpegSurface.h"
 
+#if defined(Q_OS_APPLE)
+#include "native/AppleMetalVideoTextureBridge.h"
+#endif
+
 #include <QQuickWindow>
 #include <QSGGeometryNode>
 #include <QSGMaterial>
 #include <QSGMaterialShader>
+#include <QSGRendererInterface>
 #include <QSGTexture>
 #include <QMutexLocker>
 
 #include <rhi/qrhi.h>
+
+#include <memory>
 
 extern "C" {
 #include <libavutil/frame.h>
@@ -175,6 +182,10 @@ public:
     bool  cachedBt709      = false;
     bool  paramsDirty      = true;   // 首帧强制写入
     VideoFrameDataPtr currentFrame; // 保证 GPU 读取期间 AVFrame 不被释放
+#if defined(Q_OS_APPLE)
+    std::unique_ptr<AppleMetalTextureSet> nativeTextures;
+#endif
+    bool usingNativeTextures = false;
 
     QSGMaterialType* type() const override {
         static QSGMaterialType k_type;
@@ -426,17 +437,67 @@ public:
         markDirty(QSGNode::DirtyGeometry);
     }
 
-        // 拷贝帧数据；GPU 上传延迟到 VideoShader 回调中执行
-    void setFrame(QQuickWindow* window, const VideoFrameDataPtr& frameData)
+    bool setNativeFrame(QQuickWindow* window, const VideoFrameDataPtr& frameData)
     {
-        if (!window || !frameData) return;
+#if defined(Q_OS_APPLE)
+        if (!window || !frameData || !frameData->frame ||
+            frameData->native.kind != NativeFrameKind::VideoToolbox)
+            return false;
+
+        if (!m_nativeBridge)
+            m_nativeBridge = std::make_unique<AppleMetalVideoTextureBridge>();
+        if (!m_nativeBridge->isAvailable(window->rhi()))
+            return false;
+
+        auto textures = m_nativeBridge->createTextureSet(window->rhi(), frameData->frame.get());
+        if (!textures)
+            return false;
+
+        releaseTextures();
+        m_material_.tex_y = textures->yTexture.get();
+        m_material_.tex_u = textures->uvTexture.get();
+        m_material_.tex_v = textures->vPlaceholderTexture.get();
+        m_material_.size = textures->lumaSize;
+        m_material_.fmtInfo = PixelFormatInfo::fromAVFormat(textures->native.is10bit
+            ? AV_PIX_FMT_P010LE
+            : AV_PIX_FMT_NV12);
+        m_material_.fullRange = textures->native.fullRange;
+        m_material_.bt709 = textures->native.bt709;
+        m_material_.cachedFullRange = textures->native.fullRange;
+        m_material_.cachedBt709 = textures->native.bt709;
+        m_material_.paramsDirty = true;
+        m_material_.pendingBlackFrame = false;
+        m_material_.pending.valid = false;
+        m_material_.pending.frameData.reset();
+        m_material_.currentFrame = frameData;
+        m_material_.nativeTextures = std::move(textures);
+        m_material_.usingNativeTextures = true;
+        m_hasFrame = true;
+        markDirty(QSGNode::DirtyMaterial);
+        return true;
+#else
+        Q_UNUSED(window);
+        Q_UNUSED(frameData);
+        return false;
+#endif
+    }
+
+    // 拷贝帧数据；GPU 上传延迟到 VideoShader 回调中执行
+    bool setFrame(QQuickWindow* window, const VideoFrameDataPtr& frameData)
+    {
+        if (!window || !frameData)
+            return false;
         const AVFrame* frame = frameData->frame.get();
-        if (!frame) return;
+        if (!frame)
+            return false;
+
+        if (frameData->native.kind == NativeFrameKind::VideoToolbox)
+            return setNativeFrame(window, frameData);
 
         const PixelFormatInfo fmt = PixelFormatInfo::fromAVFormat(frame->format);
         if (!fmt.valid) {
             qWarning("FFmpegSurface: unsupported pixel format %d, frame dropped.", frame->format);
-            return;
+            return false;
         }
 
         ensureTextures(window, frame->width, frame->height, fmt);
@@ -458,6 +519,7 @@ public:
         }
 
         markDirty(QSGNode::DirtyMaterial);
+        return true;
     }
 
     bool hasFrame() const { return m_hasFrame; }
@@ -467,6 +529,11 @@ public:
 
     void clearToBlack() {
         m_hasFrame = false;
+        if (m_material_.usingNativeTextures) {
+            releaseTextures();
+            markDirty(QSGNode::DirtyMaterial);
+            return;
+        }
         if (m_material_.tex_y) {  // 纹理存在才填，否则直接透明
             m_material_.pendingBlackFrame = true;
             m_material_.paramsDirty = true;
@@ -508,9 +575,22 @@ private:
 
     void releaseTextures()
     {
-        delete m_material_.tex_y; m_material_.tex_y = nullptr;
-        delete m_material_.tex_u; m_material_.tex_u = nullptr;
-        delete m_material_.tex_v; m_material_.tex_v = nullptr;
+        if (m_material_.usingNativeTextures) {
+#if defined(Q_OS_APPLE)
+            m_material_.nativeTextures.reset();
+#endif
+        } else {
+            delete m_material_.tex_y;
+            delete m_material_.tex_u;
+            delete m_material_.tex_v;
+        }
+        m_material_.tex_y = nullptr;
+        m_material_.tex_u = nullptr;
+        m_material_.tex_v = nullptr;
+        m_material_.usingNativeTextures = false;
+        m_material_.pending.valid = false;
+        m_material_.pending.frameData.reset();
+        m_material_.pendingBlackFrame = false;
         m_material_.size = {};
         m_material_.currentFrame.reset(); 
     }
@@ -518,6 +598,9 @@ private:
     
     VideoMaterial m_material_;
     bool m_hasFrame  = false;
+#if defined(Q_OS_APPLE)
+    std::unique_ptr<AppleMetalVideoTextureBridge> m_nativeBridge;
+#endif
 };
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -540,6 +623,17 @@ void FFmpegSurface::setAspectRatioMode(Qt::AspectRatioMode mode)
     m_aspectRatioMode = mode;
     emit aspectRatioModeChanged();
     update();
+}
+
+bool FFmpegSurface::supportsNativeVideoToolboxRendering() const
+{
+#if defined(Q_OS_APPLE)
+    return window() &&
+           window()->rendererInterface() &&
+           window()->rendererInterface()->graphicsApi() == QSGRendererInterface::MetalRhi;
+#else
+    return false;
+#endif
 }
 
 // 可从任意线程调用（VideoRenderer::frameReady 可能跨线程发出）
@@ -606,8 +700,15 @@ QSGNode* FFmpegSurface::updatePaintNode(QSGNode*         old_node,
 
     node->setRect(draw_rect);
 
-    if (frame)
-        node->setFrame(window(), frame);
+    if (frame && !node->setFrame(window(), frame) &&
+        frame->native.kind == NativeFrameKind::VideoToolbox) {
+        if (m_nativeRenderingFailureLogs < 3) {
+            qWarning("FFmpegSurface: native VideoToolbox texture creation failed, "
+                     "disabling native rendering for future frames.");
+            ++m_nativeRenderingFailureLogs;
+        }
+        emit nativeRenderingFailed();
+    }
 
     return node;
 }

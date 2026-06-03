@@ -99,6 +99,7 @@ private slots:
     // 来自 VideoRenderer 的信号
     void onVideoPosition(qint64 posMs);
     void onEndOfVideo();
+    void onNativeRenderingFailed();
 
 private:
     void setState(PlaybackState s);
@@ -106,6 +107,7 @@ private:
     void stopAllComponents();
     void maybeFinishMedia();
     void finishMedia();
+    void updateNativeVideoRenderingEnabled();
 
     // ── 帧队列（PlayerEngine 持有，Decoder 写，Renderer 读）─────────────────
     VideoFrameQueue m_videoQueue { 30 }; // 视频队列：30帧约1秒缓冲
@@ -135,6 +137,7 @@ private:
     bool          m_audioFinished = false;
     bool          m_videoFinished = false;
     bool          m_mediaFinished = false;
+    bool          m_nativeVideoRenderingEnabled = false;
     int           m_seekGeneration = 0;
     QString       m_errorString;
     QUrl          m_currentUrl; // open() 时记录，onMediaInfoReady 时写入 MediaInfo

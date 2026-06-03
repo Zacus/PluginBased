@@ -51,6 +51,7 @@ class FFmpegSurface : public QQuickItem
         return m_aspectRatioMode;
     }
     void setAspectRatioMode(Qt::AspectRatioMode mode);
+    Q_INVOKABLE bool supportsNativeVideoToolboxRendering() const;
 
   public slots:
     /** 接收 VideoRenderer::frameReady 信号 */
@@ -59,6 +60,7 @@ class FFmpegSurface : public QQuickItem
 
   signals:
     void aspectRatioModeChanged();
+    void nativeRenderingFailed();
 
   protected:
     QSGNode* updatePaintNode(QSGNode* old, UpdatePaintNodeData*) override;
@@ -68,6 +70,7 @@ class FFmpegSurface : public QQuickItem
     VideoFrameDataPtr m_pendingFrame; // 待上屏的帧（主线程写，渲染线程读）
     bool m_dirty = false;             // 是否有新帧待渲染
     bool m_clearPending = false;
+    int m_nativeRenderingFailureLogs = 0;
 
     Qt::AspectRatioMode m_aspectRatioMode = Qt::KeepAspectRatio;
 };

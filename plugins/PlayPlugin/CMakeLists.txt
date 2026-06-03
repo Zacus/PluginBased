@@ -80,6 +80,9 @@ qt_add_qml_module(PlayPlugin
         src/hw/VideoToolboxBackend.h    src/hw/VideoToolboxBackend.cpp
         src/hw/D3D11VABackend.h         src/hw/D3D11VABackend.cpp
         src/hw/VaapiBackend.h           src/hw/VaapiBackend.cpp
+        src/native/NativeVideoFrame.h
+        src/native/AppleMetalVideoTextureBridge.h
+        src/native/AppleMetalVideoTextureBridge.mm
         # Step 3 — 渲染器 + 时钟同步 + 视频输出组件
         src/ClockSync.h
         src/AudioRenderer.h    src/AudioRenderer.cpp
@@ -124,6 +127,15 @@ target_link_libraries(PlayPlugin PRIVATE
     FFmpeg::all                         # avformat / avcodec / avutil / swscale / swresample
     # 不链接 VideoPlayerCore：PluginManager 符号由主程序 -rdynamic 在运行时提供
 )
+
+if(APPLE)
+    target_link_libraries(PlayPlugin PRIVATE
+        "-framework CoreVideo"
+        "-framework Metal"
+        "-framework QuartzCore"
+        "-framework VideoToolbox"
+    )
+endif()
 
 # ── 运行时符号解析选项 ────────────────────────────────────────
 # PluginManager 等宿主符号在 dlopen 后由主程序（ENABLE_EXPORTS=ON）提供。

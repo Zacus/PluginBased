@@ -67,6 +67,9 @@ public slots:
     /** 停止解码，退出线程 */
     void stopDecoding();
 
+    /** 启用后保留 VideoToolbox 硬解帧给 Surface 原生渲染；关闭时走 CPU fallback */
+    void setVideoToolboxDirectRenderingEnabled(bool enabled);
+
 signals:
     /** 文件打开成功，媒体信息已就绪 */
     void mediaInfoReady(qint64 durationMs, int width, int height,
@@ -98,6 +101,8 @@ private:
         qint64 transferFailures = 0;
         qint64 transferTotalUs = 0;
         qint64 transferMaxUs = 0;
+        qint64 nativeVideoFrames = 0;
+        qint64 nativeFallbackVideoFrames = 0;
         qint64 normalizedVideoFrames = 0;
         qint64 normalizeTotalUs = 0;
         qint64 normalizeMaxUs = 0;
@@ -116,6 +121,8 @@ private:
     bool sendPacketToDecoder(AVCodecContext* ctx, AVPacket* pkt,
                              FrameQueue<AVFramePtr>* queue, int serial);
     AVFramePtr prepareVideoFrameForQueue(AVFramePtr frame);
+    bool shouldPreserveHardwareFrameForDirectRender(const AVFrame* frame) const;
+    NativeVideoFrame makeNativeVideoFrameMetadata(const AVFrame* frame) const;
     AVFramePtr transferHardwareFrameToCpu(AVFramePtr frame);
     void copyFrameMetadata(const AVFrame* source, AVFrame* destination) const;
     AVFramePtr normalizeVideoFrame(AVFramePtr frame);
@@ -154,6 +161,7 @@ private:
     // ── 控制变量（跨线程，用原子或 mutex 保护）───────────────────────────────
     QAtomicInt  m_stop   { 0 };   // 1 = 请求停止
     QAtomicInt  m_paused { 0 };   // 1 = 暂停
+    QAtomicInt  m_videoToolboxDirectRenderingEnabled { 0 };
 
     QMutex         m_seekMutex;
     QWaitCondition m_seekCond;

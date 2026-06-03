@@ -1,5 +1,7 @@
 #pragma once
 
+#include "native/NativeVideoFrame.h"
+
 #include <memory>
 #include <string>
 #include <stdexcept>
@@ -79,6 +81,7 @@ struct VideoFrameData {
     AVFramePtr frame;
     bool       fullRange = false;
     bool       bt709     = true;
+    NativeVideoFrame native;
 };
 
 using VideoFrameDataPtr = std::shared_ptr<VideoFrameData>;
@@ -88,12 +91,14 @@ inline AVFramePtr  make_frame()  { return AVFramePtr(av_frame_alloc()); }
 inline AVPacketPtr make_packet() { return AVPacketPtr(av_packet_alloc()); }
 inline VideoFrameDataPtr make_video_frame(AVFramePtr frame,
                                           bool fullRange,
-                                          bool bt709)
+                                          bool bt709,
+                                          NativeVideoFrame native = {})
 {
     auto data = std::make_shared<VideoFrameData>();
     data->frame = std::move(frame);
     data->fullRange = fullRange;
     data->bt709 = bt709;
+    data->native = native;
     return data;
 }
 
