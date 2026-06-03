@@ -3,7 +3,6 @@
 #include "PlaybackContext.h"
 
 #include <QFileInfo>
-#include <QMetaObject>
 // ─────────────────────────────────────────────────────────────────────────────
 // 构造 / 析构
 // ─────────────────────────────────────────────────────────────────────────────
@@ -37,13 +36,6 @@ PlayerEngine::PlayerEngine(QObject* parent) : QObject(parent)
 
     LOG_DEBUG("PlayerEngine created");
     PlaybackContext::instance().registerEngine(this);
-
-    const QUrl pendingOpenUrl = PlaybackContext::instance().takePendingOpenUrl();
-    if (pendingOpenUrl.isValid())
-    {
-        QMetaObject::invokeMethod(this, [this, pendingOpenUrl]() { open(pendingOpenUrl); },
-                                  Qt::QueuedConnection);
-    }
 }
 
 PlayerEngine::~PlayerEngine()

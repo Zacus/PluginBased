@@ -32,7 +32,7 @@ qt_add_qml_module(VideoPlayerApp
 
 target_include_directories(VideoPlayerApp PRIVATE
     ${CMAKE_SOURCE_DIR}/core        # PluginManager.h
-    ${CMAKE_SOURCE_DIR}/plugin      # IAppPlugin.h / IPlayerPlugin.h
+    ${CMAKE_SOURCE_DIR}/plugin      # IAppPlugin.h
     # logger/ 头文件已由 VideoPlayerLogger PUBLIC include_directories 传递，无需手动列出
 )
 
@@ -43,7 +43,7 @@ target_link_libraries(VideoPlayerApp PRIVATE
     Qt6::QuickControls2
     Qt6::Multimedia
     VideoPlayerLogger               # Logger + AppLog QML 模块
-    VideoPlayerPlugin               # IAppPlugin / IPlayerPlugin 接口（INTERFACE）
+    VideoPlayerPlugin               # IAppPlugin 接口（INTERFACE）
     VideoPlayerCore                 # PluginManager.h 头文件路径（INTERFACE）
     QtQuickComponents
     ${DUMP_LIBS}

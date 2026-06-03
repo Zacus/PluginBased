@@ -66,10 +66,6 @@ bool PluginManager::loadPlugin(const QString& filePath)
     }
 
     PluginContext context;
-    context.findPlayerPlugin = [this](const QUrl& url) -> IPlayerPlugin* {
-        return this->findPlayerPlugin(url);
-    };
-
     if (!plugin->initialize(context)) {
         LOG_ERROR("PluginManager: plugin {} initialize() failed",
                   plugin->name().toStdString());
@@ -88,23 +84,6 @@ bool PluginManager::loadPlugin(const QString& filePath)
     m_plugins.push_back(std::move(entry));
     emit pluginsChanged();
     return true;
-}
-
-IPlayerPlugin* PluginManager::findPlayerPlugin(const QUrl& url) const
-{
-    for (const auto& entry : m_plugins) {
-        if (!entry.loader)
-            continue;
-
-        QObject* obj = entry.loader->instance();
-        auto* player = qobject_cast<IPlayerPlugin*>(obj);
-        if (player && player->canHandle(url))
-            return player;
-    }
-
-    LOG_WARN("PluginManager: no player plugin found for {}",
-             url.toString().toStdString());
-    return nullptr;
 }
 
 QStringList PluginManager::pluginNames() const

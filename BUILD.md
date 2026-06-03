@@ -186,7 +186,7 @@ add_library(MyPlugin MODULE
     MyPlugin.cpp
 )
 target_link_libraries(MyPlugin PRIVATE
-    VideoPlayerPlugin   # IAppPlugin / IPlayerPlugin 接口库
+    VideoPlayerPlugin   # IAppPlugin 接口库
     VideoPlayerLogger   # 日志库
     Qt6::Core
 )
@@ -212,26 +212,7 @@ public:
 };
 ```
 
-`IPlayerPlugin` 是可选播放能力，不再是宿主加载插件的基础接口。需要处理媒体 URL 和播放控制的插件可同时实现 `IAppPlugin` 与 `IPlayerPlugin`：
-
-```cpp
-class MyPlayerPlugin : public QObject, public IAppPlugin, public IPlayerPlugin
-{
-    Q_OBJECT
-    Q_INTERFACES(IAppPlugin IPlayerPlugin)
-    Q_PLUGIN_METADATA(IID IAppPlugin_IID FILE "MyPlayerPlugin.json")
-public:
-    bool canHandle(const QUrl& url) const override;
-    bool open(const QUrl& url) override;
-    void play() override;
-    void pause() override;
-    void stop() override;
-    void seek(qint64 positionMs) override;
-    qint64 duration() const override;
-    qint64 position() const override;
-    bool isPlaying() const override;
-};
-```
+`IAppPlugin` 是宿主加载插件的唯一接口。插件可以提供 QML 页面，也可以在插件内部实现自己的业务能力；宿主不会为播放器、转码器或其他具体领域定义专用插件接口。
 
 3. 编写 `MyPlugin.json`：
 

@@ -3,16 +3,9 @@
 #include <QString>
 #include <QUrl>
 #include <QtPlugin>
-#include <functional>
-
-class IPlayerPlugin;
 
 struct PluginContext
-{
-    using PlayerPluginFinder = std::function<IPlayerPlugin*(const QUrl&)>;
-
-    PlayerPluginFinder findPlayerPlugin;
-};
+{};
 
 #define IAppPlugin_IID "com.videoplayer.IAppPlugin/1.0"
 

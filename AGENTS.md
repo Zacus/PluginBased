@@ -12,7 +12,7 @@
 
 ## Project Structure & Module Organization
 
-This is a Qt 6 / QML video player built with CMake and C++17. The main application lives in `app/`, with QML screens in `app/qml/`. Shared runtime logic is split into `core/` for plugin management and app services, `logger/` for the spdlog wrapper, and `plugin/` for the `IPlayerPlugin` interface. Plugin implementations are under `plugins/`: `DummyPlugin/` is the minimal reference and `PlayPlugin/` contains FFmpeg playback code, QML views, and shaders. Packaging and deployment helpers live in `tools/`, with `package.sh` as the top-level packaging entry point.
+This is a Qt 6 / QML video player built with CMake and C++17. The main application lives in `app/`, with QML screens in `app/qml/`. Shared runtime logic is split into `core/` for plugin management and app services, `logger/` for the spdlog wrapper, and `plugin/` for the `IAppPlugin` interface. Plugin implementations are under `plugins/`: `DummyPlugin/` is the minimal reference and `PlayPlugin/` contains FFmpeg playback code, QML views, and shaders. Packaging and deployment helpers live in `tools/`, with `package.sh` as the top-level packaging entry point.
 
 ## Build, Test, and Development Commands
 

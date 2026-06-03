@@ -10,7 +10,6 @@
 #include <vector>
 
 #include "IAppPlugin.h"
-#include "IPlayerPlugin.h"
 
 class PluginManager : public QObject
 {
@@ -37,7 +36,6 @@ public:
     void loadAll(const QString& pluginDir);
     bool loadPlugin(const QString& filePath);
     void unloadAll();
-    IPlayerPlugin* findPlayerPlugin(const QUrl& url) const;
 
     int         pluginCount() const { return static_cast<int>(m_plugins.size()); }
     QStringList pluginNames() const;

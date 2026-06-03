@@ -10,6 +10,10 @@ def read(path):
     return (ROOT / path).read_text(encoding="utf-8")
 
 
+def file_exists(path):
+    return (ROOT / path).exists()
+
+
 def require(condition, message):
     if not condition:
         raise AssertionError(message)
@@ -45,7 +49,6 @@ def main():
     playplugin_cpp = read("plugins/PlayPlugin/PlayPlugin.cpp")
     context_h = read("plugins/PlayPlugin/src/PlaybackContext.h")
     app_plugin_h = read("plugin/IAppPlugin.h")
-    iplayer_h = read("plugin/IPlayerPlugin.h")
     plugin_cmake = read("plugin/CMakeLists.txt")
     manager_h = read("core/PluginManager.h")
     manager_cpp = read("core/PluginManager.cpp")
@@ -64,8 +67,12 @@ def main():
             "IAppPlugin should expose the generic plugin IID")
     require("struct PluginContext" in app_plugin_h,
             "IAppPlugin should define the minimal host context")
-    require("using PlayerPluginFinder = std::function<IPlayerPlugin*(const QUrl&)>" in app_plugin_h,
-            "PluginContext should expose a player capability finder")
+    require(not file_exists("plugin/IPlayerPlugin.h"),
+            "IPlayerPlugin interface should be removed from the host plugin contract")
+    require("IPlayerPlugin" not in app_plugin_h,
+            "IAppPlugin should not mention player-specific interfaces")
+    require("PlayerPluginFinder" not in app_plugin_h and "findPlayerPlugin" not in app_plugin_h,
+            "PluginContext should not expose player-specific callbacks")
     require("virtual QString id()          const = 0" in app_plugin_h,
             "IAppPlugin should expose a stable plugin id")
     require("virtual bool initialize(const PluginContext& context) = 0" in app_plugin_h,
@@ -74,43 +81,30 @@ def main():
             "IAppPlugin should be declared as a Qt plugin interface")
     require("IAppPlugin.h" in plugin_cmake,
             "VideoPlayerPlugin interface target should publish IAppPlugin.h")
-    require("PluginContext" not in iplayer_h,
-            "IPlayerPlugin should not own generic host context")
-    require("virtual QString name()" not in iplayer_h,
-            "IPlayerPlugin should not own generic metadata")
-    require("virtual QString version()" not in iplayer_h,
-            "IPlayerPlugin should not own generic version metadata")
-    require("virtual QString description()" not in iplayer_h,
-            "IPlayerPlugin should not own generic description metadata")
-    require("virtual bool initialize" not in iplayer_h,
-            "IPlayerPlugin should not own generic lifecycle")
-    require("virtual bool canHandle(const QUrl& url) const = 0" in iplayer_h,
-            "IPlayerPlugin should keep media handling capability")
-    require("virtual bool open(const QUrl& url) = 0" in iplayer_h,
-            "IPlayerPlugin should keep open capability")
-    require("Q_DECLARE_INTERFACE(IPlayerPlugin, IPlayerPlugin_IID)" in iplayer_h,
-            "IPlayerPlugin should remain a Qt-discoverable optional capability")
+    require("IPlayerPlugin" not in plugin_cmake,
+            "VideoPlayerPlugin target should not publish IPlayerPlugin.h")
     require('#include "IAppPlugin.h"' in manager_h,
             "PluginManager should include the generic app plugin interface")
     require("IAppPlugin*" in manager_h,
             "PluginManager should store generic app plugins")
-    require("IPlayerPlugin*                 plugin" not in manager_h,
-            "PluginManager should not store IPlayerPlugin as the base plugin")
-    require("IPlayerPlugin* findPlayerPlugin(const QUrl& url) const" in manager_h,
-            "PluginManager should expose player capability lookup")
+    require("IPlayerPlugin" not in manager_h and "IPlayerPlugin" not in manager_cpp,
+            "PluginManager should not mention player-specific interfaces")
+    require("findPlayerPlugin" not in manager_h and "findPlayerPlugin" not in manager_cpp,
+            "PluginManager should not expose player capability lookup")
     require("qobject_cast<IAppPlugin*>" in manager_cpp,
             "PluginManager should load generic app plugins")
-    require("qobject_cast<IPlayerPlugin*>" in manager_cpp,
-            "PluginManager should discover optional player capability by cast")
-    require("PluginContext context" in manager_cpp and
-            "context.findPlayerPlugin" in manager_cpp,
-            "PluginManager should pass PluginContext into app plugin initialization")
+    require("PluginContext context" in manager_cpp,
+            "PluginManager should still pass generic PluginContext into app plugin initialization")
     require("#include \"IAppPlugin.h\"" in playplugin_h,
             "PlayPlugin should include IAppPlugin")
-    require("public IAppPlugin, public IPlayerPlugin" in playplugin_h,
-            "PlayPlugin should implement app plugin and player capability")
-    require("Q_INTERFACES(IAppPlugin IPlayerPlugin)" in playplugin_h,
-            "PlayPlugin should expose both Qt interfaces")
+    require("IPlayerPlugin" not in playplugin_h and "IPlayerPlugin" not in playplugin_cpp,
+            "PlayPlugin should not implement the removed host player interface")
+    require("public IAppPlugin" in playplugin_h,
+            "PlayPlugin should remain a generic app plugin")
+    require("Q_INTERFACES(IAppPlugin)" in playplugin_h,
+            "PlayPlugin should expose only the generic app plugin interface")
+    require("Q_INTERFACES(IAppPlugin IPlayerPlugin)" not in playplugin_h,
+            "PlayPlugin should not expose a player plugin Qt interface")
     require("Q_PLUGIN_METADATA(IID IAppPlugin_IID FILE \"PlayPlugin.json\")" in playplugin_h,
             "PlayPlugin metadata should use the generic app plugin IID")
     require("com.videoplayer.IAppPlugin/1.0" in playplugin_json,
@@ -119,10 +113,10 @@ def main():
             "PlayPlugin should expose a stable app plugin id")
     require("bool initialize(const PluginContext& context) override" in playplugin_h,
             "PlayPlugin should initialize from PluginContext")
-    require("PlaybackContext::instance().setFinder(context.findPlayerPlugin)" in playplugin_cpp,
-            "PlayPlugin should pass the context player finder into PlaybackContext")
-    require("using PlayerPluginFinder = PluginContext::PlayerPluginFinder" in context_h,
-            "PlaybackContext should use PluginContext's player finder type")
+    require("PlaybackContext::instance().setFinder" not in playplugin_cpp,
+            "PlayPlugin should not receive host player lookup callbacks")
+    require("PlayerPluginFinder" not in context_h and "IPlayerPlugin" not in context_h,
+            "PlaybackContext should not store host-provided player capabilities")
     require("#include \"IAppPlugin.h\"" in dummy_h,
             "DummyPlugin should include IAppPlugin")
     require("public IAppPlugin" in dummy_h and "public IPlayerPlugin" not in dummy_h,
@@ -139,12 +133,12 @@ def main():
             "DummyPlugin should not expose playback capability methods")
     require("DummyPlugin::canHandle" not in dummy_cpp and "DummyPlugin::open" not in dummy_cpp,
             "DummyPlugin implementation should not contain playback methods")
-    require("IAppPlugin" in readme and "IPlayerPlugin" in readme,
-            "README should document generic app plugins and optional player capability")
+    require("IAppPlugin" in readme and "IPlayerPlugin" not in readme,
+            "README should describe only IAppPlugin as the plugin contract")
     require("通用插件" in readme,
             "README should describe the host plugin model as generic")
-    require("IAppPlugin" in build_md and "可选播放能力" in build_md,
-            "BUILD.md should document app plugin development and optional player capability")
+    require("IAppPlugin" in build_md and "IPlayerPlugin" not in build_md,
+            "BUILD.md should describe only IAppPlugin as the plugin contract")
 
     require("finishMedia()" in engine_h, "PlayerEngine should centralize media completion")
     require("maybeFinishMedia()" in engine_h, "PlayerEngine should wait for active streams to drain")
@@ -221,12 +215,12 @@ def main():
             "av_channel_layout_from_mask" in audio_cpp and
             "av_channel_layout_default(&srcLayout, m_srcChannels)" in audio_cpp,
             "AudioRenderer should initialize swresample from the real or default source layout")
-    require("setPendingOpenUrl" in context_h and "takePendingOpenUrl" in context_h,
-            "PlaybackContext should store a pending host open request")
-    require("PlaybackContext::instance().setPendingOpenUrl(url)" in playplugin_cpp,
-            "PlayPlugin::open should cache host open requests before PlayerEngine exists")
-    require("takePendingOpenUrl" in engine_cpp and "QMetaObject::invokeMethod" in engine_cpp,
-            "PlayerEngine should consume pending host open requests after QML construction")
+    require("setPendingOpenUrl" not in context_h and "takePendingOpenUrl" not in context_h,
+            "PlaybackContext should not store host-originated pending open requests")
+    require("PlaybackContext::instance().setPendingOpenUrl" not in playplugin_cpp,
+            "PlayPlugin should not cache host open requests")
+    require("takePendingOpenUrl" not in engine_cpp,
+            "PlayerEngine should not consume host-originated pending open requests")
     require("buildColorMatrix" not in surface_cpp and "colorMatrix" not in surface_cpp,
             "FFmpegSurface should not keep obsolete color matrix code or comments")
     require("AV_PIX_FMT_NV12" in decoder_cpp and "AV_PIX_FMT_P010LE" in decoder_cpp,

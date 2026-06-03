@@ -37,10 +37,9 @@ PlayPlugin::~PlayPlugin()
 // ─────────────────────────────────────────────────────────────────────────────
 // 生命周期
 // ─────────────────────────────────────────────────────────────────────────────
-bool PlayPlugin::initialize(const PluginContext& context)
+bool PlayPlugin::initialize(const PluginContext&)
 {
     LOG_INFO("PlayPlugin::initialize()");
-    PlaybackContext::instance().setFinder(context.findPlayerPlugin);
     return true;
 }
 
@@ -49,78 +48,6 @@ void PlayPlugin::shutdown()
     LOG_INFO("PlayPlugin::shutdown()");
     if (auto* e = engine())
         e->stop();
-    PlaybackContext::instance().clearPendingOpenUrl();
-    PlaybackContext::instance().clearFinder();
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// 能力查询
-// ─────────────────────────────────────────────────────────────────────────────
-bool PlayPlugin::canHandle(const QUrl& url) const
-{
-    if (!url.isLocalFile()) return false;
-    static const QStringList exts = {
-        "mp4", "mkv", "avi", "mov", "flv", "webm",
-        "mp3", "flac", "aac", "ogg", "wav", "m4a", "m4v", "ts", "rmvb"
-    };
-    return exts.contains(url.fileName().section('.', -1).toLower());
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// 播放控制（转发给 PlayerEngine）
-// ─────────────────────────────────────────────────────────────────────────────
-bool PlayPlugin::open(const QUrl& url)
-{
-    LOG_INFO("PlayPlugin::open({})", url.toString().toStdString());
-    if (auto* e = engine()) {
-        e->open(url);
-        return true;
-    }
-    PlaybackContext::instance().setPendingOpenUrl(url);
-    LOG_WARN("PlayPlugin::open() — PlayerEngine not available yet, deferred until QML loads");
-    return true;
-}
-
-void PlayPlugin::play()
-{
-    if (auto* e = engine()) e->play();
-}
-
-void PlayPlugin::pause()
-{
-    if (auto* e = engine()) e->pause();
-}
-
-void PlayPlugin::stop()
-{
-    if (auto* e = engine()) e->stop();
-}
-
-void PlayPlugin::seek(qint64 positionMs)
-{
-    if (auto* e = engine()) e->seek(positionMs);
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// 状态查询（从 PlayerEngine 实时读取）
-// ─────────────────────────────────────────────────────────────────────────────
-qint64 PlayPlugin::duration() const
-{
-    if (auto* e = engine()) return e->duration();
-    return 0;
-}
-
-qint64 PlayPlugin::position() const
-{
-    if (auto* e = engine()) return e->position();
-    return 0;
-}
-
-bool PlayPlugin::isPlaying() const
-{
-    if (auto* e = engine())
-        return e->playbackState() == PlayerEngine::Playing;
-    return false;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

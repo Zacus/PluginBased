@@ -11,7 +11,7 @@ add_library(VideoPlayerCore INTERFACE)
 
 target_include_directories(VideoPlayerCore INTERFACE
     ${CMAKE_CURRENT_SOURCE_DIR}         # PluginManager.h（插件需要 #include 以使用类型）
-    ${CMAKE_SOURCE_DIR}/plugin          # IAppPlugin.h / IPlayerPlugin.h
+    ${CMAKE_SOURCE_DIR}/plugin          # IAppPlugin.h
     ${CMAKE_SOURCE_DIR}/logger          # Logger.h
 )
 

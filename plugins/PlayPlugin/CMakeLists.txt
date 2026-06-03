@@ -17,7 +17,7 @@
 #   在 QPluginLoader dlopen 时自动触发，QML 引擎 import PlayPlugin 1.0 正常工作。
 #
 # 最终 PlayPlugin.so 包含：
-#   ├─ PlayPlugin.cpp         IAppPlugin + IPlayerPlugin 实现（Q_PLUGIN_METADATA IAppPlugin_IID）
+#   ├─ PlayPlugin.cpp         IAppPlugin 实现（Q_PLUGIN_METADATA IAppPlugin_IID）
 #   ├─ PlayerEngine.cpp       播放引擎（QML_ELEMENT）
 #   ├─ PlaylistModel.cpp      播放列表模型（QML_ELEMENT）
 #   ├─ PlaybackContext.cpp    模块上下文单例（QML_SINGLETON）
@@ -111,7 +111,7 @@ set_target_properties(PlayPlugin PROPERTIES
 
 target_include_directories(PlayPlugin PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src     # PlaybackContext / PlayerEngine / PlaylistModel / MediaInfo
-    ${CMAKE_SOURCE_DIR}/plugin          # IPlayerPlugin.h
+    ${CMAKE_SOURCE_DIR}/plugin          # IAppPlugin.h
     ${CMAKE_SOURCE_DIR}/logger          # Logger.h
     ${CMAKE_SOURCE_DIR}/core            # PluginManager.h（头文件，符号运行时解析）
 )
@@ -122,7 +122,7 @@ target_link_libraries(PlayPlugin PRIVATE
     Qt6::GuiPrivate
     Qt6::Quick
     Qt6::Multimedia
-    VideoPlayerPlugin                   # IAppPlugin / IPlayerPlugin 接口（INTERFACE）
+    VideoPlayerPlugin                   # IAppPlugin 接口（INTERFACE）
     VideoPlayerLogger                   # spdlog 封装（STATIC）
     FFmpeg::all                         # avformat / avcodec / avutil / swscale / swresample
     # 不链接 VideoPlayerCore：PluginManager 符号由主程序 -rdynamic 在运行时提供
