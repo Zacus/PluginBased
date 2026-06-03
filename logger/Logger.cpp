@@ -23,7 +23,7 @@ void Logger::init(const std::string&        logDir,
     auto consoleSink = std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
     consoleSink->set_level(level);
 
-    const std::string logFile = logDir + "/videoplayer.log";
+    const std::string logFile = logDir + "/pluginbased.log";
     auto fileSink = std::make_shared<spdlog::sinks::rotating_file_sink_mt>(
         logFile,
         maxFileSizeBytes,

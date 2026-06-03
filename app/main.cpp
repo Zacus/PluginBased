@@ -13,8 +13,8 @@
 int main(int argc, char* argv[])
 {
     QGuiApplication app(argc, argv);
-    app.setOrganizationName("MyOrg");
-    app.setApplicationName("VideoPlayer");
+    app.setOrganizationName("PluginBased");
+    app.setApplicationName("PluginBased");
     app.setApplicationVersion("1.0.0");
 
     const QString dataDir = QStandardPaths::writableLocation(
@@ -25,7 +25,7 @@ int main(int argc, char* argv[])
 
     // ── 加载配置 ──────────────────────────────────────────────────────────
     AppConfig& cfg = AppConfig::instance();
-    cfg.load(dataDir + "/config/videoplayer.ini");
+    cfg.load(dataDir + "/config/pluginbased.ini");
 
     const QString logDir = QDir::isAbsolutePath(cfg.logDir())
                                ? cfg.logDir()
@@ -39,7 +39,7 @@ int main(int argc, char* argv[])
         static_cast<std::size_t>(cfg.logMaxFiles()),
         cfg.logFlushOn()
     );
-    LOG_INFO("=== VideoPlayer starting (v1.0.0) ===");
+    LOG_INFO("=== PluginBased starting (v1.0.0) ===");
     LOG_INFO("Data dir: {}", dataDir.toStdString());
     LOG_INFO("Config  : {}", cfg.path().toStdString());
 
@@ -55,7 +55,7 @@ int main(int argc, char* argv[])
 
     // ── QML 模块搜索路径 ──────────────────────────────────────────────────
     // CMAKE_BINARY_DIR 下同时存在：
-    //   VideoPlayer/qmldir   ← VideoPlayer 1.0（宿主模块）
+    //   PluginBased/qmldir   ← PluginBased 1.0（宿主模块）
     //   PlayPlugin/qmldir    ← PlayPlugin 1.0（插件 C++ 类型模块）
     // 一次 addImportPath 即可让引擎发现两个模块。
 #ifdef QML_IMPORT_PATH
@@ -73,7 +73,7 @@ int main(int argc, char* argv[])
         }
     );
 
-    const QUrl entryUrl(QStringLiteral("qrc:/VideoPlayer/qml/main.qml"));
+    const QUrl entryUrl(QStringLiteral("qrc:/PluginBased/qml/main.qml"));
 
     QObject::connect(
         &engine,
@@ -93,7 +93,7 @@ int main(int argc, char* argv[])
 
     LOG_INFO("Entering event loop");
     int ret = app.exec();
-    LOG_INFO("=== VideoPlayer exiting ({}) ===", ret);
+    LOG_INFO("=== PluginBased exiting ({}) ===", ret);
     Logger::instance().shutdown();
     return ret;
 }

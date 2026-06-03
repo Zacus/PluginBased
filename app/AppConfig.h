@@ -9,7 +9,7 @@
  * @brief 应用配置管理（单例）
  *
  * 使用 INI 格式，基于 Qt6 QSettings。
- * 配置文件路径：<AppLocalDataLocation>/config/videoplayer.ini
+ * 配置文件路径：<AppLocalDataLocation>/config/pluginbased.ini
  *
  * 示例 INI 内容：
  * ─────────────────────────────

@@ -29,7 +29,7 @@ public:
     }
 
     QString appVersion()   const { return QStringLiteral("1.0.0"); }
-    QString appName()      const { return QStringLiteral("VideoPlayer"); }
+    QString appName()      const { return QStringLiteral("PluginBased"); }
     bool    pluginsReady() const { return m_pluginsReady; }
 
 public slots:

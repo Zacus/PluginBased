@@ -15,7 +15,7 @@
  *   Log.warn("something wrong")
  *   Log.error("fatal: " + msg)
  *
- * ## 为什么独立成模块而非放在宿主的 VideoPlayer 1.0 里
+ * ## 为什么独立成模块而非放在宿主的 PluginBased 1.0 里
  *
  * 日志是基础设施，与宿主业务（AppController、PluginManager）无关。
  * 独立模块名 "AppLog" 稳定，不随宿主业务重构变化，

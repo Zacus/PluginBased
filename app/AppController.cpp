@@ -40,7 +40,7 @@ void AppController::initPlugins()
     // 插件目录探测顺序（从最具体到最通用）：
     //
     //  1. <appDir>/plugins/
-    //     → 发布包：bin/VideoPlayerApp  +  bin/plugins/*.so
+    //     → 发布包：bin/PluginBasedApp  +  bin/plugins/*.so
     //
     //  2. <appDir>/../PlugIns/
     //     → macOS .app 发布包：Contents/MacOS/  +  Contents/PlugIns/
@@ -48,11 +48,11 @@ void AppController::initPlugins()
     //
     //  3. <appDir>/../plugins/
     //     → 普通 CMake 开发构建（Linux/Win）：
-    //       build/app/VideoPlayerApp  +  build/plugins/
+    //       build/app/PluginBasedApp  +  build/plugins/
     //
     //  4. <appDir>/../../../../plugins/
     //     → macOS CMake 开发构建（.app bundle）：
-    //       build/app/VideoPlayerApp.app/Contents/MacOS/  +  build/plugins/
+    //       build/app/PluginBasedApp.app/Contents/MacOS/  +  build/plugins/
     //       需要上溯 4 级才能到 build/ 再进入 plugins/
  
     const QString appDir = QCoreApplication::applicationDirPath();

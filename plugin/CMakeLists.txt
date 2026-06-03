@@ -1,5 +1,5 @@
-add_library(VideoPlayerPlugin INTERFACE
+add_library(PluginBasedPlugin INTERFACE
     IAppPlugin.h
 )
-target_include_directories(VideoPlayerPlugin INTERFACE ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(VideoPlayerPlugin INTERFACE Qt6::Core)
+target_include_directories(PluginBasedPlugin INTERFACE ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(PluginBasedPlugin INTERFACE Qt6::Core)

@@ -1,7 +1,7 @@
 import QtQuick
 import QtQuick.Controls.Basic
 import QtQuick.Layouts
-import VideoPlayer 1.0
+import PluginBased 1.0
 
 Item {
     id: root
