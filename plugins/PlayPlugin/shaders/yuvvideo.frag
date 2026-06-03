@@ -54,14 +54,25 @@ vec3 yuvToRgb(float y, float u, float v, bool fullRange, bool bt709)
 
 void main()
 {
-    float y = samplePlane(texY, vTexCoord);
-    float u = samplePlane(texU, vTexCoord);
-    float v = samplePlane(texV, vTexCoord);
+    float formatMode = ubuf.params.w;
+    bool needs10bitExpansion = formatMode == 1.0;
+    bool semiplanar = formatMode >= 2.0;
 
-    // 10bit 数据在 R16 纹理里被归一化到 [0, 1]（除以 65535）
-    // 实际有效范围是 [0, 1023]，需要重新映射到 [0, 1]
-    if (ubuf.params.w > 0.5) {
-        // 65535 / 1023 ≈ 64.06，反向缩放回正确范围
+    float y = samplePlane(texY, vTexCoord);
+    float u = 0.0;
+    float v = 0.0;
+    if (semiplanar) {
+        vec2 uv = texture(texU, vTexCoord).rg;
+        u = uv.r;
+        v = uv.g;
+    } else {
+        u = samplePlane(texU, vTexCoord);
+        v = samplePlane(texV, vTexCoord);
+    }
+
+    // planar 10bit 格式使用低 10bit 存储，R16 采样后需要从 0..1023 扩到 0..1。
+    // P010 使用高 10bit 存储，R16 采样后已经接近 0..1，不能再次扩展。
+    if (needs10bitExpansion) {
         y = y * 64.06;
         u = u * 64.06;
         v = v * 64.06;

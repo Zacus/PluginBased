@@ -32,6 +32,7 @@ def main():
     audio_cpp = read("plugins/PlayPlugin/src/AudioRenderer.cpp")
     audio_h = read("plugins/PlayPlugin/src/AudioRenderer.h")
     surface_cpp = read("plugins/PlayPlugin/src/FFmpegSurface.cpp")
+    shader_frag = read("plugins/PlayPlugin/shaders/yuvvideo.frag")
     renderer_cpp = read("plugins/PlayPlugin/src/VideoRenderer.cpp")
     renderer_h = read("plugins/PlayPlugin/src/VideoRenderer.h")
     control_qml = read("plugins/PlayPlugin/qml/ControlBar.qml")
@@ -124,6 +125,18 @@ def main():
             "PlayerEngine should consume pending host open requests after QML construction")
     require("buildColorMatrix" not in surface_cpp and "colorMatrix" not in surface_cpp,
             "FFmpegSurface should not keep obsolete color matrix code or comments")
+    require("AV_PIX_FMT_NV12" in decoder_cpp and "AV_PIX_FMT_P010LE" in decoder_cpp,
+            "decoder should let NV12 and P010 frames bypass sws normalization")
+    require("PlaneLayout" in surface_cpp and "Semiplanar" in surface_cpp,
+            "FFmpegSurface should distinguish planar and semiplanar YUV layouts")
+    require("QRhiTexture::RG8" in surface_cpp and "QRhiTexture::RG16" in surface_cpp,
+            "NV12/P010 UV planes should upload as two-channel RHI textures")
+    require("formatMode" in surface_cpp,
+            "FFmpegSurface should pass a compact shader format mode")
+    require("needs10BitExpansion" in surface_cpp and "needs10bitExpansion" in shader_frag,
+            "P010 should not reuse planar low-10bit expansion and cause color or brightness shifts")
+    require(".rg" in shader_frag and "semiplanar" in shader_frag,
+            "shader should sample NV12/P010 UV from texU.rg")
     ensure_textures = surface_cpp[surface_cpp.find("void ensureTextures"):
                                   surface_cpp.find("void releaseTextures")]
     require(ensure_textures.count("m_material_.paramsDirty") == 1 and

@@ -62,7 +62,7 @@ struct PendingUpload
 // ══════════════════════════════════════════════════════════════════════════════
 // VideoMaterial
 // ══════════════════════════════════════════════════════════════════════════════
-enum class PixelFormat { YUV420P, YUV420P10 };
+enum class PlaneLayout { Planar, Semiplanar };
 
 // ══════════════════════════════════════════════════════════════════════════════
 // PixelFormatInfo
@@ -77,7 +77,8 @@ struct PixelFormatInfo
     bool valid = false;
 
     // RHI 纹理格式
-    QRhiTexture::Format rhiFormat = QRhiTexture::R8;
+    QRhiTexture::Format lumaFormat = QRhiTexture::R8;
+    QRhiTexture::Format chromaFormat = QRhiTexture::R8;
 
     // 色度平面相对亮度平面的尺寸比例
     int chromaWidthDivisor  = 2;  // UV 宽 = Y 宽 / divisor
@@ -86,9 +87,19 @@ struct PixelFormatInfo
     // shader 里是否需要 10bit 归一化
     bool is10bit = false;
 
+    // planar 10bit 格式用低 10bit 存储，需要 shader 从 R16 归一化值扩回 10bit。
+    // P010 使用高 10bit 存储，R16 采样后已经接近目标归一化值，不应再次扩展。
+    bool needs10BitExpansion = false;
+
+    // shader 格式模式：0=8bit planar, 1=10bit planar, 2=8bit semiplanar, 3=10bit semiplanar
+    float formatMode = 0.0f;
+
+    PlaneLayout planeLayout = PlaneLayout::Planar;
+
     // 色度平面实际尺寸
     int chromaWidth (int w) const { return (w + chromaWidthDivisor  - 1) / chromaWidthDivisor;  }
     int chromaHeight(int h) const { return (h + chromaHeightDivisor - 1) / chromaHeightDivisor; }
+    bool isSemiplanar() const { return planeLayout == PlaneLayout::Semiplanar; }
 
     // ── 工厂方法：从 AVPixelFormat 构造 ─────────────────────────────────────
     static PixelFormatInfo fromAVFormat(int avFormat)
@@ -97,19 +108,33 @@ struct PixelFormatInfo
         // 8-bit YUV420
         case AV_PIX_FMT_YUV420P:
         case AV_PIX_FMT_YUVJ420P:
-            return { true, QRhiTexture::R8,  2, 2, false };
+            return { true, QRhiTexture::R8,  QRhiTexture::R8,  2, 2, false, false, 0.0f,
+                     PlaneLayout::Planar };
+
+        // 8-bit NV12（Y + 交错 UV）
+        case AV_PIX_FMT_NV12:
+            return { true, QRhiTexture::R8, QRhiTexture::RG8, 2, 2, false, false, 2.0f,
+                     PlaneLayout::Semiplanar };
 
         // 10-bit YUV420
         case AV_PIX_FMT_YUV420P10LE:
-            return { true, QRhiTexture::R16, 2, 2, true  };
+            return { true, QRhiTexture::R16, QRhiTexture::R16, 2, 2, true, true, 1.0f,
+                     PlaneLayout::Planar };
+
+        // 10-bit P010（Y + 交错 UV）
+        case AV_PIX_FMT_P010LE:
+            return { true, QRhiTexture::R16, QRhiTexture::RG16, 2, 2, true, false, 3.0f,
+                     PlaneLayout::Semiplanar };
 
         // 10-bit YUV422（色度与亮度等高）
         case AV_PIX_FMT_YUV422P10LE:
-            return { true, QRhiTexture::R16, 2, 1, true  };
+            return { true, QRhiTexture::R16, QRhiTexture::R16, 2, 1, true, true, 1.0f,
+                     PlaneLayout::Planar };
 
         // 10-bit YUV444（色度与亮度等宽等高）
         case AV_PIX_FMT_YUV444P10LE:
-            return { true, QRhiTexture::R16, 1, 1, true  };
+            return { true, QRhiTexture::R16, QRhiTexture::R16, 1, 1, true, true, 1.0f,
+                     PlaneLayout::Planar };
 
         default:
             return {};  // valid = false
@@ -117,10 +142,14 @@ struct PixelFormatInfo
     }
 
     bool operator==(const PixelFormatInfo& o) const {
-        return rhiFormat           == o.rhiFormat
+        return lumaFormat          == o.lumaFormat
+            && chromaFormat        == o.chromaFormat
             && chromaWidthDivisor  == o.chromaWidthDivisor
             && chromaHeightDivisor == o.chromaHeightDivisor
-            && is10bit             == o.is10bit;
+            && is10bit             == o.is10bit
+            && needs10BitExpansion == o.needs10BitExpansion
+            && formatMode          == o.formatMode
+            && planeLayout         == o.planeLayout;
     }
     bool operator!=(const PixelFormatInfo& o) const { return !(*this == o); }
 };
@@ -216,7 +245,7 @@ bool updateUniformData(RenderState& state,
             mat->opacity,
             mat->fullRange                              ? 1.0f : 0.0f,
             mat->bt709                                  ? 1.0f : 0.0f,
-            mat->fmtInfo.is10bit  ? 1.0f : 0.0f,  // w=is10bit
+            mat->fmtInfo.formatMode,
         };
         memcpy(buf->data() + 64, params, sizeof(params));
         mat->paramsDirty = false;
@@ -249,7 +278,7 @@ bool updateUniformData(RenderState& state,
             const int cw = mat->fmtInfo.chromaWidth(w);
             const int ch = mat->fmtInfo.chromaHeight(h);
 
-            const int bytesPerSample = mat->fmtInfo.rhiFormat == QRhiTexture::R16 ? 2 : 1;
+            const int bytesPerSample = mat->fmtInfo.is10bit ? 2 : 1;
             auto makePlane = [&](int samples, quint16 value) {
                 QByteArray data;
                 data.resize(samples * bytesPerSample);
@@ -263,11 +292,31 @@ bool updateUniformData(RenderState& state,
                     dst[i] = value;
                 return data;
             };
+            auto makeInterleavedChromaPlane = [&](int samples, quint16 value) {
+                QByteArray data;
+                data.resize(samples * bytesPerSample * 2);
+                if (bytesPerSample == 1) {
+                    auto* dst = reinterpret_cast<quint8*>(data.data());
+                    for (int i = 0; i < samples; ++i) {
+                        dst[i * 2]     = static_cast<quint8>(value & 0xff);
+                        dst[i * 2 + 1] = static_cast<quint8>(value & 0xff);
+                    }
+                    return data;
+                }
+
+                auto* dst = reinterpret_cast<quint16*>(data.data());
+                for (int i = 0; i < samples; ++i) {
+                    dst[i * 2]     = value;
+                    dst[i * 2 + 1] = value;
+                }
+                return data;
+            };
 
             const QByteArray black_y =
-                makePlane(w * h, mat->fmtInfo.is10bit ? 64 : 16);
-            const QByteArray black_uv =
-                makePlane(cw * ch, mat->fmtInfo.is10bit ? 512 : 128);
+                makePlane(w * h, mat->fmtInfo.needs10BitExpansion ? 64 :
+                                  (mat->fmtInfo.is10bit ? 4096 : 16));
+            const quint16 neutralChroma = mat->fmtInfo.needs10BitExpansion ? 512 :
+                                          (mat->fmtInfo.is10bit ? 32768 : 128);
 
             auto* batch = state.resourceUpdateBatch();
             auto upload = [&](QRhiTexture* tex, const QByteArray& data, QSize sz) {
@@ -277,8 +326,16 @@ bool updateUniformData(RenderState& state,
                     QRhiTextureUploadDescription(QRhiTextureUploadEntry(0, 0, desc)));
             };
             upload(mat->tex_y, black_y,  { w,  h  });
-            upload(mat->tex_u, black_uv, { cw, ch });
-            upload(mat->tex_v, black_uv, { cw, ch });
+            if (mat->fmtInfo.isSemiplanar()) {
+                const QByteArray black_uv = makeInterleavedChromaPlane(cw * ch, neutralChroma);
+                const QByteArray black_v = makePlane(1, neutralChroma);
+                upload(mat->tex_u, black_uv, { cw, ch });
+                upload(mat->tex_v, black_v, { 1, 1 });
+            } else {
+                const QByteArray black_uv = makePlane(cw * ch, neutralChroma);
+                upload(mat->tex_u, black_uv, { cw, ch });
+                upload(mat->tex_v, black_uv, { cw, ch });
+            }
 
             mat->pendingBlackFrame = false;
         }
@@ -311,8 +368,10 @@ bool updateUniformData(RenderState& state,
                         { frame->width, frame->height });
             upload_plane(mat->tex_u, frame->data[1], frame->linesize[1],
                         { cw, ch });
-            upload_plane(mat->tex_v, frame->data[2], frame->linesize[2],
-                        { cw, ch });
+            if (!fmt.isSemiplanar()) {
+                upload_plane(mat->tex_v, frame->data[2], frame->linesize[2],
+                            { cw, ch });
+            }
 
             mat->pending.valid = false;
             mat->currentFrame   = std::move(mat->pending.frameData); // ← 延迟释放
@@ -429,9 +488,14 @@ private:
         const int ch = fmt.chromaHeight(h);
 
         QRhi* rhi = window->rhi();
-        m_material_.tex_y = rhi->newTexture(fmt.rhiFormat, { w,  h  }); m_material_.tex_y->create();
-        m_material_.tex_u = rhi->newTexture(fmt.rhiFormat, { cw, ch }); m_material_.tex_u->create();
-        m_material_.tex_v = rhi->newTexture(fmt.rhiFormat, { cw, ch }); m_material_.tex_v->create();
+        m_material_.tex_y = rhi->newTexture(fmt.lumaFormat, { w,  h  });
+        m_material_.tex_y->create();
+        m_material_.tex_u = rhi->newTexture(fmt.chromaFormat, { cw, ch });
+        m_material_.tex_u->create();
+        const QSize vSize = fmt.isSemiplanar() ? QSize(1, 1) : QSize(cw, ch);
+        const QRhiTexture::Format vFormat = fmt.isSemiplanar() ? QRhiTexture::R8 : fmt.chromaFormat;
+        m_material_.tex_v = rhi->newTexture(vFormat, vSize);
+        m_material_.tex_v->create();
         m_material_.size    = { w, h };
         m_material_.fmtInfo = fmt;
 

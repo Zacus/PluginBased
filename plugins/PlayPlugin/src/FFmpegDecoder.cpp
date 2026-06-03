@@ -15,7 +15,9 @@ static bool isRendererSupportedVideoFormat(int format)
     {
     case AV_PIX_FMT_YUV420P:
     case AV_PIX_FMT_YUVJ420P:
+    case AV_PIX_FMT_NV12:
     case AV_PIX_FMT_YUV420P10LE:
+    case AV_PIX_FMT_P010LE:
     case AV_PIX_FMT_YUV422P10LE:
     case AV_PIX_FMT_YUV444P10LE:
         return true;
