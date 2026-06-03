@@ -19,6 +19,11 @@ def require(condition, message):
         raise AssertionError(message)
 
 
+def require_absent(needle, files, message):
+    hits = [path for path, content in files if needle in content]
+    require(not hits, f"{message}: {needle} found in {', '.join(hits)}")
+
+
 def main():
     engine_h = read("plugins/PlayPlugin/src/PlayerEngine.h")
     engine_cpp = read("plugins/PlayPlugin/src/PlayerEngine.cpp")
@@ -109,6 +114,65 @@ def main():
             "package.sh should discover the renamed project and app bundle")
     require('exec "${DIR}/bin/PluginBasedApp" "$@"' in deploy_py,
             "deployment wrapper should launch PluginBasedApp")
+
+    # Historical docs are intentionally excluded from this negative rename gate.
+    active_build_files = [
+        ("CMakeLists.txt", root_cmake),
+        ("app/CMakeLists.txt", app_cmake),
+        ("core/CMakeLists.txt", core_cmake),
+        ("logger/CMakeLists.txt", logger_cmake),
+        ("plugin/CMakeLists.txt", plugin_cmake),
+        ("plugins/PlayPlugin/CMakeLists.txt", cmake),
+        ("package.sh", package_sh),
+    ]
+    active_runtime_files = [
+        ("app/main.cpp", main_cpp),
+        ("app/AppController.h", app_controller_h),
+        ("logger/Logger.cpp", logger_cpp),
+        ("app/qml/main.qml", app_qml),
+        ("app/qml/HomePanel.qml", home_panel_qml),
+        ("plugin/IAppPlugin.h", app_plugin_h),
+        ("plugins/PlayPlugin/PlayPlugin.json", playplugin_json),
+        ("plugins/DummyPlugin/DummyPlugin.json", dummy_json),
+        ("tools/package.yml", package_yml),
+        ("tools/deploy.py", deploy_py),
+    ]
+
+    for old_target in (
+            "VideoPlayerApp",
+            "VideoPlayerCore",
+            "VideoPlayerLogger",
+            "VideoPlayerPlugin"):
+        require_absent(old_target, active_build_files + active_runtime_files,
+                       "old VideoPlayer build target should be removed from active files")
+
+    require_absent('URI     "VideoPlayer"', [("app/CMakeLists.txt", app_cmake)],
+                   "old host QML URI should be removed from active app CMake")
+    require_absent('${CMAKE_BINARY_DIR}/VideoPlayer', [("app/CMakeLists.txt", app_cmake)],
+                   "old host QML output directory should be removed from active app CMake")
+    require_absent('qrc:/VideoPlayer/qml/main.qml', [("app/main.cpp", main_cpp)],
+                   "old QML entry URL should be removed from active startup code")
+    require_absent("import VideoPlayer 1.0",
+                   [("app/qml/main.qml", app_qml),
+                    ("app/qml/HomePanel.qml", home_panel_qml)],
+                   "old host QML imports should be removed from active QML")
+    require_absent("videoplayer.ini", [("app/main.cpp", main_cpp)],
+                   "old config filename should be removed from active startup code")
+    require_absent("videoplayer.log", [("logger/Logger.cpp", logger_cpp)],
+                   "old log filename should be removed from active logger code")
+    require_absent("com.videoplayer.IAppPlugin/1.0",
+                   [("plugin/IAppPlugin.h", app_plugin_h),
+                    ("plugins/PlayPlugin/PlayPlugin.json", playplugin_json),
+                    ("plugins/DummyPlugin/DummyPlugin.json", dummy_json)],
+                   "old app plugin IID should be removed from active plugin metadata")
+    require_absent("name: VideoPlayer", [("tools/package.yml", package_yml)],
+                   "old package name should be removed from active packaging metadata")
+    require_absent("binary: VideoPlayerApp", [("tools/package.yml", package_yml)],
+                   "old package binary should be removed from active packaging metadata")
+    require_absent("bundle_id: com.myorg.videoplayer", [("tools/package.yml", package_yml)],
+                   "old bundle id should be removed from active packaging metadata")
+    require_absent('exec "${DIR}/bin/VideoPlayerApp" "$@"', [("tools/deploy.py", deploy_py)],
+                   "old deployment wrapper target should be removed from active deployment script")
 
     require("class IAppPlugin" in app_plugin_h,
             "generic app plugin interface should exist")
