@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import json
 from pathlib import Path
 import subprocess
 import sys
@@ -47,14 +48,22 @@ def test_backend_smoke_test_passes():
     run([str(smoke_test)])
 
 
-def test_top_level_cmake_auto_discovers_plugins():
+def test_top_level_cmake_uses_plugin_manifest():
     cmake = (ROOT / "CMakeLists.txt").read_text(encoding="utf-8")
+    manifest_path = ROOT / "plugins.json"
     require("add_subdirectory(tools/plugin_generator)" in cmake,
             "top-level CMake should build the visual plugin generator")
-    require("file(GLOB PLUGIN_CMAKELISTS" in cmake,
-            "top-level CMake should glob plugin CMakeLists files")
+    require(manifest_path.exists(),
+            "top-level CMake should be driven by root plugins.json")
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    require(manifest.get("plugins") == ["DummyPlugin", "PlayPlugin"],
+            "default plugin manifest should list only supported project plugins")
+    require("file(GLOB PLUGIN_CMAKELISTS" not in cmake,
+            "top-level CMake should not auto-discover every plugin directory")
+    require("PLUGIN_MANIFEST" in cmake and "string(JSON" in cmake,
+            "top-level CMake should parse the plugin manifest")
     require("add_subdirectory(\"${_plugin_dir}\")" in cmake,
-            "top-level CMake should add discovered plugin directories")
+            "top-level CMake should add plugin directories from the manifest")
     require("plugins/DummyPlugin" not in cmake and "plugins/PlayPlugin" not in cmake,
             "top-level CMake should not require manual plugin entries")
 
@@ -89,7 +98,7 @@ def test_host_supports_image_card_icons():
 
 def main():
     test_backend_smoke_test_passes()
-    test_top_level_cmake_auto_discovers_plugins()
+    test_top_level_cmake_uses_plugin_manifest()
     test_visual_qml_exposes_plugin_type_choice()
     test_host_supports_image_card_icons()
 

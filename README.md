@@ -129,7 +129,7 @@ flush_on         = warn
 
 ### 插件系统
 
-实现 `IAppPlugin` 通用插件接口，编译为动态库，放入构建或发布包的 `plugins/` 目录即可被自动扫描加载。卡片面板会在 `pluginsReady` 信号触发后动态渲染插件卡片。
+实现 `IAppPlugin` 通用插件接口，编译为动态库并在根目录 `plugins.json` 中启用后，即可从构建或发布包的 `plugins/` 目录加载。卡片面板会在 `pluginsReady` 信号触发后动态渲染插件卡片。
 
 宿主只负责插件加载、生命周期和页面路由；播放器、转码器或其他具体业务能力都由插件内部实现。当前 `PlayPlugin` 是一个自包含播放器插件，内部包含 FFmpeg 解码、硬件解码后端、音频渲染、视频渲染、播放列表模型和 QML 界面。
 
@@ -172,18 +172,29 @@ cmake --build build --target PluginGeneratorApp --parallel
 | 带 QML 页面 | 生成 `qml/<PluginName>View.qml`，首页卡片点击后会打开插件页面 |
 | No-QML 后台插件 | 只生成 C++ 插件骨架，不提供可打开页面 |
 
-生成后的目录复制或直接生成到 `plugins/` 下即可。顶层 CMake 会自动扫描 `plugins/*/CMakeLists.txt`，新增插件后重新配置/构建即可参与编译。
+生成后的目录复制或直接生成到 `plugins/` 下即可。项目通过根目录 `plugins.json` 控制哪些插件参与构建和运行时加载；新增插件默认不会被编译或加载，确认要启用后把插件目录名加入清单，再重新配置/构建。
+
+```json
+{
+    "plugins": [
+        "DummyPlugin",
+        "PlayPlugin",
+        "MyPlugin"
+    ]
+}
+```
 
 手工创建插件时需要保持以下约定：
 
 1. 在 `plugins/` 下新建目录，`CMakeLists.txt` 使用 `add_library(MyPlugin MODULE ...)`
-2. 插件继承 `IAppPlugin`，在类声明中加入：
+2. 将插件目录名加入根目录 `plugins.json`
+3. 插件继承 `IAppPlugin`，在类声明中加入：
    ```cpp
    Q_OBJECT
    Q_INTERFACES(IAppPlugin)
    Q_PLUGIN_METADATA(IID IAppPlugin_IID FILE "MyPlugin.json")
    ```
-3. 插件实现元信息、生命周期和可选 QML 页面：
+4. 插件实现元信息、生命周期和可选 QML 页面：
    ```cpp
    QString id() const override { return "my-plugin"; }
    QString name() const override { return "MyPlugin"; }
@@ -198,7 +209,7 @@ cmake --build build --target PluginGeneratorApp --parallel
        return QUrl(QStringLiteral("qrc:/MyPlugin/qml/MyPluginView.qml"));
    }
    ```
-4. 编写插件元数据文件：
+5. 编写插件元数据文件：
    ```json
    {
      "IID": "com.pluginbased.IAppPlugin/1.0",
@@ -208,6 +219,6 @@ cmake --build build --target PluginGeneratorApp --parallel
      }
    }
    ```
-5. 编译后插件产物放入 `build/plugins/`，`PluginManager::loadAll()` 在启动时自动扫描。
+6. 编译后插件产物放入 `build/plugins/`，`PluginManager::loadAll()` 启动时只加载根目录 `plugins.json` 中列出的插件。
 
 参考实现：`plugins/DummyPlugin/`

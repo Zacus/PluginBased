@@ -2,7 +2,103 @@
 #include "Logger.h"
 
 #include <QDir>
+#include <QFile>
 #include <QFileInfo>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QJsonValue>
+
+namespace {
+
+QStringList pluginLibraryFilters()
+{
+#if defined(Q_OS_WIN)
+    return {"*.dll"};
+#elif defined(Q_OS_MAC)
+    // Qt MODULE 库在 macOS 上后缀是 .so，不是 .dylib
+    return {"*.so"};
+#else
+    return {"*.so"};
+#endif
+}
+
+QString manifestFilePath(const QDir& pluginDir)
+{
+    QDir rootDir(pluginDir);
+    rootDir.cdUp();
+    return rootDir.filePath(QStringLiteral("plugins.json"));
+}
+
+QString pluginNameFromLibraryFile(const QString& fileName)
+{
+    QString name = QFileInfo(fileName).completeBaseName();
+    if (name.startsWith(QStringLiteral("lib")))
+        name.remove(0, 3);
+    return name;
+}
+
+QStringList manifestPluginNames(const QString& manifestPath, QString* error)
+{
+    QFile file(manifestPath);
+    if (!file.open(QIODevice::ReadOnly)) {
+        if (error)
+            *error = QStringLiteral("PluginManager: plugin manifest not found: %1")
+                         .arg(manifestPath);
+        return {};
+    }
+
+    QJsonParseError parseError;
+    const QJsonDocument document = QJsonDocument::fromJson(file.readAll(), &parseError);
+    if (parseError.error != QJsonParseError::NoError) {
+        if (error)
+            *error = QStringLiteral("PluginManager: invalid plugin manifest %1: %2")
+                         .arg(manifestPath, parseError.errorString());
+        return {};
+    }
+
+    if (!document.isObject() || !document.object().value(QStringLiteral("plugins")).isArray()) {
+        if (error)
+            *error = QStringLiteral("PluginManager: invalid plugin manifest %1: missing plugins array")
+                         .arg(manifestPath);
+        return {};
+    }
+
+    QStringList names;
+    const QJsonArray plugins = document.object().value(QStringLiteral("plugins")).toArray();
+    for (qsizetype i = 0; i < plugins.size(); ++i) {
+        const QJsonValue value = plugins.at(i);
+        if (!value.isString()) {
+            if (error)
+                *error = QStringLiteral("PluginManager: invalid plugin manifest entry at index %1")
+                             .arg(i);
+            return {};
+        }
+
+        const QString name = value.toString();
+        if (name.isEmpty() || name.contains('/') || name.contains('\\') || name.contains(QStringLiteral(".."))) {
+            if (error)
+                *error = QStringLiteral("PluginManager: invalid plugin name in manifest: '%1'")
+                             .arg(name);
+            return {};
+        }
+        if (!names.contains(name))
+            names << name;
+    }
+
+    return names;
+}
+
+QString findPluginLibraryFile(const QDir& dir, const QString& pluginName, const QStringList& entries)
+{
+    for (const QString& file : entries) {
+        if (pluginNameFromLibraryFile(file) == pluginName)
+            return dir.absoluteFilePath(file);
+    }
+    return {};
+}
+
+} // namespace
 
 void PluginManager::unloadAll()
 {
@@ -25,21 +121,28 @@ void PluginManager::loadAll(const QString& pluginDir)
         return;
     }
 
-#if defined(Q_OS_WIN)
-    const QStringList filters{"*.dll"};
-#elif defined(Q_OS_MAC)
-    // Qt MODULE 库在 macOS 上后缀是 .so，不是 .dylib
-    const QStringList filters{"*.so"};
-#else
-    const QStringList filters{"*.so"};
-#endif
+    QString manifestError;
+    const QStringList enabledPlugins = manifestPluginNames(manifestFilePath(dir),
+                                                           &manifestError);
+    if (!manifestError.isEmpty()) {
+        LOG_ERROR("{}", manifestError.toStdString());
+        return;
+    }
 
+    const QStringList filters = pluginLibraryFilters();
     const auto entries = dir.entryList(filters, QDir::Files);
-    LOG_INFO("PluginManager: scanning {} — found {} files",
-             pluginDir.toStdString(), entries.size());
+    LOG_INFO("PluginManager: scanning {} — found {} files, manifest lists {} plugins",
+             pluginDir.toStdString(), entries.size(), enabledPlugins.size());
 
-    for (const QString& file : entries)
-        loadPlugin(dir.absoluteFilePath(file));
+    for (const QString& pluginName : enabledPlugins) {
+        const QString filePath = findPluginLibraryFile(dir, pluginName, entries);
+        if (filePath.isEmpty()) {
+            LOG_WARN("PluginManager: plugin '{}' listed in manifest but no library was found",
+                     pluginName.toStdString());
+            continue;
+        }
+        loadPlugin(filePath);
+    }
 }
 
 bool PluginManager::loadPlugin(const QString& filePath)

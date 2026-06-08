@@ -113,14 +113,43 @@ FetchContent_MakeAvailable(QtQuickComponents)
 
 add_subdirectory(tools/plugin_generator)
 
-file(GLOB PLUGIN_CMAKELISTS CONFIGURE_DEPENDS
-    "${CMAKE_SOURCE_DIR}/plugins/*/CMakeLists.txt"
-)
+set(PLUGIN_MANIFEST "${CMAKE_SOURCE_DIR}/plugins.json")
+if(NOT EXISTS "${PLUGIN_MANIFEST}")
+    message(FATAL_ERROR "Plugin manifest not found: ${PLUGIN_MANIFEST}")
+endif()
+configure_file(${PLUGIN_MANIFEST} "${CMAKE_BINARY_DIR}/plugins.json" COPYONLY)
+install(FILES "${PLUGIN_MANIFEST}" DESTINATION ".")
 
-foreach(_plugin_cmake IN LISTS PLUGIN_CMAKELISTS)
-    get_filename_component(_plugin_dir "${_plugin_cmake}" DIRECTORY)
-    add_subdirectory("${_plugin_dir}")
-endforeach()
+file(READ "${PLUGIN_MANIFEST}" PLUGIN_MANIFEST_CONTENT)
+string(JSON PLUGIN_COUNT ERROR_VARIABLE PLUGIN_JSON_ERROR
+    LENGTH "${PLUGIN_MANIFEST_CONTENT}" plugins)
+if(PLUGIN_JSON_ERROR)
+    message(FATAL_ERROR "Invalid plugin manifest ${PLUGIN_MANIFEST}: ${PLUGIN_JSON_ERROR}")
+endif()
+
+if(PLUGIN_COUNT GREATER 0)
+    math(EXPR PLUGIN_LAST_INDEX "${PLUGIN_COUNT} - 1")
+    foreach(_plugin_index RANGE 0 ${PLUGIN_LAST_INDEX})
+        string(JSON _plugin_name ERROR_VARIABLE PLUGIN_JSON_ERROR
+            GET "${PLUGIN_MANIFEST_CONTENT}" plugins ${_plugin_index})
+        if(PLUGIN_JSON_ERROR)
+            message(FATAL_ERROR "Invalid plugin entry at index ${_plugin_index}: ${PLUGIN_JSON_ERROR}")
+        endif()
+        if(_plugin_name STREQUAL "" OR _plugin_name MATCHES "[/\\\\]" OR _plugin_name MATCHES "\\.\\.")
+            message(FATAL_ERROR "Invalid plugin name in manifest: '${_plugin_name}'")
+        endif()
+
+        set(_plugin_dir "${CMAKE_SOURCE_DIR}/plugins/${_plugin_name}")
+        if(NOT IS_DIRECTORY "${_plugin_dir}")
+            message(FATAL_ERROR "Plugin directory listed in manifest does not exist: ${_plugin_dir}")
+        endif()
+        if(NOT EXISTS "${_plugin_dir}/CMakeLists.txt")
+            message(FATAL_ERROR "Plugin listed in manifest has no CMakeLists.txt: ${_plugin_dir}")
+        endif()
+
+        add_subdirectory("${_plugin_dir}")
+    endforeach()
+endif()
 
 add_subdirectory(app)
 
