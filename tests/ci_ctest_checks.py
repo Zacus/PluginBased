@@ -21,6 +21,8 @@ def main():
 
     require("include(CTest)" in root_cmake,
             "top-level CMake should include CTest")
+    require("GuiPrivate" in root_cmake,
+            "top-level CMake should explicitly find Qt GuiPrivate because PlayPlugin links Qt6::GuiPrivate")
     require("BUILD_TESTING" in root_cmake,
             "top-level CMake should gate tests behind BUILD_TESTING")
     require("add_test(NAME playplugin_regression_checks" in root_cmake,
