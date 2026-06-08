@@ -7,7 +7,7 @@ Rectangle {
     id: root
 
     height: 82
-    color: "#111319f2"
+    color: ComponentTheme.surface
 
     property int playbackState: 0
     property real position: 0
@@ -31,7 +31,7 @@ Rectangle {
         anchors.top: parent.top
         width: parent.width
         height: 1
-        color: "#ffffff10"
+        color: ComponentTheme.separator
     }
 
     ColumnLayout {
@@ -48,7 +48,7 @@ Rectangle {
 
             Text {
                 text: formatTime(root.position)
-                color: "#aeb6c2"
+                color: ComponentTheme.textSecondary
                 font.pixelSize: 11
                 font.family: "Courier New"
                 Layout.preferredWidth: 48
@@ -70,13 +70,13 @@ Rectangle {
                     width: seekBar.availableWidth
                     height: 4
                     radius: 2
-                    color: "#2c3039"
+                    color: ComponentTheme.trackBg
 
                     Rectangle {
                         width: seekBar.visualPosition * parent.width
                         height: parent.height
                         radius: parent.radius
-                        color: seekBar.enabled ? "#79a8ff" : "#4a4f5d"
+                        color: seekBar.enabled ? ComponentTheme.accent : ComponentTheme.accentDisabled
                     }
                 }
 
@@ -86,17 +86,17 @@ Rectangle {
                     width: seekBar.pressed ? 16 : 12
                     height: width
                     radius: width / 2
-                    color: seekBar.enabled ? "#dbe8ff" : "#6a707c"
-                    border.color: "#79a8ff"
+                    color: seekBar.enabled ? ComponentTheme.textPrimary : ComponentTheme.textDisabled
+                    border.color: ComponentTheme.accent
                     visible: seekBar.enabled
 
-                    Behavior on width { NumberAnimation { duration: 100 } }
+                    Behavior on width { NumberAnimation { duration: ComponentTheme.durationFast } }
                 }
             }
 
             Text {
                 text: formatTime(root.duration)
-                color: "#aeb6c2"
+                color: ComponentTheme.textSecondary
                 font.pixelSize: 11
                 font.family: "Courier New"
                 horizontalAlignment: Text.AlignRight
@@ -146,13 +146,13 @@ Rectangle {
                     width: volumeSlider.availableWidth
                     height: 4
                     radius: 2
-                    color: "#2c3039"
+                    color: ComponentTheme.trackBg
 
                     Rectangle {
                         width: volumeSlider.visualPosition * parent.width
                         height: parent.height
                         radius: parent.radius
-                        color: "#79a8ff"
+                        color: ComponentTheme.accent
                     }
                 }
 
@@ -162,8 +162,8 @@ Rectangle {
                     width: 12
                     height: 12
                     radius: 6
-                    color: "#dbe8ff"
-                    border.color: "#79a8ff"
+                    color: ComponentTheme.textPrimary
+                    border.color: ComponentTheme.accent
                 }
             }
 

@@ -7,6 +7,7 @@ import QtQuick.Layouts
 import QtQuick.Dialogs
 import AppLog    1.0          // Log 单例（基础设施层，所有插件共用）
 import PlayPlugin 1.0          // PlayerEngine、PlaylistModel、MediaInfo、PlaybackContext
+import QuickUI.Components 1.0
 
 Item {
     id: root
@@ -72,12 +73,12 @@ Item {
                     anchors.horizontalCenter: parent.horizontalCenter
                     text: "▶"
                     font.pixelSize: 52
-                    color: "#ffffff22"
+                    color: ComponentTheme.textDisabled
                 }
                 Text {
                     anchors.horizontalCenter: parent.horizontalCenter
                     text: "打开一个媒体文件开始播放"
-                    color: "#d7dce680"
+                    color: ComponentTheme.textSecondary
                     font.pixelSize: 14
                 }
             }
@@ -87,9 +88,11 @@ Item {
         Text {
             anchors { top: parent.top; left: parent.left; margins: 24 }
             text: engine.currentMedia ? engine.currentMedia.title : ""
-            color: "#f5f7facc"; font.pixelSize: 15; font.bold: true
+            color: ComponentTheme.textPrimary
+            font.pixelSize: 15
+            font.bold: true
             opacity: engine.playbackState === 1 ? 0 : 1
-            Behavior on opacity { NumberAnimation { duration: 600 } }
+            Behavior on opacity { NumberAnimation { duration: ComponentTheme.durationNormal } }
         }
 
         MouseArea {
@@ -106,7 +109,7 @@ Item {
         property string message: ""
         function show(msg) { message = msg; height = 36; hideTimer.restart() }
         Timer { id: hideTimer; interval: 4000; onTriggered: errorBar.height = 0 }
-        Behavior on height { NumberAnimation { duration: 200; easing.type: Easing.OutQuad } }
+        Behavior on height { NumberAnimation { duration: ComponentTheme.durationNormal; easing.type: Easing.OutQuad } }
         Text {
             anchors { verticalCenter: parent.verticalCenter; left: parent.left; leftMargin: 16 }
             text: "⚠  " + errorBar.message; color: "#ffd0d0"; font.pixelSize: 13

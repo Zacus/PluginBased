@@ -390,8 +390,23 @@ def main():
             "texture recreation should mark material state dirty once")
 
     require("import QuickUI.Components 1.0" in control_qml and
-            "import QuickUI.Components 1.0" in playlist_qml,
+            "import QuickUI.Components 1.0" in playlist_qml and
+            "import QuickUI.Components 1.0" in playplugin_qml and
+            "import QuickUI.Components 1.0" in player_qml,
             "QML dependency on QuickUI should be explicit")
+    require("ComponentTheme.surface" in playplugin_qml and
+            "ComponentTheme.separator" in playplugin_qml,
+            "PlayPlugin shell should follow ComponentTheme surface tokens")
+    require("ComponentTheme.textPrimary" in player_qml and
+            "ComponentTheme.textSecondary" in player_qml,
+            "PlayerView placeholders should follow ComponentTheme text tokens")
+    require("ComponentTheme.trackBg" in control_qml and
+            "ComponentTheme.accent" in control_qml,
+            "ControlBar sliders should follow ComponentTheme track and accent tokens")
+    require("ComponentTheme.surface" in playlist_qml and
+            "ComponentTheme.textPrimary" in playlist_qml and
+            "ComponentTheme.accent" in playlist_qml,
+            "PlaylistView should follow ComponentTheme tokens")
     require("property bool playlistOpen: false" in playplugin_qml,
             "playlist drawer should be hidden by default")
     require("drawerWidth" in playplugin_qml and "Behavior on x" in playplugin_qml,

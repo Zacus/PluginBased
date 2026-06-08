@@ -4,6 +4,7 @@
 
 import QtQuick
 import PlayPlugin 1.0
+import QuickUI.Components 1.0
 
 Item {
     id: root
@@ -14,7 +15,7 @@ Item {
 
     Rectangle {
         anchors.fill: parent
-        color: "#0b0c10"
+        color: ComponentTheme.surface
     }
 
     PlayerView {
@@ -29,7 +30,7 @@ Item {
         color: "#000000"
         opacity: root.playlistOpen ? 0.24 : 0
         visible: opacity > 0
-        Behavior on opacity { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
+        Behavior on opacity { NumberAnimation { duration: ComponentTheme.durationFast; easing.type: Easing.OutCubic } }
 
         MouseArea {
             anchors.fill: parent
@@ -47,13 +48,13 @@ Item {
         clip: true
 
         Behavior on x {
-            NumberAnimation { duration: 220; easing.type: Easing.OutCubic }
+            NumberAnimation { duration: ComponentTheme.durationNormal; easing.type: Easing.OutCubic }
         }
 
         Rectangle {
             anchors.fill: parent
-            color: "#15171d"
-            border.color: "#ffffff12"
+            color: ComponentTheme.surface
+            border.color: ComponentTheme.separator
         }
 
         PlaylistView {

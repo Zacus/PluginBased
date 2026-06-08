@@ -11,7 +11,7 @@ Item {
 
     Rectangle {
         anchors.fill: parent
-        color: "#15171d"
+        color: ComponentTheme.surface
     }
 
     ColumnLayout {
@@ -21,7 +21,7 @@ Item {
         Rectangle {
             Layout.fillWidth: true
             height: 58
-            color: "#181b22"
+            color: ComponentTheme.surface
 
             RowLayout {
                 anchors.fill: parent
@@ -35,14 +35,14 @@ Item {
 
                     Text {
                         text: "播放列表"
-                        color: "#f4f7fb"
+                        color: ComponentTheme.textPrimary
                         font.pixelSize: 15
                         font.bold: true
                     }
 
                     Text {
                         text: listView.count + " 个项目"
-                        color: "#8f98a8"
+                        color: ComponentTheme.textSecondary
                         font.pixelSize: 11
                     }
                 }
@@ -70,7 +70,7 @@ Item {
                 anchors.bottom: parent.bottom
                 width: parent.width
                 height: 1
-                color: "#ffffff10"
+                color: ComponentTheme.separator
             }
         }
 
@@ -90,7 +90,7 @@ Item {
                 visible: listView.count === 0
                 text: "暂无播放项目\n点击左下角 ＋ 添加媒体文件"
                 horizontalAlignment: Text.AlignHCenter
-                color: "#8f98a870"
+                color: ComponentTheme.textSecondary
                 font.pixelSize: 13
                 lineHeight: 1.5
             }
@@ -99,7 +99,8 @@ Item {
                 id: row
                 width: listView.width
                 height: 58
-                color: model.isCurrent ? "#202936" : (delegateHover.hovered ? "#1b2029" : "transparent")
+                color: model.isCurrent ? ComponentTheme.buttonPressed
+                                       : (delegateHover.hovered ? ComponentTheme.surfaceHover : "transparent")
 
                 HoverHandler {
                     id: delegateHover
@@ -119,7 +120,7 @@ Item {
                     width: 3
                     height: parent.height - 20
                     radius: 2
-                    color: model.isCurrent ? "#79a8ff" : "transparent"
+                    color: model.isCurrent ? ComponentTheme.accent : "transparent"
                 }
 
                 RowLayout {
@@ -130,7 +131,7 @@ Item {
 
                     Text {
                         text: model.isCurrent ? "▶" : (index + 1).toString()
-                        color: model.isCurrent ? "#9fc1ff" : "#626b79"
+                        color: model.isCurrent ? ComponentTheme.accent : ComponentTheme.textDisabled
                         font.pixelSize: model.isCurrent ? 13 : 11
                         Layout.preferredWidth: 24
                         horizontalAlignment: Text.AlignHCenter
@@ -143,7 +144,7 @@ Item {
                         Text {
                             Layout.fillWidth: true
                             text: model.title
-                            color: model.isCurrent ? "#f4f7fb" : "#c6ccd6"
+                            color: model.isCurrent ? ComponentTheme.textPrimary : ComponentTheme.textSecondary
                             font.pixelSize: 13
                             elide: Text.ElideRight
                         }
@@ -151,7 +152,7 @@ Item {
                         Text {
                             Layout.fillWidth: true
                             text: model.url
-                            color: "#77808e"
+                            color: ComponentTheme.textDisabled
                             font.pixelSize: 10
                             elide: Text.ElideMiddle
                         }
@@ -174,19 +175,19 @@ Item {
         Rectangle {
             Layout.fillWidth: true
             height: 34
-            color: "#181b22"
+            color: ComponentTheme.surface
 
             Rectangle {
                 anchors.top: parent.top
                 width: parent.width
                 height: 1
-                color: "#ffffff0f"
+                color: ComponentTheme.separator
             }
 
             Text {
                 anchors.centerIn: parent
                 text: "双击播放，悬停后可移除"
-                color: "#8f98a870"
+                color: ComponentTheme.textSecondary
                 font.pixelSize: 11
             }
         }

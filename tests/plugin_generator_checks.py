@@ -80,6 +80,17 @@ def test_visual_qml_exposes_plugin_type_choice():
             "QML UI should let users choose an image file for the card icon")
 
 
+def test_generated_qml_uses_component_theme():
+    generator_cpp = ROOT / "tools" / "plugin_generator" / "PluginTemplateGenerator.cpp"
+    text = generator_cpp.read_text(encoding="utf-8")
+    require("import QuickUI.Components 1.0" in text,
+            "generated QML plugins should import QuickUI.Components")
+    require("ComponentTheme.surface" in text,
+            "generated QML plugins should use ComponentTheme surface tokens")
+    require("ComponentTheme.textPrimary" in text and "ComponentTheme.textSecondary" in text,
+            "generated QML plugins should use ComponentTheme text tokens")
+
+
 def test_host_supports_image_card_icons():
     interface = (ROOT / "plugin" / "IAppPlugin.h").read_text(encoding="utf-8")
     manager_h = (ROOT / "core" / "PluginManager.h").read_text(encoding="utf-8")
@@ -100,6 +111,7 @@ def main():
     test_backend_smoke_test_passes()
     test_top_level_cmake_uses_plugin_manifest()
     test_visual_qml_exposes_plugin_type_choice()
+    test_generated_qml_uses_component_theme()
     test_host_supports_image_card_icons()
 
 

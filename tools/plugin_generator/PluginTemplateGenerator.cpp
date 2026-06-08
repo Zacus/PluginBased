@@ -421,6 +421,7 @@ QString PluginTemplateGenerator::qmlText(const Options& options) const
     return QStringLiteral(R"(import QtQuick
 import QtQuick.Controls.Basic
 import QtQuick.Layouts
+import QuickUI.Components 1.0
 
 Item {
     id: root
@@ -429,7 +430,7 @@ Item {
 
     Rectangle {
         anchors.fill: parent
-        color: "#0f0f13"
+        color: ComponentTheme.surface
     }
 
     ColumnLayout {
@@ -440,7 +441,7 @@ Item {
         Text {
             Layout.fillWidth: true
             text: root.pageTitle
-            color: "#e8e8f0"
+            color: ComponentTheme.textPrimary
             font.pixelSize: 24
             font.weight: Font.DemiBold
             horizontalAlignment: Text.AlignHCenter
@@ -449,7 +450,7 @@ Item {
         Text {
             Layout.fillWidth: true
             text: "%2"
-            color: "#808096"
+            color: ComponentTheme.textSecondary
             font.pixelSize: 14
             wrapMode: Text.WordWrap
             horizontalAlignment: Text.AlignHCenter
