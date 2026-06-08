@@ -34,6 +34,14 @@ jobs:
           repository: microsoft/vcpkg
           path: vcpkg
 
+      # Qt 用专用 action，内置缓存最稳定
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.7.0'
+          cache: true
+
+      # vcpkg downloads 缓存（ffmpeg 源码包很大，必缓存）
       - name: Cache vcpkg downloads
         uses: actions/cache@v4
         with:
@@ -41,15 +49,13 @@ jobs:
           key: vcpkg-downloads-${{ runner.os }}-${{ hashFiles('PluginBased/vcpkg.json') }}
           restore-keys: vcpkg-downloads-${{ runner.os }}-
 
+      # vcpkg 二进制缓存（ffmpeg 编译产物，收益最大）
       - name: Cache vcpkg binary cache
         uses: actions/cache@v4
         with:
           path: ~/.cache/vcpkg/archives
           key: vcpkg-bin-${{ runner.os }}-${{ hashFiles('PluginBased/vcpkg.json') }}
           restore-keys: vcpkg-bin-${{ runner.os }}-
-
-      - name: Install Qt
-        run: brew install qt
 
       - name: Bootstrap vcpkg
         run: ./vcpkg/bootstrap-vcpkg.sh
@@ -59,7 +65,7 @@ jobs:
         run: >
           cmake -S . -B build
           -DCMAKE_BUILD_TYPE=Debug
-          -DCMAKE_PREFIX_PATH="$(brew --prefix qt)"
+          -DCMAKE_PREFIX_PATH="${{ env.Qt6_DIR }}"
           -DCMAKE_TOOLCHAIN_FILE="${{ github.workspace }}/vcpkg/scripts/buildsystems/vcpkg.cmake"
 
       - name: Build
