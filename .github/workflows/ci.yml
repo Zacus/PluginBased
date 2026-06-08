@@ -34,23 +34,18 @@ jobs:
           repository: microsoft/vcpkg
           path: vcpkg
 
-      # brew 缓存：Qt 完整包含 GuiPrivate，无缺模块问题
       - name: Cache Homebrew Qt
         uses: actions/cache@v4
         with:
-          path: |
-            ~/Library/Caches/Homebrew/downloads
-            /opt/homebrew/Cellar/qt
+          path: /opt/homebrew/Cellar/qt
           key: brew-qt-${{ runner.os }}-${{ hashFiles('.github/workflows/ci.yml') }}
           restore-keys: brew-qt-${{ runner.os }}-
 
       - name: Install Qt
         run: |
+          # 缓存命中时跳过下载，但始终重建软链接
           brew install qt || true
-          brew link --overwrite qt 2>/dev/null || true          
-          # 验证路径是否正确
-          echo "Qt prefix: $(brew --prefix qt)"
-          ls "$(brew --prefix qt)/lib/cmake/Qt6/" | head -5
+          brew link --overwrite --force qt
           
 
       - name: Cache vcpkg downloads
