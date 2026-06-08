@@ -47,8 +47,7 @@ int main(int argc, char* argv[])
     QQuickStyle::setStyle("Basic");
 
     // ── 插件加载（在 QQmlEngine 创建之前完成）────────────────────────────
-    // PlayPlugin::initialize() 会向 PlaybackContext 注入播放器能力查找器，
-    // 必须在 QML 引擎实例化任何 PlayerEngine 之前完成。
+    // 插件的 QML 类型注册代码在动态库加载时执行，必须早于 QML 引擎实例化。
     AppController::instance().initPlugins();
 
     QQmlApplicationEngine engine;

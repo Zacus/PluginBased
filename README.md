@@ -1,6 +1,6 @@
 # PluginBased
 
-基于 Qt6 / QML 的通用插件化应用宿主。以**应用面板**为主页，插件以卡片形式展示，点击进入；业务能力由插件提供，支持运行时动态加载 `.dll/.so/.dylib` 插件。
+基于 Qt 6 / QML 的通用插件化应用宿主。以**应用面板**为主页，插件以卡片形式展示，点击进入；业务能力由插件提供，支持运行时动态加载 `.dll/.so` 插件。
 
 ---
 
@@ -14,32 +14,36 @@ PluginBased/
 ├── package.sh                   # 一键打包脚本（macOS/Linux/Windows）
 │
 ├── app/                         # 主程序
-│   ├── main.cpp                 # 入口：读配置 → 初始化日志 → 启动 QML
+│   ├── main.cpp                 # 入口：读配置 → 初始化日志 → 加载插件 → 启动 QML
 │   ├── AppConfig.h/.cpp         # INI 配置管理（QSettings，零额外依赖）
 │   ├── AppController.h/.cpp     # 应用级单例，QML_SINGLETON
-│   ├── CrashHandler.h/.cpp      # Crash 捕获（Windows MiniDump / Linux signal）
+│   ├── CrashHandler.h/.cpp      # Crash 捕获（Windows MiniDump / Unix signal）
 │   └── qml/
 │       ├── main.qml             # 根窗口 + StackView 导航
 │       ├── HomePanel.qml        # 应用主页（插件卡片面板）
-│       ├── PlayerView.qml       # 播放器视图
-│       ├── ControlBar.qml       # 播放控制栏
-│       └── PlaylistView.qml     # 播放列表侧边栏
 │
-├── core/                        # 核心业务
-│   ├── PlayerEngine.h/.cpp      # 播放引擎，QML_ELEMENT
-│   ├── MediaInfo.h              # 媒体信息模型
-│   ├── PlaylistModel.h/.cpp     # 播放列表（QAbstractListModel）
-│   └── PluginManager.h/.cpp     # 插件管理器，QML_SINGLETON
+├── core/                        # 宿主核心接口
+│   ├── PluginManager.h/.cpp     # 插件管理器，QML_SINGLETON
+│   └── CMakeLists.txt           # PluginBasedCore 接口目标
 │
 ├── logger/                      # 共享日志库（PluginBasedLogger）
 │   ├── Logger.h/.cpp            # spdlog 封装，供 core/plugin 使用
+│   ├── QmlLogger.h/.cpp         # QML 日志桥接
 │   └── CMakeLists.txt
 │
 ├── plugin/                      # 插件接口定义
 │   └── IAppPlugin.h             # 通用插件接口
 │
-└── plugins/                     # 插件实现
-    └── DummyPlugin/             # 示例插件
+├── plugins/                     # 插件实现
+│   ├── DummyPlugin/             # 最小示例插件
+│   └── PlayPlugin/              # 自包含视频播放器插件
+│       ├── PlayPlugin.h/.cpp    # IAppPlugin 实现
+│       ├── qml/                 # 播放器界面、控制栏、播放列表
+│       ├── shaders/             # YUV 视频渲染 shader
+│       └── src/                 # FFmpeg 解码、音视频渲染、硬件解码后端
+│
+├── tests/                       # 轻量回归检查脚本
+└── tools/                       # 打包、部署、依赖验证工具
 ```
 
 ---
@@ -51,22 +55,28 @@ PluginBased/
 | Qt | 6.5+ | 框架：Core / Gui / Quick / QuickControls2 / Multimedia |
 | spdlog | 1.12+ | 结构化日志 |
 | fmt | 10+ | 格式化（spdlog 依赖） |
+| FFmpeg | 5.0+ | PlayPlugin 音视频解码、重采样、像素转换 |
+| pkgconf/pkg-config | 任意 | CMake 查找 FFmpeg pkg-config 模块 |
+
+项目顶层通过 `FetchContent` 引入相邻目录 `../QtQuickComponents`，构建前请确保该目录存在，或在 `CMakeLists.txt` 中替换为对应的远程仓库来源。
 
 ---
 
 ## 快速构建
 
 ```bash
-# 安装依赖（vcpkg）
-vcpkg install spdlog fmt
-
-# 配置 & 构建
+# 配置（vcpkg manifest 会自动安装 spdlog、fmt、pkgconf、ffmpeg）
 cmake -B build -DCMAKE_BUILD_TYPE=Debug \
       -DCMAKE_TOOLCHAIN_FILE=/path/to/vcpkg/scripts/buildsystems/vcpkg.cmake
+
+# 构建
 cmake --build build --parallel
 
 # 运行
 ./build/app/PluginBasedApp
+
+# 轻量回归检查
+python3 tests/playplugin_regression_checks.py
 ```
 
 详细说明、Release 构建、打包步骤见 [BUILD.md](BUILD.md)。
@@ -77,7 +87,7 @@ cmake --build build --parallel
 
 ### 导航模型
 
-主页 `HomePanel` 作为 `StackView` 的初始页，卡片点击后 `push` 对应视图页面，顶部栏自动出现 `←` 返回按钮。新增视图只需向 `stack.push()` 传入新的 `Component`，无需修改路由逻辑。
+主页 `HomePanel` 作为 `StackView` 的初始页，卡片点击后 `push` 通用插件页面容器。插件若声明 `hasQmlUI()`，宿主会通过 `Loader` 加载插件返回的 `qmlComponentUrl()`；顶部栏根据 `StackView` 深度自动显示返回按钮。
 
 ### 配置文件
 
@@ -94,24 +104,28 @@ flush_on         = warn
 
 ### 插件系统
 
-实现 `IAppPlugin` 通用插件接口，编译为动态库，放入 `plugins/` 目录即可被自动扫描加载。卡片面板会在 `pluginsReady` 信号触发后动态渲染插件卡片。宿主只负责插件加载和页面路由，播放器、转码器或其他具体业务能力都由插件内部实现。
+实现 `IAppPlugin` 通用插件接口，编译为动态库，放入构建或发布包的 `plugins/` 目录即可被自动扫描加载。卡片面板会在 `pluginsReady` 信号触发后动态渲染插件卡片。
+
+宿主只负责插件加载、生命周期和页面路由；播放器、转码器或其他具体业务能力都由插件内部实现。当前 `PlayPlugin` 是一个自包含播放器插件，内部包含 FFmpeg 解码、硬件解码后端、音频渲染、视频渲染、播放列表模型和 QML 界面。
 
 ### QML 类型注册
 
-| 类型 | 注册方式 | QML 用法 |
-|---|---|---|
-| `AppController` | `QML_SINGLETON` | `AppController.quit()` |
-| `PluginManager` | `QML_SINGLETON` | `PluginManager.pluginCount` |
-| `PlayerEngine` | `QML_ELEMENT` | `PlayerEngine { }` |
-| `PlaylistModel` | `QML_ELEMENT` | `PlaylistModel { }` |
-| `MediaInfo` | `QML_UNCREATABLE` | 只读，由 C++ 创建 |
+| 类型 | 所属模块 | 注册方式 | QML 用法 |
+|---|---|---|---|
+| `AppController` | `PluginBased 1.0` | `QML_SINGLETON` | `AppController.quit()` |
+| `PluginManager` | `PluginBased 1.0` | `QML_SINGLETON` | `PluginManager.pluginCount` |
+| `PlayerEngine` | `PlayPlugin 1.0` | `QML_ELEMENT` | `PlayerEngine { }` |
+| `PlaylistModel` | `PlayPlugin 1.0` | `QML_ELEMENT` | `PlaylistModel { }` |
+| `FFmpegSurface` | `PlayPlugin 1.0` | `QML_ELEMENT` | 播放器视频输出项 |
+| `PlaybackContext` | `PlayPlugin 1.0` | `QML_SINGLETON` | 插件内部共享播放上下文 |
+| `MediaInfo` | `PlayPlugin 1.0` | `QML_UNCREATABLE` | 只读，由 C++ 创建 |
 
 ### Crash 捕获
 
 | 平台 | 机制 | 产物 |
 |---|---|---|
 | Windows | `SetUnhandledExceptionFilter` + `MiniDumpWriteDump` | `dumps/crash_YYYYMMDD_HHMMSS.dmp` |
-| Linux | `signal(SIGSEGV/SIGABRT)` + backtrace | `dumps/crash_YYYYMMDD_HHMMSS.log` |
+| Linux / macOS | `signal(SIGSEGV/SIGABRT)` + backtrace | `dumps/crash_YYYYMMDD_HHMMSS.log` |
 
 ---
 
@@ -126,6 +140,31 @@ flush_on         = warn
    Q_INTERFACES(IAppPlugin)
    Q_PLUGIN_METADATA(IID IAppPlugin_IID FILE "MyPlugin.json")
    ```
-3. 编译产物放入 `plugins/` 目录，`PluginManager::loadAll()` 在启动时自动扫描
+3. 插件实现元信息、生命周期和可选 QML 页面：
+   ```cpp
+   QString id() const override { return "my-plugin"; }
+   QString name() const override { return "MyPlugin"; }
+   QString version() const override { return "1.0.0"; }
+   QString description() const override { return "我的插件"; }
+
+   bool initialize() override;
+   void shutdown() override;
+
+   bool hasQmlUI() const override { return true; }
+   QUrl qmlComponentUrl() const override {
+       return QUrl(QStringLiteral("qrc:/MyPlugin/qml/MyPluginView.qml"));
+   }
+   ```
+4. 编写插件元数据文件：
+   ```json
+   {
+     "IID": "com.pluginbased.IAppPlugin/1.0",
+     "MetaData": {
+       "name": "MyPlugin",
+       "version": "1.0.0"
+     }
+   }
+   ```
+5. 在顶层 `CMakeLists.txt` 中加入 `add_subdirectory(plugins/MyPlugin)`。编译后插件产物放入 `build/plugins/`，`PluginManager::loadAll()` 在启动时自动扫描。
 
 参考实现：`plugins/DummyPlugin/`

@@ -37,7 +37,7 @@ public:
     QString cardName()    const override { return QStringLiteral("示例插件"); }
 
     // ── 生命周期 ──────────────────────────────────────────────────────────
-    bool initialize(const PluginContext& context) override;
+    bool initialize() override;
     void shutdown()   override;
 
     bool hasQmlUI()        const override { return true; }

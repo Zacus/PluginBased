@@ -65,8 +65,7 @@ bool PluginManager::loadPlugin(const QString& filePath)
         return false;
     }
 
-    PluginContext context;
-    if (!plugin->initialize(context)) {
+    if (!plugin->initialize()) {
         LOG_ERROR("PluginManager: plugin {} initialize() failed",
                   plugin->name().toStdString());
         loader->unload();

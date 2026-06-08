@@ -4,9 +4,6 @@
 #include <QUrl>
 #include <QtPlugin>
 
-struct PluginContext
-{};
-
 #define IAppPlugin_IID "com.pluginbased.IAppPlugin/1.0"
 
 class IAppPlugin
@@ -19,7 +16,7 @@ public:
     virtual QString version()     const = 0;
     virtual QString description() const = 0;
 
-    virtual bool initialize(const PluginContext& context) = 0;
+    virtual bool initialize() = 0;
     virtual void shutdown() = 0;
 
     virtual bool hasQmlUI() const { return false; }

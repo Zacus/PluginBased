@@ -37,7 +37,7 @@ PlayPlugin::~PlayPlugin()
 // ─────────────────────────────────────────────────────────────────────────────
 // 生命周期
 // ─────────────────────────────────────────────────────────────────────────────
-bool PlayPlugin::initialize(const PluginContext&)
+bool PlayPlugin::initialize()
 {
     LOG_INFO("PlayPlugin::initialize()");
     return true;

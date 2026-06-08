@@ -193,18 +193,18 @@ def main():
     require("#define IAppPlugin_IID" in app_plugin_h and
             "com.pluginbased.IAppPlugin/1.0" in app_plugin_h,
             "IAppPlugin should expose the generic PluginBased plugin IID")
-    require("struct PluginContext" in app_plugin_h,
-            "IAppPlugin should define the minimal host context")
+    require("PluginContext" not in app_plugin_h,
+            "IAppPlugin should not define an unused host context")
     require(not file_exists("plugin/IPlayerPlugin.h"),
             "IPlayerPlugin interface should be removed from the host plugin contract")
     require("IPlayerPlugin" not in app_plugin_h,
             "IAppPlugin should not mention player-specific interfaces")
     require("PlayerPluginFinder" not in app_plugin_h and "findPlayerPlugin" not in app_plugin_h,
-            "PluginContext should not expose player-specific callbacks")
+            "IAppPlugin should not expose player-specific callbacks")
     require("virtual QString id()          const = 0" in app_plugin_h,
             "IAppPlugin should expose a stable plugin id")
-    require("virtual bool initialize(const PluginContext& context) = 0" in app_plugin_h,
-            "IAppPlugin initialize should receive PluginContext")
+    require("virtual bool initialize() = 0" in app_plugin_h,
+            "IAppPlugin initialize should not require a context argument")
     require("Q_DECLARE_INTERFACE(IAppPlugin, IAppPlugin_IID)" in app_plugin_h,
             "IAppPlugin should be declared as a Qt plugin interface")
     require("PluginBasedPlugin" in plugin_cmake,
@@ -221,8 +221,8 @@ def main():
             "PluginManager should not expose player capability lookup")
     require("qobject_cast<IAppPlugin*>" in manager_cpp,
             "PluginManager should load generic app plugins")
-    require("PluginContext context" in manager_cpp,
-            "PluginManager should still pass generic PluginContext into app plugin initialization")
+    require("PluginContext" not in manager_cpp and "plugin->initialize()" in manager_cpp,
+            "PluginManager should call initialize without a context object")
     require("#include \"IAppPlugin.h\"" in playplugin_h,
             "PlayPlugin should include IAppPlugin")
     require("IPlayerPlugin" not in playplugin_h and "IPlayerPlugin" not in playplugin_cpp,
@@ -239,8 +239,8 @@ def main():
             "PlayPlugin JSON metadata should use the generic PluginBased app plugin IID")
     require("QString id()          const override" in playplugin_h,
             "PlayPlugin should expose a stable app plugin id")
-    require("bool initialize(const PluginContext& context) override" in playplugin_h,
-            "PlayPlugin should initialize from PluginContext")
+    require("bool initialize() override" in playplugin_h,
+            "PlayPlugin should initialize without PluginContext")
     require("PlaybackContext::instance().setFinder" not in playplugin_cpp,
             "PlayPlugin should not receive host player lookup callbacks")
     require("PlayerPluginFinder" not in context_h and "IPlayerPlugin" not in context_h,
@@ -255,8 +255,8 @@ def main():
             "DummyPlugin metadata should use generic app plugin IID")
     require("com.pluginbased.IAppPlugin/1.0" in dummy_json,
             "DummyPlugin JSON metadata should use generic PluginBased app plugin IID")
-    require("bool initialize(const PluginContext& context) override" in dummy_h,
-            "DummyPlugin should initialize from PluginContext")
+    require("bool initialize() override" in dummy_h,
+            "DummyPlugin should initialize without PluginContext")
     require("canHandle(" not in dummy_h and "open(const QUrl&" not in dummy_h,
             "DummyPlugin should not expose playback capability methods")
     require("DummyPlugin::canHandle" not in dummy_cpp and "DummyPlugin::open" not in dummy_cpp,

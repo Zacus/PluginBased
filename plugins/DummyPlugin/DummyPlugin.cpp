@@ -20,7 +20,7 @@ DummyPlugin::~DummyPlugin()
     shutdown();
 }
 
-bool DummyPlugin::initialize(const PluginContext&)
+bool DummyPlugin::initialize()
 {
     LOG_INFO("DummyPlugin::initialize()");
     return true;
