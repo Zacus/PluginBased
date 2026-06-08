@@ -19,6 +19,9 @@
  * max_file_size_mb=5   ; 单个日志文件最大 MB
  * max_files=3          ; 滚动保留文件数
  * flush_on=warn        ; 达到此级别立即 flush
+ *
+ * [ui]
+ * theme=dark           ; dark | light
  * ─────────────────────────────
  */
 class AppConfig
@@ -42,6 +45,10 @@ public:
     int                       logMaxFileMB() const { return m_logMaxFileMB;   }
     int                       logMaxFiles()  const { return m_logMaxFiles;    }
     spdlog::level::level_enum logFlushOn()   const { return m_logFlushOn;     }
+
+    // ── ui 配置 ───────────────────────────────────────────
+    QString themeName() const { return m_themeName; }
+    void setThemeName(const QString& themeName);
 
     /** 将配置写回磁盘（手动调用或热重载后保存） */
     void save();
@@ -67,4 +74,6 @@ private:
     int                       m_logMaxFileMB { 5 };
     int                       m_logMaxFiles  { 3 };
     spdlog::level::level_enum m_logFlushOn   { spdlog::level::warn };
+
+    QString m_themeName { "dark" };
 };

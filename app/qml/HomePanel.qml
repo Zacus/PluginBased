@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Controls.Basic
 import QtQuick.Layouts
 import PluginBased 1.0
+import QuickUI.Components 1.0
 
 Item {
     id: root
@@ -16,39 +17,39 @@ Item {
         property string cardId:   ""
         property string iconText: "▶"
         property url iconUrl:     ""
-        property string iconBg:   "#221e50"
+        property color iconBg:    ComponentTheme.accent
         property string cardName: ""
         property string cardDesc: ""
         property string cardTag:  ""
-        property string tagBg:    "#1e1e35"
-        property string tagFg:    "#7c6fff"
+        property color tagBg:     ComponentTheme.surfaceHover
+        property color tagFg:     ComponentTheme.accent
 
         signal clicked(string id)
 
         implicitHeight: cardInner.implicitHeight + 44
         height: implicitHeight
 
-        color: hov.containsMouse ? "#1c1c28" : "#16161e"
-        border.color: hov.containsMouse ? "#7c6fff33" : "#ffffff0e"
+        color: hov.containsMouse ? ComponentTheme.surfaceHover : ComponentTheme.surface
+        border.color: hov.containsMouse ? ComponentTheme.accent : ComponentTheme.separator
         border.width: 1
-        radius: 14
+        radius: ComponentTheme.buttonRadius
 
-        Behavior on color        { ColorAnimation { duration: 120 } }
-        Behavior on border.color { ColorAnimation { duration: 120 } }
+        Behavior on color        { ColorAnimation { duration: ComponentTheme.durationFast } }
+        Behavior on border.color { ColorAnimation { duration: ComponentTheme.durationFast } }
 
         // 箭头角标
         Text {
             anchors { top: parent.top; right: parent.right; margins: 14 }
             text: "↗"
-            font.pixelSize: 14; color: "#7c6fff"
+            font.pixelSize: 14; color: ComponentTheme.accent
             opacity: hov.containsMouse ? 1 : 0
             transform: Translate {
                 x: hov.containsMouse ? 0 : -4
                 y: hov.containsMouse ? 0 :  4
-                Behavior on x { NumberAnimation { duration: 130 } }
-                Behavior on y { NumberAnimation { duration: 130 } }
+                Behavior on x { NumberAnimation { duration: ComponentTheme.durationFast } }
+                Behavior on y { NumberAnimation { duration: ComponentTheme.durationFast } }
             }
-            Behavior on opacity { NumberAnimation { duration: 130 } }
+            Behavior on opacity { NumberAnimation { duration: ComponentTheme.durationFast } }
         }
 
         Column {
@@ -72,7 +73,8 @@ Item {
                     anchors.centerIn: parent
                     visible: card.iconUrl.toString().length === 0
                     text: card.iconText
-                    font.pixelSize: 20; color: "#ffffffcc"
+                    font.pixelSize: 20
+                    color: ComponentTheme.textOnAccent
                 }
             }
             Item { height: 14 }
@@ -80,13 +82,15 @@ Item {
                 width: parent.width - 24
                 text: card.cardName
                 font.pixelSize: 14; font.weight: Font.DemiBold
-                color: "#d0d0e8"; elide: Text.ElideRight
+                color: ComponentTheme.textPrimary
+                elide: Text.ElideRight
             }
             Item { height: 5 }
             Text {
                 width: parent.width - 24
                 text: card.cardDesc
-                font.pixelSize: 12; color: "#50506a"
+                font.pixelSize: 12
+                color: ComponentTheme.textSecondary
                 lineHeight: 1.5; wrapMode: Text.WordWrap
             }
             Item { height: 12 }
@@ -98,7 +102,8 @@ Item {
                     anchors.centerIn: parent
                     text: card.cardTag
                     font.pixelSize: 10; font.weight: Font.Bold
-                    font.letterSpacing: 0.5; color: card.tagFg
+                    font.letterSpacing: 0
+                    color: card.tagFg
                 }
             }
         }
@@ -115,7 +120,7 @@ Item {
     // ── 背景 ──────────────────────────────────────────────────────────────────
     Rectangle {
         anchors.fill: parent
-        color: "#0f0f13"
+        color: ComponentTheme.surface
     }
 
     // ── 主体：垂直滚动区 ──────────────────────────────────────────────────────
@@ -149,11 +154,13 @@ Item {
                     Text {
                         text: "应用面板"
                         font.pixelSize: 26; font.weight: Font.DemiBold
-                        color: "#e8e8f8"; font.letterSpacing: 0.3
+                        color: ComponentTheme.textPrimary
+                        font.letterSpacing: 0
                     }
                     Text {
                         text: "选择一个应用开始使用"
-                        font.pixelSize: 13; color: "#55556a"
+                        font.pixelSize: 13
+                        color: ComponentTheme.textSecondary
                     }
                 }
             }
@@ -170,8 +177,11 @@ Item {
                     id: pluginLabel
                     anchors { top: parent.top; topMargin: 8; left: parent.left; leftMargin: parent.hPad }
                     text: "已安装插件"
-                    font.pixelSize: 11; font.weight: Font.Bold; font.letterSpacing: 2
-                    color: "#38385a"; font.capitalization: Font.AllUppercase
+                    font.pixelSize: 11
+                    font.weight: Font.Bold
+                    font.letterSpacing: 0
+                    color: ComponentTheme.textDisabled
+                    font.capitalization: Font.AllUppercase
                 }
 
                 Grid {
@@ -203,7 +213,7 @@ Item {
                             iconBg:   iconBgList[index % iconBgList.length]
                             cardName: PluginManager.pluginCardName(index)
                             cardDesc: PluginManager.pluginDescriptionAt(index)
-                            cardTag:  "插件"; tagBg: "#0d3020"; tagFg: "#2ecc71"
+                            cardTag:  "插件"; tagBg: ComponentTheme.surfaceHover; tagFg: ComponentTheme.accent
                             onClicked: (id) => root.pluginCardClicked(id, index)
                         }
                     }
@@ -213,20 +223,24 @@ Item {
                         width:  pluginGrid.colWidth
                         height: 140
                         color: "transparent"
-                        border.color: "#ffffff0c"
+                        border.color: ComponentTheme.separator
                         border.width: 1
-                        radius: 14
+                        radius: ComponentTheme.buttonRadius
 
                         Column {
                             anchors.centerIn: parent
                             spacing: 8
                             Text {
                                 anchors.horizontalCenter: parent.horizontalCenter
-                                text: "+"; font.pixelSize: 26; color: "#28283a"
+                                text: "+"
+                                font.pixelSize: 26
+                                color: ComponentTheme.textDisabled
                             }
                             Text {
                                 anchors.horizontalCenter: parent.horizontalCenter
-                                text: "安装更多插件"; font.pixelSize: 12; color: "#32324a"
+                                text: "安装更多插件"
+                                font.pixelSize: 12
+                                color: ComponentTheme.textSecondary
                             }
                         }
 
@@ -246,10 +260,10 @@ Item {
     // ── 插件加载遮罩 ──────────────────────────────────────────────────────────
     Rectangle {
         anchors.fill: parent
-        color: "#0f0f13"
+        color: ComponentTheme.surface
         opacity: AppController.pluginsReady ? 0 : 0.7
         visible: opacity > 0
-        Behavior on opacity { NumberAnimation { duration: 400 } }
+        Behavior on opacity { NumberAnimation { duration: ComponentTheme.durationNormal } }
 
         Column {
             anchors.centerIn: parent
@@ -257,7 +271,9 @@ Item {
             BusyIndicator { anchors.horizontalCenter: parent.horizontalCenter; running: true }
             Text {
                 anchors.horizontalCenter: parent.horizontalCenter
-                text: "正在加载插件…"; color: "#50507a"; font.pixelSize: 13
+                text: "正在加载插件…"
+                color: ComponentTheme.textSecondary
+                font.pixelSize: 13
             }
         }
     }

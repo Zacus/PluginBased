@@ -125,7 +125,14 @@ dir              = logs
 max_file_size_mb = 5
 max_files        = 3
 flush_on         = warn
+
+[ui]
+theme            = dark     ; dark | light
 ```
+
+### 皮肤切换
+
+宿主和插件统一使用 `QuickUI.Components 1.0` 的 `ComponentTheme`。第一阶段支持内置 `Dark` / `Light` 运行时切换，并把当前选择保存到 `pluginbased.ini` 的 `[ui] theme`。插件 QML 应避免写死宿主级颜色，优先使用 `ComponentTheme.surface`、`ComponentTheme.textPrimary`、`ComponentTheme.textSecondary`、`ComponentTheme.accent` 等 token。
 
 ### 插件系统
 

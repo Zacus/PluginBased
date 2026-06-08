@@ -59,6 +59,12 @@ void AppConfig::applyDefaults()
         m_settings->setValue(QStringLiteral("flush_on"), QStringLiteral("warn"));
 
     m_settings->endGroup();
+
+    m_settings->beginGroup(QStringLiteral("ui"));
+    if (!m_settings->contains(QStringLiteral("theme")))
+        m_settings->setValue(QStringLiteral("theme"), QStringLiteral("dark"));
+    m_settings->endGroup();
+
     m_settings->sync();
 }
 
@@ -94,6 +100,24 @@ void AppConfig::load(const QString& configPath)
         spdlog::level::warn);
 
     m_settings->endGroup();
+
+    // ── 读取 [ui] 节 ─────────────────────────────────────
+    m_settings->beginGroup(QStringLiteral("ui"));
+    m_themeName = m_settings->value(QStringLiteral("theme"), QStringLiteral("dark"))
+                      .toString()
+                      .trimmed()
+                      .toLower();
+    if (m_themeName != QStringLiteral("dark") && m_themeName != QStringLiteral("light"))
+        m_themeName = QStringLiteral("dark");
+    m_settings->endGroup();
+}
+
+void AppConfig::setThemeName(const QString& themeName)
+{
+    const QString normalized = themeName.trimmed().toLower();
+    m_themeName = normalized == QStringLiteral("light")
+        ? QStringLiteral("light")
+        : QStringLiteral("dark");
 }
 
 void AppConfig::save()
@@ -106,6 +130,10 @@ void AppConfig::save()
     m_settings->setValue(QStringLiteral("max_file_size_mb"), m_logMaxFileMB);
     m_settings->setValue(QStringLiteral("max_files"),        m_logMaxFiles);
     m_settings->setValue(QStringLiteral("flush_on"),         levelToString(m_logFlushOn));
+    m_settings->endGroup();
+
+    m_settings->beginGroup(QStringLiteral("ui"));
+    m_settings->setValue(QStringLiteral("theme"), m_themeName);
     m_settings->endGroup();
 
     m_settings->sync();

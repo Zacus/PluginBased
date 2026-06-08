@@ -2,6 +2,7 @@
 #include "Logger.h"
 #include "AppConfig.h"
 #include "PluginManager.h"
+#include "ComponentTheme.h"
 
 #include <QCoreApplication>
 #include <QDir>
@@ -36,6 +37,7 @@
 void AppController::initPlugins()
 {
     LOG_INFO("AppController: initializing plugins...");
+    setTheme(AppConfig::instance().themeName());
  
     // 插件目录探测顺序（从最具体到最通用）：
     //
@@ -106,6 +108,34 @@ void AppController::quit()
     QCoreApplication::quit();
 }
 
+void AppController::setTheme(const QString& themeName)
+{
+    const QString normalized = themeName.trimmed().toLower();
+    const QString next = normalized == QStringLiteral("light")
+        ? QStringLiteral("light")
+        : QStringLiteral("dark");
+
+    ComponentTheme::instance().setStyle(next == QStringLiteral("light")
+        ? ComponentTheme::Light
+        : ComponentTheme::Dark);
+
+    AppConfig::instance().setThemeName(next);
+    AppConfig::instance().save();
+
+    if (m_currentTheme == next)
+        return;
+
+    m_currentTheme = next;
+    emit currentThemeChanged();
+}
+
+void AppController::toggleTheme()
+{
+    setTheme(m_currentTheme == QStringLiteral("dark")
+        ? QStringLiteral("light")
+        : QStringLiteral("dark"));
+}
+
 void AppController::logInfo(const QString& msg)  { LOG_INFO("[QML] {}",  msg.toStdString()); }
 void AppController::logWarn(const QString& msg)  { LOG_WARN("[QML] {}",  msg.toStdString()); }
 void AppController::logError(const QString& msg) { LOG_ERROR("[QML] {}", msg.toStdString()); }
@@ -115,5 +145,6 @@ void AppController::reloadConfig()
     LOG_INFO("AppController: reloading config from {}", AppConfig::instance().path().toStdString());
     AppConfig::instance().load(AppConfig::instance().path());
     Logger::instance().setLevel(AppConfig::instance().logLevel());
+    setTheme(AppConfig::instance().themeName());
     LOG_INFO("AppController: config reloaded successfully");
 }

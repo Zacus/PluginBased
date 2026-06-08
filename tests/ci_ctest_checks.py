@@ -70,6 +70,46 @@ def main():
     require("manifestPluginNames" in plugin_manager_cpp,
             "PluginManager should load only plugin names listed by the manifest")
 
+    app_config_h = read("app/AppConfig.h")
+    app_config_cpp = read("app/AppConfig.cpp")
+    require("themeName() const" in app_config_h,
+            "AppConfig should expose the persisted UI theme")
+    require("setThemeName" in app_config_h,
+            "AppConfig should allow updating the persisted UI theme")
+    require('beginGroup(QStringLiteral("ui"))' in app_config_cpp,
+            "AppConfig should persist UI settings in [ui]")
+    require('QStringLiteral("theme")' in app_config_cpp,
+            "AppConfig should read and write the ui/theme key")
+
+    app_controller_h = read("app/AppController.h")
+    app_controller_cpp = read("app/AppController.cpp")
+    require("currentTheme READ currentTheme" in app_controller_h,
+            "AppController should expose currentTheme to QML")
+    require("setTheme(" in app_controller_h,
+            "AppController should expose setTheme to QML")
+    require("toggleTheme" in app_controller_h,
+            "AppController should expose toggleTheme to QML")
+    require("ComponentTheme::instance().setStyle" in app_controller_cpp,
+            "AppController should apply theme changes through ComponentTheme")
+
+    main_qml = read("app/qml/main.qml")
+    require("AppController.toggleTheme()" in main_qml,
+            "main toolbar should expose a theme toggle action")
+    require("AppController.currentTheme" in main_qml,
+            "main toolbar should bind theme toggle state to AppController.currentTheme")
+
+    home_panel_qml = read("app/qml/HomePanel.qml")
+    require("ComponentTheme.surface" in main_qml,
+            "main.qml should use ComponentTheme surface tokens")
+    require("ComponentTheme.textPrimary" in main_qml,
+            "main.qml should use ComponentTheme text tokens")
+    require("import QuickUI.Components 1.0" in home_panel_qml,
+            "HomePanel should import QuickUI.Components")
+    require("ComponentTheme.surface" in home_panel_qml,
+            "HomePanel should use ComponentTheme surface tokens")
+    require("ComponentTheme.textPrimary" in home_panel_qml,
+            "HomePanel should use ComponentTheme text tokens")
+
     require(workflow_path.exists(), "GitHub Actions CI workflow should exist")
     workflow = workflow_path.read_text(encoding="utf-8")
     require("ctest --test-dir build" in workflow,

@@ -10,7 +10,7 @@ ApplicationWindow {
     width: 1280; height: 780
     minimumWidth: 800; minimumHeight: 520
     visible: true
-    color: "#0f0f13"
+    color: ComponentTheme.surface
 
     Connections {
         target: AppController
@@ -27,7 +27,8 @@ ApplicationWindow {
         // ── 顶部工具栏 ────────────────────────────────────────────────────
         Rectangle {
             Layout.fillWidth: true
-            height: 42; color: "#18181f"
+            height: 42
+            color: ComponentTheme.surface
 
             RowLayout {
                 anchors { fill: parent; leftMargin: 16; rightMargin: 16 }
@@ -43,17 +44,27 @@ ApplicationWindow {
 
                 Text {
                     text: "▶ " + AppController.appName
-                    color: "#e8e8f0"; font.pixelSize: 15; font.bold: true; font.letterSpacing: 1
+                    color: ComponentTheme.textPrimary
+                    font.pixelSize: 15
+                    font.bold: true
+                    font.letterSpacing: 0
                 }
 
                 // 当前页面副标题（非主页时显示）
                 Text {
                     visible: stack.depth > 1
                     text: stack.currentItem ? (stack.currentItem.pageTitle || "") : ""
-                    color: "#55556a"; font.pixelSize: 13
+                    color: ComponentTheme.textSecondary
+                    font.pixelSize: 13
                 }
 
                 Item { Layout.fillWidth: true }
+
+                IconButton {
+                    iconText: AppController.currentTheme === "dark" ? "☀" : "☾"
+                    tooltip:  AppController.currentTheme === "dark" ? "切换浅色皮肤" : "切换深色皮肤"
+                    onClicked: AppController.toggleTheme()
+                }
 
                 // 插件状态徽章
                 Rectangle {
@@ -74,7 +85,8 @@ ApplicationWindow {
                             text: AppController.pluginsReady
                                   ? (PluginManager.pluginCount + " plugin(s) loaded")
                                   : "loading plugins…"
-                            color: "#c0c0d0"; font.pixelSize: 11
+                            color: ComponentTheme.textPrimary
+                            font.pixelSize: 11
                             anchors.verticalCenter: parent.verticalCenter
                         }
                     }
@@ -83,7 +95,12 @@ ApplicationWindow {
                 IconButton { iconText: "✕"; tooltip: "Quit"; onClicked: AppController.quit() }
             }
 
-            Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 1; color: "#ffffff12" }
+            Rectangle {
+                anchors.bottom: parent.bottom
+                width: parent.width
+                height: 1
+                color: ComponentTheme.separator
+            }
         }
 
         // ── 页面栈 ────────────────────────────────────────────────────────
@@ -93,18 +110,18 @@ ApplicationWindow {
             Layout.fillHeight: true
 
             pushEnter: Transition {
-                PropertyAnimation { property: "x"; from: stack.width * 0.04; to: 0; duration: 220; easing.type: Easing.OutCubic }
-                PropertyAnimation { property: "opacity"; from: 0; to: 1; duration: 180 }
+                PropertyAnimation { property: "x"; from: stack.width * 0.04; to: 0; duration: ComponentTheme.durationNormal; easing.type: Easing.OutCubic }
+                PropertyAnimation { property: "opacity"; from: 0; to: 1; duration: ComponentTheme.durationFast }
             }
             pushExit: Transition {
-                PropertyAnimation { property: "opacity"; from: 1; to: 0; duration: 150 }
+                PropertyAnimation { property: "opacity"; from: 1; to: 0; duration: ComponentTheme.durationFast }
             }
             popEnter: Transition {
-                PropertyAnimation { property: "opacity"; from: 0; to: 1; duration: 180 }
+                PropertyAnimation { property: "opacity"; from: 0; to: 1; duration: ComponentTheme.durationFast }
             }
             popExit: Transition {
-                PropertyAnimation { property: "x"; from: 0; to: stack.width * 0.04; duration: 200; easing.type: Easing.InCubic }
-                PropertyAnimation { property: "opacity"; from: 1; to: 0; duration: 150 }
+                PropertyAnimation { property: "x"; from: 0; to: stack.width * 0.04; duration: ComponentTheme.durationNormal; easing.type: Easing.InCubic }
+                PropertyAnimation { property: "opacity"; from: 1; to: 0; duration: ComponentTheme.durationFast }
             }
 
             initialItem: HomePanel {
@@ -153,7 +170,7 @@ ApplicationWindow {
             // 加载中占位
             Rectangle {
                 anchors.fill: parent
-                color: "#0f0f13"
+                color: ComponentTheme.surface
                 visible: pluginLoader.status === Loader.Loading
 
                 Column {
@@ -163,7 +180,8 @@ ApplicationWindow {
                     Text {
                         anchors.horizontalCenter: parent.horizontalCenter
                         text: "正在加载插件界面…"
-                        color: "#50507a"; font.pixelSize: 13
+                        color: ComponentTheme.textSecondary
+                        font.pixelSize: 13
                     }
                 }
             }
@@ -171,7 +189,7 @@ ApplicationWindow {
             // 加载失败占位
             Rectangle {
                 anchors.fill: parent
-                color: "#0f0f13"
+                color: ComponentTheme.surface
                 visible: pluginLoader.status === Loader.Error
 
                 Column {
@@ -184,12 +202,14 @@ ApplicationWindow {
                     Text {
                         anchors.horizontalCenter: parent.horizontalCenter
                         text: "插件界面加载失败"
-                        color: "#c0c0d0"; font.pixelSize: 14
+                        color: ComponentTheme.textPrimary
+                        font.pixelSize: 14
                     }
                     Text {
                         anchors.horizontalCenter: parent.horizontalCenter
                         text: pluginQmlUrl.toString()
-                        color: "#50506a"; font.pixelSize: 11
+                        color: ComponentTheme.textSecondary
+                        font.pixelSize: 11
                     }
                 }
             }
