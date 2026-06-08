@@ -34,14 +34,16 @@ jobs:
           repository: microsoft/vcpkg
           path: vcpkg
 
-      # Qt 用专用 action，内置缓存最稳定
       - name: Install Qt
         uses: jurplel/install-qt-action@v4
         with:
           version: '6.7.0'
           cache: true
+          # Quick, QuickControls2, Multimedia, ShaderTools 按需声明
+          modules: 'qtmultimedia qtshadertools'
+          # GuiPrivate 在 qtbase 私有头文件包里
+          extra-archives: 'qtbase-private'
 
-      # vcpkg downloads 缓存（ffmpeg 源码包很大，必缓存）
       - name: Cache vcpkg downloads
         uses: actions/cache@v4
         with:
@@ -49,7 +51,6 @@ jobs:
           key: vcpkg-downloads-${{ runner.os }}-${{ hashFiles('PluginBased/vcpkg.json') }}
           restore-keys: vcpkg-downloads-${{ runner.os }}-
 
-      # vcpkg 二进制缓存（ffmpeg 编译产物，收益最大）
       - name: Cache vcpkg binary cache
         uses: actions/cache@v4
         with:
