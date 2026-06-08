@@ -47,7 +47,11 @@ jobs:
       - name: Install Qt
         run: |
           brew install qt || true
-          brew link --overwrite qt 2>/dev/null || true
+          brew link --overwrite qt 2>/dev/null || true          
+          # 验证路径是否正确
+          echo "Qt prefix: $(brew --prefix qt)"
+          ls "$(brew --prefix qt)/lib/cmake/Qt6/" | head -5
+          
 
       - name: Cache vcpkg downloads
         uses: actions/cache@v4
