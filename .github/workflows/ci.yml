@@ -34,15 +34,20 @@ jobs:
           repository: microsoft/vcpkg
           path: vcpkg
 
-      - name: Install Qt
-        uses: jurplel/install-qt-action@v4
+      # brew 缓存：Qt 完整包含 GuiPrivate，无缺模块问题
+      - name: Cache Homebrew Qt
+        uses: actions/cache@v4
         with:
-          version: '6.7.0'
-          cache: true
-          # Quick, QuickControls2, Multimedia, ShaderTools 按需声明
-          modules: 'qtmultimedia qtshadertools'
-          # GuiPrivate 在 qtbase 私有头文件包里
-          extra-archives: 'qtbase-private'
+          path: |
+            ~/Library/Caches/Homebrew/downloads
+            /opt/homebrew/Cellar/qt
+          key: brew-qt-${{ runner.os }}-${{ hashFiles('.github/workflows/ci.yml') }}
+          restore-keys: brew-qt-${{ runner.os }}-
+
+      - name: Install Qt
+        run: |
+          brew install qt || true
+          brew link --overwrite qt 2>/dev/null || true
 
       - name: Cache vcpkg downloads
         uses: actions/cache@v4
