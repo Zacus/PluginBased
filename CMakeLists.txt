@@ -91,8 +91,6 @@ endif()
 add_subdirectory(logger)
 add_subdirectory(plugin)
 add_subdirectory(core)
-add_subdirectory(plugins/DummyPlugin)
-add_subdirectory(plugins/PlayPlugin)
 
 # ── UI 组件库：独立仓库，通过 FetchContent 引入 ───────────────
 # 生产环境替换 SOURCE_DIR 为 GIT_REPOSITORY + GIT_TAG：
@@ -110,5 +108,16 @@ FetchContent_Declare(
     SOURCE_DIR "${CMAKE_SOURCE_DIR}/../QtQuickComponents"
 )
 FetchContent_MakeAvailable(QtQuickComponents)
+
+add_subdirectory(tools/plugin_generator)
+
+file(GLOB PLUGIN_CMAKELISTS CONFIGURE_DEPENDS
+    "${CMAKE_SOURCE_DIR}/plugins/*/CMakeLists.txt"
+)
+
+foreach(_plugin_cmake IN LISTS PLUGIN_CMAKELISTS)
+    get_filename_component(_plugin_dir "${_plugin_cmake}" DIRECTORY)
+    add_subdirectory("${_plugin_dir}")
+endforeach()
 
 add_subdirectory(app)

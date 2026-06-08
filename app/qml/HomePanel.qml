@@ -15,6 +15,7 @@ Item {
 
         property string cardId:   ""
         property string iconText: "▶"
+        property url iconUrl:     ""
         property string iconBg:   "#221e50"
         property string cardName: ""
         property string cardDesc: ""
@@ -58,8 +59,18 @@ Item {
             Rectangle {
                 width: 44; height: 44; radius: 12
                 color: card.iconBg
+                clip: true
+                Image {
+                    anchors.fill: parent
+                    anchors.margins: 8
+                    source: card.iconUrl
+                    visible: card.iconUrl.toString().length > 0
+                    fillMode: Image.PreserveAspectFit
+                    smooth: true
+                }
                 Text {
                     anchors.centerIn: parent
+                    visible: card.iconUrl.toString().length === 0
                     text: card.iconText
                     font.pixelSize: 20; color: "#ffffffcc"
                 }
@@ -188,6 +199,7 @@ Item {
                             width:    pluginGrid.colWidth
                             cardId:   "plugin:" + index
                             iconText: PluginManager.pluginCardIcon(index)
+                            iconUrl:  PluginManager.pluginCardIconUrl(index)
                             iconBg:   iconBgList[index % iconBgList.length]
                             cardName: PluginManager.pluginCardName(index)
                             cardDesc: PluginManager.pluginDescriptionAt(index)

@@ -133,6 +133,24 @@ flush_on         = warn
 
 `IAppPlugin` 是宿主加载插件的唯一接口，负责元信息、生命周期、主页卡片和可选 QML 页面。插件可以在内部实现自己的业务能力；宿主不会为播放器、转码器或其他具体领域定义专用插件接口。
 
+推荐使用可视化生成器创建插件骨架：
+
+```bash
+cmake --build build --target PluginGeneratorApp --parallel
+./build/tools/plugin_generator/PluginGeneratorApp
+```
+
+在界面中填写插件名、显示名、描述、文字图标、可选图片图标和输出目录，并选择插件类型。选择图片图标时，生成器会把图片复制到插件 `assets/` 目录并嵌入 Qt resource；未选择图片时会使用文字图标作为卡片 fallback。
+
+| 类型 | 说明 |
+|---|---|
+| 带 QML 页面 | 生成 `qml/<PluginName>View.qml`，首页卡片点击后会打开插件页面 |
+| No-QML 后台插件 | 只生成 C++ 插件骨架，不提供可打开页面 |
+
+生成后的目录复制或直接生成到 `plugins/` 下即可。顶层 CMake 会自动扫描 `plugins/*/CMakeLists.txt`，新增插件后重新配置/构建即可参与编译。
+
+手工创建插件时需要保持以下约定：
+
 1. 在 `plugins/` 下新建目录，`CMakeLists.txt` 使用 `add_library(MyPlugin MODULE ...)`
 2. 插件继承 `IAppPlugin`，在类声明中加入：
    ```cpp
@@ -165,6 +183,6 @@ flush_on         = warn
      }
    }
    ```
-5. 在顶层 `CMakeLists.txt` 中加入 `add_subdirectory(plugins/MyPlugin)`。编译后插件产物放入 `build/plugins/`，`PluginManager::loadAll()` 在启动时自动扫描。
+5. 编译后插件产物放入 `build/plugins/`，`PluginManager::loadAll()` 在启动时自动扫描。
 
 参考实现：`plugins/DummyPlugin/`

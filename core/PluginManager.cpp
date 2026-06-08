@@ -139,6 +139,12 @@ QString PluginManager::pluginCardIcon(int index) const
     return m_plugins[index].plugin ? m_plugins[index].plugin->cardIcon() : QStringLiteral("⬡");
 }
 
+QUrl PluginManager::pluginCardIconUrl(int index) const
+{
+    if (index < 0 || index >= static_cast<int>(m_plugins.size())) return {};
+    return m_plugins[index].plugin ? m_plugins[index].plugin->cardIconUrl() : QUrl{};
+}
+
 QString PluginManager::pluginCardName(int index) const
 {
     if (index < 0 || index >= static_cast<int>(m_plugins.size())) return {};

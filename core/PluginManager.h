@@ -54,6 +54,8 @@ public:
     Q_INVOKABLE QUrl    pluginQmlUrl(int index) const;
     /** 插件在卡片上显示的图标 */
     Q_INVOKABLE QString pluginCardIcon(int index) const;
+    /** 插件在卡片上显示的图片图标 URL */
+    Q_INVOKABLE QUrl    pluginCardIconUrl(int index) const;
     /** 插件在卡片上显示的名称 */
     Q_INVOKABLE QString pluginCardName(int index) const;
 

@@ -22,6 +22,7 @@ public:
     virtual bool hasQmlUI() const { return false; }
     virtual QUrl qmlComponentUrl() const { return QUrl{}; }
     virtual QString cardIcon() const { return QStringLiteral("⬡"); }
+    virtual QUrl cardIconUrl() const { return QUrl{}; }
     virtual QString cardName() const { return name(); }
 };
 
