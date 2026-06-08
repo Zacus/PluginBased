@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  macos:
+    name: macOS Debug
+    runs-on: macos-14
+
+    steps:
+      - name: Checkout PluginBased
+        uses: actions/checkout@v4
+        with:
+          path: PluginBased
+
+      - name: Checkout QtQuickComponents
+        uses: actions/checkout@v4
+        with:
+          repository: Zacus/QtQuickComponents
+          path: QtQuickComponents
+
+      - name: Checkout vcpkg
+        uses: actions/checkout@v4
+        with:
+          repository: microsoft/vcpkg
+          path: vcpkg
+
+      - name: Install Qt
+        run: brew install qt
+
+      - name: Bootstrap vcpkg
+        run: ./vcpkg/bootstrap-vcpkg.sh
+
+      - name: Configure
+        working-directory: PluginBased
+        run: >
+          cmake -S . -B build
+          -DCMAKE_BUILD_TYPE=Debug
+          -DCMAKE_PREFIX_PATH="$(brew --prefix qt)"
+          -DCMAKE_TOOLCHAIN_FILE="${{ github.workspace }}/vcpkg/scripts/buildsystems/vcpkg.cmake"
+
+      - name: Build
+        working-directory: PluginBased
+        run: cmake --build build --parallel
+
+      - name: Test
+        working-directory: PluginBased
+        run: ctest --test-dir build --output-on-failure

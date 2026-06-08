@@ -11,6 +11,8 @@ qt_standard_project_setup()
 
 find_package(spdlog REQUIRED)   # vcpkg / conan / system
 
+include(CTest)
+
 # ── FFmpeg（通过 vcpkg + pkg-config）─────────────────────────────────────────
 # 安装：vcpkg install ffmpeg[avcodec,avformat,avutil,swresample,swscale] pkgconf
 # 或直接在 vcpkg.json 中声明依赖后 cmake 自动安装（manifest 模式）
@@ -121,3 +123,24 @@ foreach(_plugin_cmake IN LISTS PLUGIN_CMAKELISTS)
 endforeach()
 
 add_subdirectory(app)
+
+if(BUILD_TESTING)
+    find_package(Python3 REQUIRED COMPONENTS Interpreter)
+
+    add_test(NAME playplugin_regression_checks
+        COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tests/playplugin_regression_checks.py"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+    )
+    add_test(NAME plugin_generator_checks
+        COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tests/plugin_generator_checks.py"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+    )
+    add_test(NAME ci_ctest_checks
+        COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tests/ci_ctest_checks.py"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+    )
+    add_test(NAME plugin_generator_backend_smoke
+        COMMAND $<TARGET_FILE:PluginGeneratorBackendSmokeTest>
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+    )
+endif()

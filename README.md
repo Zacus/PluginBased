@@ -77,9 +77,34 @@ cmake --build build --parallel
 
 # 轻量回归检查
 python3 tests/playplugin_regression_checks.py
+python3 tests/plugin_generator_checks.py
+
+# CTest 汇总验证
+ctest --test-dir build --output-on-failure
 ```
 
 详细说明、Release 构建、打包步骤见 [BUILD.md](BUILD.md)。
+
+---
+
+## 自动化验证
+
+项目启用 CTest，当前注册以下基础检查：
+
+| 测试 | 说明 |
+|---|---|
+| `playplugin_regression_checks` | 播放插件、重命名和插件接口回归检查 |
+| `plugin_generator_checks` | 可视化插件生成器、模板输出和图片图标支持检查 |
+| `ci_ctest_checks` | CI/CTest 配置结构检查 |
+| `plugin_generator_backend_smoke` | C++ 插件生成后端 smoke test |
+
+本地运行：
+
+```bash
+ctest --test-dir build --output-on-failure
+```
+
+GitHub Actions workflow 位于 `.github/workflows/ci.yml`。CI 在 macOS 上 checkout 本仓库、相邻 `QtQuickComponents` 仓库和 vcpkg，随后执行 configure、build、CTest。
 
 ---
 
