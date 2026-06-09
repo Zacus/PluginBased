@@ -83,20 +83,28 @@ def main():
 
     app_controller_h = read("app/AppController.h")
     app_controller_cpp = read("app/AppController.cpp")
+    app_theme_service_h = read("app/AppThemeService.h")
+    app_theme_service_cpp = read("app/AppThemeService.cpp")
     require("currentTheme READ currentTheme" in app_controller_h,
             "AppController should expose currentTheme to QML")
     require("setTheme(" in app_controller_h,
             "AppController should expose setTheme to QML")
     require("toggleTheme" in app_controller_h,
             "AppController should expose toggleTheme to QML")
-    require("setThemeDirectory" in app_controller_cpp,
-            "AppController should configure the ComponentTheme theme directory")
-    require("setHotReloadEnabled(true)" in app_controller_cpp,
-            "AppController should enable ComponentTheme hot reload")
-    require("ComponentTheme::instance().loadTheme" in app_controller_cpp,
-            "AppController should apply theme changes through JSON theme ids")
-    require("themeDirectoryCandidates" in app_controller_cpp,
-            "AppController should resolve development and packaged theme directories")
+    require("class AppThemeService" in app_theme_service_h,
+            "Theme orchestration should live in AppThemeService")
+    require("ThemeApplyResult" in app_theme_service_h,
+            "Theme application should return a structured result")
+    require("setThemeDirectory" in app_theme_service_cpp,
+            "AppThemeService should configure the ComponentTheme theme directory")
+    require("setHotReloadEnabled(true)" in app_theme_service_cpp,
+            "AppThemeService should enable ComponentTheme hot reload")
+    require("ComponentTheme::instance().loadTheme" in app_theme_service_cpp,
+            "AppThemeService should apply theme changes through JSON theme ids")
+    require("themeDirectoryCandidates" in app_theme_service_cpp,
+            "AppThemeService should resolve development and packaged theme directories")
+    require("ComponentTheme::instance().loadTheme" not in app_controller_cpp,
+            "AppController should delegate theme application to AppThemeService")
 
     main_qml = read("app/qml/main.qml")
     require("AppController.toggleTheme()" in main_qml,

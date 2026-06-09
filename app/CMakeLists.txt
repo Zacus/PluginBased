@@ -2,6 +2,8 @@ qt_add_executable(PluginBasedApp
     main.cpp
     AppConfig.h
     AppConfig.cpp
+    AppThemeService.h
+    AppThemeService.cpp
     CrashHandler.h
     CrashHandler.cpp
 )

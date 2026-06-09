@@ -168,6 +168,10 @@ if(BUILD_TESTING)
         COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tests/ci_ctest_checks.py"
         WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
     )
+    add_test(NAME app_theme_service_checks
+        COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tests/app_theme_service_checks.py"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+    )
     add_test(NAME plugin_generator_backend_smoke
         COMMAND $<TARGET_FILE:PluginGeneratorBackendSmokeTest>
         WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
