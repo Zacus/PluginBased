@@ -110,6 +110,26 @@ FetchContent_Declare(
     SOURCE_DIR "${CMAKE_SOURCE_DIR}/../QtQuickComponents"
 )
 FetchContent_MakeAvailable(QtQuickComponents)
+FetchContent_GetProperties(QtQuickComponents SOURCE_DIR PLUGINBASED_QTC_SOURCE_DIR)
+
+set(PLUGINBASED_THEME_SOURCE_DIR "${PLUGINBASED_QTC_SOURCE_DIR}/themes")
+set(PLUGINBASED_THEME_OUTPUT_DIR "${CMAKE_BINARY_DIR}/themes")
+if(NOT IS_DIRECTORY "${PLUGINBASED_THEME_SOURCE_DIR}")
+    message(FATAL_ERROR "QtQuickComponents theme directory not found: ${PLUGINBASED_THEME_SOURCE_DIR}")
+endif()
+
+file(MAKE_DIRECTORY "${PLUGINBASED_THEME_OUTPUT_DIR}")
+add_custom_target(PluginBased_copy_themes ALL
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${PLUGINBASED_THEME_OUTPUT_DIR}"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+            "${PLUGINBASED_THEME_SOURCE_DIR}"
+            "${PLUGINBASED_THEME_OUTPUT_DIR}"
+    COMMENT "Copying PluginBased runtime theme JSON files"
+)
+install(DIRECTORY "${PLUGINBASED_THEME_OUTPUT_DIR}/"
+    DESTINATION "themes"
+    FILES_MATCHING PATTERN "*.json"
+)
 
 add_subdirectory(tools/plugin_generator)
 
@@ -152,6 +172,7 @@ if(PLUGIN_COUNT GREATER 0)
 endif()
 
 add_subdirectory(app)
+add_dependencies(PluginBasedApp PluginBased_copy_themes)
 
 if(BUILD_TESTING)
     find_package(Python3 REQUIRED COMPONENTS Interpreter)

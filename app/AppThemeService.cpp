@@ -18,9 +18,9 @@ QStringList AppThemeService::themeDirectoryCandidates() const
     const QString appDir = QCoreApplication::applicationDirPath();
     return {
         appDir + "/themes",
+        appDir + "/../Resources/themes", // macOS: PluginBasedApp.app/Contents/Resources/themes
         appDir + "/../themes",
         appDir + "/../../../../themes",
-        appDir + "/../Resources/themes",
     };
 }
 

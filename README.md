@@ -134,6 +134,14 @@ theme            = dark     ; themes/<id>.json，内置支持 dark / light
 
 宿主和插件统一使用 `QuickUI.Components 1.0` 的 `ComponentTheme`。当前主题 ID 保存到 `pluginbased.ini` 的 `[ui] theme`，启动时会从 `themes/<id>.json` 加载主题并启用文件热加载；修改当前主题 JSON 后，绑定到 `ComponentTheme` token 的 QML 会即时刷新。插件 QML 应避免写死宿主级颜色，优先使用 `ComponentTheme.surface`、`ComponentTheme.textPrimary`、`ComponentTheme.textSecondary`、`ComponentTheme.accent` 等 token。
 
+运行时主题目录约定：
+
+- 开发构建：`<build>/themes`
+- 普通发布：`<app>/themes`
+- macOS bundle：`PluginBasedApp.app/Contents/Resources/themes`
+
+宿主优先加载运行时目录中的 `themes/<id>.json`，找不到时由 QtQuickComponents 内置 `dark` / `light` JSON 作为 fallback。
+
 ### 插件系统
 
 实现 `IAppPlugin` 通用插件接口，编译为动态库并在根目录 `plugins.json` 中启用后，即可从构建或发布包的 `plugins/` 目录加载。卡片面板会在 `pluginsReady` 信号触发后动态渲染插件卡片。
