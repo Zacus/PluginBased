@@ -9,8 +9,8 @@
 #include <QStringList>
 
 using PluginBased::App::AppConfig;
-using PluginBased::App::AppThemeService;
-using PluginBased::App::ThemeApplyResult;
+
+namespace PluginBased::App {
 
 // void AppController::initPlugins()
 // {
@@ -143,3 +143,5 @@ void AppController::reloadConfig()
     setTheme(AppConfig::instance().themeName());
     LOG_INFO("AppController: config reloaded successfully");
 }
+
+} // namespace PluginBased::App

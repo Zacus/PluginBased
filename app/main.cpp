@@ -11,6 +11,7 @@
 #include "AppConfig.h"
 
 using PluginBased::App::AppConfig;
+using PluginBased::App::AppController;
 
 int main(int argc, char* argv[])
 {

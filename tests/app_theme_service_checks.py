@@ -26,7 +26,7 @@ def main() -> None:
     require("namespace PluginBased::App" in service_cpp, "AppThemeService implementation should live in PluginBased::App")
     require("AppConfig::instance().setThemeName" in service_cpp, "AppThemeService should persist selected theme")
     require("usedFallback" in service_cpp, "AppThemeService should report fallback usage")
-    require("using PluginBased::App::AppThemeService" in controller_cpp, "AppController should use namespaced AppThemeService")
+    require("namespace PluginBased::App" in controller_cpp, "AppController implementation should live in PluginBased::App")
     require("AppThemeService::instance().applyTheme" in controller_cpp, "AppController should delegate to AppThemeService")
     require("ComponentTheme::instance().loadTheme" not in controller_cpp, "AppController should not load ComponentTheme directly")
     require("setHotReloadEnabled" not in controller_cpp, "AppController should not configure ComponentTheme hot reload directly")

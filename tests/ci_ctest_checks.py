@@ -115,6 +115,10 @@ def main():
     app_theme_service_cpp = read("app/AppThemeService.cpp")
     root_cmake = read("CMakeLists.txt")
     readme = read("README.md")
+    require("namespace PluginBased::App" in app_controller_h,
+            "AppController should live in the PluginBased::App namespace")
+    require("QML_NAMED_ELEMENT(AppController)" in app_controller_h,
+            "AppController should keep the public QML type name stable")
     require("currentTheme READ currentTheme" in app_controller_h,
             "AppController should expose currentTheme to QML")
     require("setTheme(" in app_controller_h,

@@ -4,10 +4,12 @@
 #include <QString>
 #include <QQmlEngine>
 
+namespace PluginBased::App {
+
 class AppController : public QObject
 {
     Q_OBJECT
-    QML_ELEMENT
+    QML_NAMED_ELEMENT(AppController)
     QML_SINGLETON
 
     Q_PROPERTY(QString appVersion   READ appVersion   CONSTANT)
@@ -54,3 +56,5 @@ private:
     bool m_pluginsReady = false;
     QString m_currentTheme { "dark" };
 };
+
+} // namespace PluginBased::App
