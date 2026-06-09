@@ -91,6 +91,21 @@ def test_generated_qml_uses_component_theme():
             "generated QML plugins should use ComponentTheme text tokens")
 
 
+def test_generated_metadata_uses_plugin_schema():
+    generator_cpp = ROOT / "tools" / "plugin_generator" / "PluginTemplateGenerator.cpp"
+    text = generator_cpp.read_text(encoding="utf-8")
+    require('"schemaVersion": 1' in text,
+            "generated plugins should declare metadata schemaVersion")
+    require('"apiVersion": 1' in text,
+            "generated plugins should declare plugin API version")
+    require('"abiVersion": 1' in text,
+            "generated plugins should declare plugin ABI version")
+    require('"id": "%2"' in text,
+            "generated plugins should declare stable kebab-case plugin id")
+    require('"hasQml": %3' in text,
+            "generated plugins should declare whether they provide QML UI")
+
+
 def test_host_supports_image_card_icons():
     interface = (ROOT / "plugin" / "IAppPlugin.h").read_text(encoding="utf-8")
     manager_h = (ROOT / "core" / "PluginManager.h").read_text(encoding="utf-8")
@@ -112,6 +127,7 @@ def main():
     test_top_level_cmake_uses_plugin_manifest()
     test_visual_qml_exposes_plugin_type_choice()
     test_generated_qml_uses_component_theme()
+    test_generated_metadata_uses_plugin_schema()
     test_host_supports_image_card_icons()
 
 

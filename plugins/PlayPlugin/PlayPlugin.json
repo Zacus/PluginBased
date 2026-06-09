@@ -1,8 +1,13 @@
 {
     "IID": "com.pluginbased.IAppPlugin/1.0",
     "MetaData": {
+        "schemaVersion": 1,
+        "apiVersion": 1,
+        "abiVersion": 1,
+        "id": "play",
         "name":        "PlayPlugin",
         "version":     "1.0.0",
-        "description": "内置播放器界面：视频播放 + 播放列表"
+        "description": "内置播放器：视频 + 播放列表",
+        "hasQml": true
     }
 }

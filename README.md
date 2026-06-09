@@ -229,11 +229,19 @@ cmake --build build --target PluginGeneratorApp --parallel
    {
      "IID": "com.pluginbased.IAppPlugin/1.0",
      "MetaData": {
+       "schemaVersion": 1,
+       "apiVersion": 1,
+       "abiVersion": 1,
+       "id": "my-plugin",
        "name": "MyPlugin",
-       "version": "1.0.0"
+       "version": "1.0.0",
+       "description": "我的插件",
+       "hasQml": true
      }
    }
    ```
-6. 编译后插件产物放入 `build/plugins/`，`PluginManager::loadAll()` 启动时只加载根目录 `plugins.json` 中列出的插件。
+6. 编译后插件产物和同名 JSON 放入 `build/plugins/`，`PluginManager::loadAll()` 启动时只加载根目录 `plugins.json` 中列出的插件。
+
+宿主会在实例化动态库前校验插件 JSON：`IID`、`schemaVersion`、`apiVersion`、`abiVersion`、`id`、`name`、`version`、`description`、`hasQml` 都必须有效；`name` 必须与 `plugins.json` 中的插件名一致。`apiVersion` 或 `abiVersion` 与宿主不匹配时，插件会被拒绝加载，但不会影响其他插件。
 
 参考实现：`plugins/DummyPlugin/`

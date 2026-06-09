@@ -340,12 +340,21 @@ QString PluginTemplateGenerator::metadataText(const Options& options) const
     return QStringLiteral(R"({
     "IID": "com.pluginbased.IAppPlugin/1.0",
     "MetaData": {
+        "schemaVersion": 1,
+        "apiVersion": 1,
+        "abiVersion": 1,
+        "id": "%2",
         "name": "%1",
-        "version": "1.0.0"
+        "version": "1.0.0",
+        "description": "%4",
+        "hasQml": %3
     }
 }
 )")
-        .arg(jsonString(options.pluginName));
+        .arg(jsonString(options.pluginName),
+             jsonString(options.pluginId),
+             options.withQml ? QStringLiteral("true") : QStringLiteral("false"),
+             jsonString(options.description));
 }
 
 QString PluginTemplateGenerator::cmakeText(const Options& options) const
@@ -391,6 +400,11 @@ set_target_properties(%1 PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY  "${CMAKE_BINARY_DIR}/plugins"
 )
 
+configure_file("${CMAKE_CURRENT_SOURCE_DIR}/%1.json"
+    "${CMAKE_BINARY_DIR}/plugins/%1.json"
+    COPYONLY
+)
+
 target_include_directories(%1 PRIVATE
     ${CMAKE_SOURCE_DIR}/plugin
     ${CMAKE_SOURCE_DIR}/logger
@@ -406,10 +420,16 @@ if(APPLE)
     install(TARGETS %1
         LIBRARY DESTINATION "$<TARGET_BUNDLE_DIR:PluginBasedApp>/Contents/PlugIns"
     )
+    install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/%1.json"
+        DESTINATION "$<TARGET_BUNDLE_DIR:PluginBasedApp>/Contents/PlugIns"
+    )
 else()
     install(TARGETS %1
         LIBRARY DESTINATION plugins
         RUNTIME DESTINATION plugins
+    )
+    install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/%1.json"
+        DESTINATION plugins
     )
 endif()
 )")

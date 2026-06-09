@@ -1,5 +1,6 @@
 #include "PluginManager.h"
 #include "Logger.h"
+#include "PluginMetadataValidator.h"
 
 #include <QDir>
 #include <QFile>
@@ -36,6 +37,21 @@ QString pluginNameFromLibraryFile(const QString& fileName)
     if (name.startsWith(QStringLiteral("lib")))
         name.remove(0, 3);
     return name;
+}
+
+QString metadataJsonPathForLibrary(const QString& filePath)
+{
+    const QFileInfo info(filePath);
+    const QString pluginName = pluginNameFromLibraryFile(info.fileName());
+    return info.dir().filePath(pluginName + QStringLiteral(".json"));
+}
+
+QString metadataMismatchError(const QString& field,
+                              const QString& expected,
+                              const QString& actual)
+{
+    return QStringLiteral("metadata %1 expected %2, got %3")
+        .arg(field, expected, actual);
 }
 
 QStringList manifestPluginNames(const QString& manifestPath, QString* error)
@@ -147,6 +163,18 @@ void PluginManager::loadAll(const QString& pluginDir)
 
 bool PluginManager::loadPlugin(const QString& filePath)
 {
+    const QString metadataPath = metadataJsonPathForLibrary(filePath);
+    const QString expectedPluginName = pluginNameFromLibraryFile(QFileInfo(filePath).fileName());
+    const PluginMetadataValidationResult metadataResult =
+        PluginMetadataValidator::validateFile(metadataPath, expectedPluginName);
+    if (!metadataResult.ok) {
+        const QString err = QStringLiteral("PluginManager: rejected plugin %1 metadata %2")
+                                .arg(expectedPluginName, metadataResult.error);
+        LOG_ERROR("{}", err.toStdString());
+        emit pluginLoadFailed(metadataPath, err);
+        return false;
+    }
+
     auto loader = std::make_unique<QPluginLoader>(filePath);
     QObject* obj = loader->instance();
 
@@ -168,9 +196,40 @@ bool PluginManager::loadPlugin(const QString& filePath)
         return false;
     }
 
+    const PluginMetadata& metadata = metadataResult.metadata;
+    QString consistencyError;
+    if (plugin->id() != metadata.id) {
+        consistencyError = metadataMismatchError(QStringLiteral("id"),
+                                                metadata.id,
+                                                plugin->id());
+    } else if (plugin->name() != metadata.name) {
+        consistencyError = metadataMismatchError(QStringLiteral("name"),
+                                                metadata.name,
+                                                plugin->name());
+    } else if (plugin->version() != metadata.version) {
+        consistencyError = metadataMismatchError(QStringLiteral("version"),
+                                                metadata.version,
+                                                plugin->version());
+    } else if (plugin->hasQmlUI() != metadata.hasQml) {
+        consistencyError = metadataMismatchError(QStringLiteral("hasQml"),
+                                                metadata.hasQml ? QStringLiteral("true") : QStringLiteral("false"),
+                                                plugin->hasQmlUI() ? QStringLiteral("true") : QStringLiteral("false"));
+    }
+
+    if (!consistencyError.isEmpty()) {
+        const QString err = QStringLiteral("%1 failed metadata consistency check: %2")
+                                .arg(filePath, consistencyError);
+        LOG_ERROR("PluginManager: {}", err.toStdString());
+        loader->unload();
+        emit pluginLoadFailed(filePath, err);
+        return false;
+    }
+
     if (!plugin->initialize()) {
         LOG_ERROR("PluginManager: plugin {} initialize() failed",
                   plugin->name().toStdString());
+        emit pluginLoadFailed(filePath,
+                              QStringLiteral("%1 initialize() failed").arg(plugin->name()));
         loader->unload();
         return false;
     }

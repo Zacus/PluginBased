@@ -6,7 +6,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 
-find_package(Qt6 REQUIRED COMPONENTS Core Gui GuiPrivate Quick QuickControls2 Multimedia ShaderTools)
+find_package(Qt6 REQUIRED COMPONENTS Core Gui GuiPrivate Quick QuickControls2 Multimedia ShaderTools Test)
 qt_standard_project_setup()
 
 find_package(spdlog REQUIRED)   # vcpkg / conan / system
@@ -137,6 +137,7 @@ set(PLUGIN_MANIFEST "${CMAKE_SOURCE_DIR}/plugins.json")
 if(NOT EXISTS "${PLUGIN_MANIFEST}")
     message(FATAL_ERROR "Plugin manifest not found: ${PLUGIN_MANIFEST}")
 endif()
+file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/plugins")
 configure_file(${PLUGIN_MANIFEST} "${CMAKE_BINARY_DIR}/plugins.json" COPYONLY)
 install(FILES "${PLUGIN_MANIFEST}" DESTINATION ".")
 
@@ -166,8 +167,21 @@ if(PLUGIN_COUNT GREATER 0)
         if(NOT EXISTS "${_plugin_dir}/CMakeLists.txt")
             message(FATAL_ERROR "Plugin listed in manifest has no CMakeLists.txt: ${_plugin_dir}")
         endif()
+        if(NOT EXISTS "${_plugin_dir}/${_plugin_name}.json")
+            message(FATAL_ERROR "Plugin listed in manifest has no metadata JSON: ${_plugin_dir}/${_plugin_name}.json")
+        endif()
 
         add_subdirectory("${_plugin_dir}")
+        configure_file("${_plugin_dir}/${_plugin_name}.json"
+            "${CMAKE_BINARY_DIR}/plugins/${_plugin_name}.json"
+            COPYONLY)
+        if(APPLE)
+            install(FILES "${_plugin_dir}/${_plugin_name}.json"
+                DESTINATION "$<TARGET_BUNDLE_DIR:PluginBasedApp>/Contents/PlugIns")
+        else()
+            install(FILES "${_plugin_dir}/${_plugin_name}.json"
+                DESTINATION plugins)
+        endif()
     endforeach()
 endif()
 
@@ -187,6 +201,23 @@ if(BUILD_TESTING)
     )
     add_test(NAME ci_ctest_checks
         COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tests/ci_ctest_checks.py"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+    )
+    add_executable(PluginMetadataValidatorTest
+        tests/tst_plugin_metadata_validator.cpp
+        core/PluginMetadataValidator.cpp
+    )
+    target_include_directories(PluginMetadataValidatorTest PRIVATE
+        "${CMAKE_SOURCE_DIR}/core"
+        "${CMAKE_SOURCE_DIR}/plugin"
+    )
+    target_link_libraries(PluginMetadataValidatorTest PRIVATE
+        Qt6::Core
+        Qt6::Test
+        PluginBasedPlugin
+    )
+    add_test(NAME plugin_metadata_validator
+        COMMAND $<TARGET_FILE:PluginMetadataValidatorTest>
         WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
     )
     add_test(NAME app_theme_service_checks

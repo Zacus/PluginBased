@@ -4,6 +4,9 @@
 #include <QUrl>
 #include <QtPlugin>
 
+inline constexpr int PluginBasedPluginApiVersion = 1;
+inline constexpr int PluginBasedPluginAbiVersion = 1;
+
 #define IAppPlugin_IID "com.pluginbased.IAppPlugin/1.0"
 
 class IAppPlugin

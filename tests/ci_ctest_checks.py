@@ -61,6 +61,8 @@ def main():
             "top-level CMake should install the plugin manifest to the package root")
 
     plugin_manager_cpp = read("core/PluginManager.cpp")
+    plugin_metadata_validator_h = read("core/PluginMetadataValidator.h")
+    plugin_interface_h = read("plugin/IAppPlugin.h")
     require("plugins.json" in plugin_manager_cpp and "QJsonDocument" in plugin_manager_cpp,
             "PluginManager should read plugins.json at runtime")
     require("manifestFilePath" in plugin_manager_cpp,
@@ -69,6 +71,24 @@ def main():
             "PluginManager should not fall back to loading all plugins when manifest is missing")
     require("manifestPluginNames" in plugin_manager_cpp,
             "PluginManager should load only plugin names listed by the manifest")
+    require("PluginBasedPluginApiVersion" in plugin_interface_h,
+            "IAppPlugin should expose a stable plugin API version constant")
+    require("PluginBasedPluginAbiVersion" in plugin_interface_h,
+            "IAppPlugin should expose a stable plugin ABI version constant")
+    require("class PluginMetadataValidator" in plugin_metadata_validator_h,
+            "plugin metadata schema validation should live in PluginMetadataValidator")
+    require("PluginMetadataValidator::validateFile" in plugin_manager_cpp,
+            "PluginManager should validate plugin metadata before loading libraries")
+    require("metadataJsonPathForLibrary" in plugin_manager_cpp,
+            "PluginManager should resolve sidecar plugin metadata JSON paths")
+
+    for plugin_json in ("plugins/DummyPlugin/DummyPlugin.json", "plugins/PlayPlugin/PlayPlugin.json"):
+        metadata_root = json.loads((ROOT / plugin_json).read_text(encoding="utf-8"))
+        metadata = metadata_root.get("MetaData", {})
+        require(metadata_root.get("IID") == "com.pluginbased.IAppPlugin/1.0",
+                f"{plugin_json} should use the current IAppPlugin IID")
+        for key in ("schemaVersion", "apiVersion", "abiVersion", "id", "name", "version", "description", "hasQml"):
+            require(key in metadata, f"{plugin_json} should define MetaData.{key}")
 
     app_config_h = read("app/AppConfig.h")
     app_config_cpp = read("app/AppConfig.cpp")
