@@ -89,8 +89,14 @@ def main():
             "AppController should expose setTheme to QML")
     require("toggleTheme" in app_controller_h,
             "AppController should expose toggleTheme to QML")
-    require("ComponentTheme::instance().setStyle" in app_controller_cpp,
-            "AppController should apply theme changes through ComponentTheme")
+    require("setThemeDirectory" in app_controller_cpp,
+            "AppController should configure the ComponentTheme theme directory")
+    require("setHotReloadEnabled(true)" in app_controller_cpp,
+            "AppController should enable ComponentTheme hot reload")
+    require("ComponentTheme::instance().loadTheme" in app_controller_cpp,
+            "AppController should apply theme changes through JSON theme ids")
+    require("themeDirectoryCandidates" in app_controller_cpp,
+            "AppController should resolve development and packaged theme directories")
 
     main_qml = read("app/qml/main.qml")
     require("AppController.toggleTheme()" in main_qml,

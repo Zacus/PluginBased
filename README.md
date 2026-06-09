@@ -127,12 +127,12 @@ max_files        = 3
 flush_on         = warn
 
 [ui]
-theme            = dark     ; dark | light
+theme            = dark     ; themes/<id>.json，内置支持 dark / light
 ```
 
 ### 皮肤切换
 
-宿主和插件统一使用 `QuickUI.Components 1.0` 的 `ComponentTheme`。第一阶段支持内置 `Dark` / `Light` 运行时切换，并把当前选择保存到 `pluginbased.ini` 的 `[ui] theme`。插件 QML 应避免写死宿主级颜色，优先使用 `ComponentTheme.surface`、`ComponentTheme.textPrimary`、`ComponentTheme.textSecondary`、`ComponentTheme.accent` 等 token。
+宿主和插件统一使用 `QuickUI.Components 1.0` 的 `ComponentTheme`。当前主题 ID 保存到 `pluginbased.ini` 的 `[ui] theme`，启动时会从 `themes/<id>.json` 加载主题并启用文件热加载；修改当前主题 JSON 后，绑定到 `ComponentTheme` token 的 QML 会即时刷新。插件 QML 应避免写死宿主级颜色，优先使用 `ComponentTheme.surface`、`ComponentTheme.textPrimary`、`ComponentTheme.textSecondary`、`ComponentTheme.accent` 等 token。
 
 ### 插件系统
 

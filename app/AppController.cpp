@@ -6,6 +6,47 @@
 
 #include <QCoreApplication>
 #include <QDir>
+#include <QStringList>
+
+namespace {
+
+QStringList themeDirectoryCandidates()
+{
+    const QString appDir = QCoreApplication::applicationDirPath();
+    return {
+        appDir + "/themes",
+        appDir + "/../themes",
+        appDir + "/../../../../themes",
+        appDir + "/../Resources/themes",
+    };
+}
+
+QString resolveThemeDirectory()
+{
+    const QStringList candidates = themeDirectoryCandidates();
+    for (const QString& candidate : candidates) {
+        const QString clean = QDir::cleanPath(candidate);
+        if (QDir(clean).exists())
+            return clean;
+    }
+
+    return QDir::cleanPath(candidates.first());
+}
+
+void configureThemeSystem()
+{
+    static bool configured = false;
+    if (configured)
+        return;
+
+    const QString themeDir = resolveThemeDirectory();
+    ComponentTheme::instance().setThemeDirectory(themeDir);
+    ComponentTheme::instance().setHotReloadEnabled(true);
+    LOG_INFO("AppController: theme dir = {}", themeDir.toStdString());
+    configured = true;
+}
+
+} // namespace
 
 // void AppController::initPlugins()
 // {
@@ -37,6 +78,7 @@
 void AppController::initPlugins()
 {
     LOG_INFO("AppController: initializing plugins...");
+    configureThemeSystem();
     setTheme(AppConfig::instance().themeName());
  
     // 插件目录探测顺序（从最具体到最通用）：
@@ -110,16 +152,19 @@ void AppController::quit()
 
 void AppController::setTheme(const QString& themeName)
 {
-    const QString normalized = themeName.trimmed().toLower();
-    const QString next = normalized == QStringLiteral("light")
-        ? QStringLiteral("light")
-        : QStringLiteral("dark");
+    configureThemeSystem();
 
-    ComponentTheme::instance().setStyle(next == QStringLiteral("light")
-        ? ComponentTheme::Light
-        : ComponentTheme::Dark);
+    AppConfig::instance().setThemeName(themeName);
+    QString next = AppConfig::instance().themeName();
 
-    AppConfig::instance().setThemeName(next);
+    if (!ComponentTheme::instance().loadTheme(next)) {
+        LOG_WARN("AppController: failed to load theme '{}': {}",
+                 next.toStdString(),
+                 ComponentTheme::instance().lastError().toStdString());
+        next = QStringLiteral("dark");
+        AppConfig::instance().setThemeName(next);
+        ComponentTheme::instance().loadTheme(next);
+    }
     AppConfig::instance().save();
 
     if (m_currentTheme == next)

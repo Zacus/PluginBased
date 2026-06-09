@@ -2,6 +2,7 @@
 
 #include <QDir>
 #include <QFileInfo>
+#include <QRegularExpression>
 
 // ── 级别字符串映射 ──────────────────────────────────────────────────────────
 
@@ -103,20 +104,16 @@ void AppConfig::load(const QString& configPath)
 
     // ── 读取 [ui] 节 ─────────────────────────────────────
     m_settings->beginGroup(QStringLiteral("ui"));
-    m_themeName = m_settings->value(QStringLiteral("theme"), QStringLiteral("dark"))
-                      .toString()
-                      .trimmed()
-                      .toLower();
-    if (m_themeName != QStringLiteral("dark") && m_themeName != QStringLiteral("light"))
-        m_themeName = QStringLiteral("dark");
+    setThemeName(m_settings->value(QStringLiteral("theme"), QStringLiteral("dark")).toString());
     m_settings->endGroup();
 }
 
 void AppConfig::setThemeName(const QString& themeName)
 {
     const QString normalized = themeName.trimmed().toLower();
-    m_themeName = normalized == QStringLiteral("light")
-        ? QStringLiteral("light")
+    static const QRegularExpression validThemeId(QStringLiteral("^[a-z0-9_-]+$"));
+    m_themeName = validThemeId.match(normalized).hasMatch()
+        ? normalized
         : QStringLiteral("dark");
 }
 

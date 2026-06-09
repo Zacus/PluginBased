@@ -21,7 +21,7 @@
  * flush_on=warn        ; 达到此级别立即 flush
  *
  * [ui]
- * theme=dark           ; dark | light
+ * theme=dark           ; themes/<id>.json，内置支持 dark / light
  * ─────────────────────────────
  */
 class AppConfig
