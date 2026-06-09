@@ -19,8 +19,12 @@ def main() -> None:
 
     require("class AppThemeService" in service_h, "AppThemeService should exist")
     require("applyTheme" in service_h, "AppThemeService should expose applyTheme")
-    require("themeDirectoryCandidates" in service_h, "theme directory resolution should be in AppThemeService")
+    require("ThemeApplyResult" in service_h, "theme application should return a structured result")
+    require("themeDirectory" in service_h, "theme application should report the runtime theme directory")
     require("ComponentTheme::instance().loadTheme" in service_cpp, "AppThemeService should load ComponentTheme")
+    require("AppConfig::instance().setThemeName" in service_cpp, "AppThemeService should persist selected theme")
+    require("usedFallback" in service_cpp, "AppThemeService should report fallback usage")
+    require("AppThemeService::instance().applyTheme" in controller_cpp, "AppController should delegate to AppThemeService")
     require("ComponentTheme::instance().loadTheme" not in controller_cpp, "AppController should not load ComponentTheme directly")
     require("setHotReloadEnabled" not in controller_cpp, "AppController should not configure ComponentTheme hot reload directly")
 

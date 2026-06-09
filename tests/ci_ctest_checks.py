@@ -85,6 +85,8 @@ def main():
     app_controller_cpp = read("app/AppController.cpp")
     app_theme_service_h = read("app/AppThemeService.h")
     app_theme_service_cpp = read("app/AppThemeService.cpp")
+    root_cmake = read("CMakeLists.txt")
+    readme = read("README.md")
     require("currentTheme READ currentTheme" in app_controller_h,
             "AppController should expose currentTheme to QML")
     require("setTheme(" in app_controller_h,
@@ -95,16 +97,18 @@ def main():
             "Theme orchestration should live in AppThemeService")
     require("ThemeApplyResult" in app_theme_service_h,
             "Theme application should return a structured result")
-    require("setThemeDirectory" in app_theme_service_cpp,
-            "AppThemeService should configure the ComponentTheme theme directory")
-    require("setHotReloadEnabled(true)" in app_theme_service_cpp,
-            "AppThemeService should enable ComponentTheme hot reload")
     require("ComponentTheme::instance().loadTheme" in app_theme_service_cpp,
             "AppThemeService should apply theme changes through JSON theme ids")
-    require("themeDirectoryCandidates" in app_theme_service_cpp,
-            "AppThemeService should resolve development and packaged theme directories")
+    require("usedFallback" in app_theme_service_cpp and "lastError" in app_theme_service_cpp,
+            "AppThemeService should handle failed theme loads with a structured fallback result")
     require("ComponentTheme::instance().loadTheme" not in app_controller_cpp,
             "AppController should delegate theme application to AppThemeService")
+    require("PLUGINBASED_THEME_OUTPUT_DIR" in root_cmake,
+            "CMake should define how theme JSON files are copied for runtime")
+    require("Contents/Resources/themes" in app_theme_service_cpp,
+            "AppThemeService should support macOS bundle Resources/themes")
+    require("<app>/themes" in readme,
+            "README should document runtime theme directory contract")
 
     main_qml = read("app/qml/main.qml")
     require("AppController.toggleTheme()" in main_qml,
