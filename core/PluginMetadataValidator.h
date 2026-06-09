@@ -3,6 +3,8 @@
 #include <QJsonDocument>
 #include <QString>
 
+namespace PluginBased::Plugins {
+
 struct PluginMetadata
 {
     QString iid;
@@ -31,4 +33,11 @@ public:
     static PluginMetadataValidationResult validateDocument(const QJsonDocument& document,
                                                            const QString& expectedPluginName,
                                                            const QString& sourceName);
+    static QString runtimeConsistencyError(const PluginMetadata& metadata,
+                                           const QString& actualId,
+                                           const QString& actualName,
+                                           const QString& actualVersion,
+                                           bool actualHasQml);
 };
+
+} // namespace PluginBased::Plugins

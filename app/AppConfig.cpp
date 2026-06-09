@@ -4,6 +4,8 @@
 #include <QFileInfo>
 #include <QRegularExpression>
 
+namespace PluginBased::App {
+
 // ── 级别字符串映射 ──────────────────────────────────────────────────────────
 
 static const struct {
@@ -135,3 +137,5 @@ void AppConfig::save()
 
     m_settings->sync();
 }
+
+} // namespace PluginBased::App

@@ -5,6 +5,8 @@
 #include <memory>
 #include <spdlog/spdlog.h>
 
+namespace PluginBased::App {
+
 /**
  * @brief 应用配置管理（单例）
  *
@@ -77,3 +79,5 @@ private:
 
     QString m_themeName { "dark" };
 };
+
+} // namespace PluginBased::App

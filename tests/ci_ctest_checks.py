@@ -61,16 +61,22 @@ def main():
             "top-level CMake should install the plugin manifest to the package root")
 
     plugin_manager_cpp = read("core/PluginManager.cpp")
+    plugin_discovery_h = read("core/PluginDiscovery.h")
+    plugin_discovery_cpp = read("core/PluginDiscovery.cpp")
     plugin_metadata_validator_h = read("core/PluginMetadataValidator.h")
     plugin_interface_h = read("plugin/IAppPlugin.h")
-    require("plugins.json" in plugin_manager_cpp and "QJsonDocument" in plugin_manager_cpp,
-            "PluginManager should read plugins.json at runtime")
-    require("manifestFilePath" in plugin_manager_cpp,
-            "PluginManager should resolve the manifest path from the plugin directory")
-    require("PluginManager: plugin manifest not found" in plugin_manager_cpp,
-            "PluginManager should not fall back to loading all plugins when manifest is missing")
-    require("manifestPluginNames" in plugin_manager_cpp,
-            "PluginManager should load only plugin names listed by the manifest")
+    require("namespace PluginBased::Plugins::PluginDiscovery" in plugin_discovery_h,
+            "stateless plugin discovery logic should live in PluginDiscovery")
+    require("namespace PluginBased::Plugins" in plugin_metadata_validator_h,
+            "plugin metadata validation types should live in the PluginBased::Plugins namespace")
+    require("plugins.json" in plugin_discovery_cpp and "QJsonDocument" in plugin_discovery_cpp,
+            "PluginDiscovery should read plugins.json at runtime")
+    require("manifestFilePath" in plugin_discovery_cpp,
+            "PluginDiscovery should resolve the manifest path from the plugin directory")
+    require("PluginManager: plugin manifest not found" in plugin_discovery_cpp,
+            "PluginDiscovery should not fall back to loading all plugins when manifest is missing")
+    require("PluginDiscovery::manifestPluginNames" in plugin_manager_cpp,
+            "PluginManager should load only plugin names listed by the manifest through PluginDiscovery")
     require("PluginBasedPluginApiVersion" in plugin_interface_h,
             "IAppPlugin should expose a stable plugin API version constant")
     require("PluginBasedPluginAbiVersion" in plugin_interface_h,
@@ -92,6 +98,8 @@ def main():
 
     app_config_h = read("app/AppConfig.h")
     app_config_cpp = read("app/AppConfig.cpp")
+    require("namespace PluginBased::App" in app_config_h,
+            "AppConfig should live in the PluginBased::App namespace")
     require("themeName() const" in app_config_h,
             "AppConfig should expose the persisted UI theme")
     require("setThemeName" in app_config_h,
@@ -115,6 +123,8 @@ def main():
             "AppController should expose toggleTheme to QML")
     require("class AppThemeService" in app_theme_service_h,
             "Theme orchestration should live in AppThemeService")
+    require("namespace PluginBased::App" in app_theme_service_h,
+            "AppThemeService should live in the PluginBased::App namespace")
     require("ThemeApplyResult" in app_theme_service_h,
             "Theme application should return a structured result")
     require("ComponentTheme::instance().loadTheme" in app_theme_service_cpp,

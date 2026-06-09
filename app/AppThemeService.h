@@ -3,6 +3,8 @@
 #include <QString>
 #include <QStringList>
 
+namespace PluginBased::App {
+
 struct ThemeApplyResult
 {
     QString requestedTheme;
@@ -28,3 +30,5 @@ private:
     bool m_configured = false;
     QString m_themeDirectory;
 };
+
+} // namespace PluginBased::App

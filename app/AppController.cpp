@@ -8,6 +8,10 @@
 #include <QDir>
 #include <QStringList>
 
+using PluginBased::App::AppConfig;
+using PluginBased::App::AppThemeService;
+using PluginBased::App::ThemeApplyResult;
+
 // void AppController::initPlugins()
 // {
 //     LOG_INFO("AppController: initializing plugins...");

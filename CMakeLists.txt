@@ -220,6 +220,21 @@ if(BUILD_TESTING)
         COMMAND $<TARGET_FILE:PluginMetadataValidatorTest>
         WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
     )
+    add_executable(PluginDiscoveryTest
+        tests/tst_plugin_discovery.cpp
+        core/PluginDiscovery.cpp
+    )
+    target_include_directories(PluginDiscoveryTest PRIVATE
+        "${CMAKE_SOURCE_DIR}/core"
+    )
+    target_link_libraries(PluginDiscoveryTest PRIVATE
+        Qt6::Core
+        Qt6::Test
+    )
+    add_test(NAME plugin_discovery
+        COMMAND $<TARGET_FILE:PluginDiscoveryTest>
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+    )
     add_test(NAME app_theme_service_checks
         COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tests/app_theme_service_checks.py"
         WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"

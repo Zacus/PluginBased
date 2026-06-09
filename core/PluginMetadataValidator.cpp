@@ -8,6 +8,8 @@
 #include <QJsonValue>
 #include <QRegularExpression>
 
+namespace PluginBased::Plugins {
+
 namespace {
 
 PluginMetadataValidationResult failure(const QString& sourceName, const QString& message)
@@ -84,6 +86,14 @@ bool matchesPattern(const QString& value, const QString& pattern)
 {
     const QRegularExpression regex(pattern);
     return regex.match(value).hasMatch();
+}
+
+QString metadataMismatchError(const QString& field,
+                              const QString& expected,
+                              const QString& actual)
+{
+    return QStringLiteral("metadata %1 expected %2, got %3")
+        .arg(field, expected, actual);
 }
 
 } // namespace
@@ -181,3 +191,35 @@ PluginMetadataValidationResult PluginMetadataValidator::validateDocument(const Q
 
     return success(metadata);
 }
+
+QString PluginMetadataValidator::runtimeConsistencyError(const PluginMetadata& metadata,
+                                                         const QString& actualId,
+                                                         const QString& actualName,
+                                                         const QString& actualVersion,
+                                                         bool actualHasQml)
+{
+    if (actualId != metadata.id) {
+        return metadataMismatchError(QStringLiteral("id"),
+                                     metadata.id,
+                                     actualId);
+    }
+    if (actualName != metadata.name) {
+        return metadataMismatchError(QStringLiteral("name"),
+                                     metadata.name,
+                                     actualName);
+    }
+    if (actualVersion != metadata.version) {
+        return metadataMismatchError(QStringLiteral("version"),
+                                     metadata.version,
+                                     actualVersion);
+    }
+    if (actualHasQml != metadata.hasQml) {
+        return metadataMismatchError(QStringLiteral("hasQml"),
+                                     metadata.hasQml ? QStringLiteral("true") : QStringLiteral("false"),
+                                     actualHasQml ? QStringLiteral("true") : QStringLiteral("false"));
+    }
+
+    return {};
+}
+
+} // namespace PluginBased::Plugins

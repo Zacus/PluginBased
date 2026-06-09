@@ -10,6 +10,8 @@
 #include "PluginManager.h"
 #include "AppConfig.h"
 
+using PluginBased::App::AppConfig;
+
 int main(int argc, char* argv[])
 {
     QGuiApplication app(argc, argv);

@@ -7,6 +7,8 @@
 #include <QCoreApplication>
 #include <QDir>
 
+namespace PluginBased::App {
+
 AppThemeService& AppThemeService::instance()
 {
     static AppThemeService service;
@@ -74,3 +76,5 @@ ThemeApplyResult AppThemeService::applyTheme(const QString& themeName)
     result.appliedTheme = next;
     return result;
 }
+
+} // namespace PluginBased::App

@@ -4,6 +4,9 @@
 
 #include "PluginMetadataValidator.h"
 
+using PluginBased::Plugins::PluginMetadataValidationResult;
+using PluginBased::Plugins::PluginMetadataValidator;
+
 class PluginMetadataValidatorTest : public QObject
 {
     Q_OBJECT
@@ -17,6 +20,8 @@ private slots:
     void rejectsUnsafeId();
     void rejectsNameMismatch();
     void rejectsInvalidVersion();
+    void acceptsRuntimeConsistency();
+    void reportsRuntimeConsistencyMismatch();
 
 private:
     static QJsonDocument documentFromJson(const QByteArray& json)
@@ -202,6 +207,42 @@ void PluginMetadataValidatorTest::rejectsInvalidVersion()
 
     QVERIFY(!result.ok);
     QVERIFY(result.error.contains(QStringLiteral("version")));
+}
+
+void PluginMetadataValidatorTest::acceptsRuntimeConsistency()
+{
+    const PluginMetadataValidationResult result =
+        PluginMetadataValidator::validateDocument(validDocument(),
+                                                  QStringLiteral("PlayPlugin"),
+                                                  QStringLiteral("PlayPlugin.json"));
+    QVERIFY2(result.ok, qPrintable(result.error));
+
+    const QString error = PluginMetadataValidator::runtimeConsistencyError(result.metadata,
+                                                                          QStringLiteral("play-plugin"),
+                                                                          QStringLiteral("PlayPlugin"),
+                                                                          QStringLiteral("1.0.0"),
+                                                                          true);
+
+    QCOMPARE(error, QString());
+}
+
+void PluginMetadataValidatorTest::reportsRuntimeConsistencyMismatch()
+{
+    const PluginMetadataValidationResult result =
+        PluginMetadataValidator::validateDocument(validDocument(),
+                                                  QStringLiteral("PlayPlugin"),
+                                                  QStringLiteral("PlayPlugin.json"));
+    QVERIFY2(result.ok, qPrintable(result.error));
+
+    const QString error = PluginMetadataValidator::runtimeConsistencyError(result.metadata,
+                                                                          QStringLiteral("wrong-plugin"),
+                                                                          QStringLiteral("PlayPlugin"),
+                                                                          QStringLiteral("1.0.0"),
+                                                                          true);
+
+    QVERIFY(error.contains(QStringLiteral("id")));
+    QVERIFY(error.contains(QStringLiteral("play-plugin")));
+    QVERIFY(error.contains(QStringLiteral("wrong-plugin")));
 }
 
 QTEST_MAIN(PluginMetadataValidatorTest)

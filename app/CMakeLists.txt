@@ -30,6 +30,7 @@ qt_add_qml_module(PluginBasedApp
     SOURCES
         AppController.h     AppController.cpp
         ../core/PluginManager.h  ../core/PluginManager.cpp
+        ../core/PluginDiscovery.h  ../core/PluginDiscovery.cpp
         ../core/PluginMetadataValidator.h  ../core/PluginMetadataValidator.cpp
 )
 
