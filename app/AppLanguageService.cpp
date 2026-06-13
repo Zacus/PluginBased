@@ -36,6 +36,9 @@ bool AppLanguageService::applyLanguage(const QString& languageName)
     const QString requested = languageName.trimmed().isEmpty()
         ? QString::fromLatin1(kDefaultLanguage)
         : languageName.trimmed();
+    if (!isSupportedLanguage(requested))
+        LOG_WARN("AppLanguageService: unsupported requested language '{}'", requested.toStdString());
+
     const QString normalized = isSupportedLanguage(requested)
         ? requested
         : QString::fromLatin1(kDefaultLanguage);

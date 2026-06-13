@@ -48,9 +48,18 @@ def main() -> None:
     require("QString currentLanguage() const" in service_h, "AppLanguageService should expose currentLanguage()")
     require("QStringList availableLanguages() const" in service_h, "AppLanguageService should expose availableLanguages()")
     require("bool applyLanguage(const QString& languageName)" in service_h, "AppLanguageService should apply language changes")
+    require(
+        "bool isSupportedLanguage(const QString& languageName) const" in service_h,
+        "AppLanguageService should expose isSupportedLanguage()",
+    )
+    require("void languageChanged()" in service_h, "AppLanguageService should emit languageChanged()")
     require("QCoreApplication::installTranslator" in service_cpp, "AppLanguageService should install translators")
     require("QCoreApplication::removeTranslator" in service_cpp, "AppLanguageService should remove translators")
     require("AppConfig::instance().setLanguageName" in service_cpp, "AppLanguageService should persist selected language")
+    require(
+        "if (!isSupportedLanguage(requested))" in service_cpp,
+        "AppLanguageService should warn when requested language is unsupported before normalization",
+    )
     require(
         "AppConfig::instance().languageName() != normalized" in service_cpp,
         "AppLanguageService should persist normalized language even when current language is unchanged",
