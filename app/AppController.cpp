@@ -1,6 +1,7 @@
 #include "AppController.h"
 #include "Logger.h"
 #include "AppConfig.h"
+#include "AppLanguageService.h"
 #include "AppThemeService.h"
 #include "PluginManager.h"
 
@@ -11,6 +12,16 @@
 using PluginBased::App::AppConfig;
 
 namespace PluginBased::App {
+
+QString AppController::currentLanguage() const
+{
+    return AppLanguageService::instance().currentLanguage();
+}
+
+QStringList AppController::availableLanguages() const
+{
+    return AppLanguageService::instance().availableLanguages();
+}
 
 // void AppController::initPlugins()
 // {
@@ -129,6 +140,18 @@ void AppController::toggleTheme()
     setTheme(m_currentTheme == QStringLiteral("dark")
         ? QStringLiteral("light")
         : QStringLiteral("dark"));
+}
+
+bool AppController::setLanguage(const QString& languageName)
+{
+    const QString before = AppLanguageService::instance().currentLanguage();
+    const bool ok = AppLanguageService::instance().applyLanguage(languageName);
+    const QString after = AppLanguageService::instance().currentLanguage();
+    if (before != after) {
+        emit currentLanguageChanged();
+        emit PluginManager::instance().pluginsChanged();
+    }
+    return ok;
 }
 
 void AppController::logInfo(const QString& msg)  { LOG_INFO("[QML] {}",  msg.toStdString()); }

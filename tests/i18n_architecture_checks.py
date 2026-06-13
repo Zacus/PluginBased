@@ -71,6 +71,37 @@ def main() -> None:
     require("AppLanguageService.h" in app_cmake, "AppLanguageService header should be in app target")
     require("AppLanguageService.cpp" in app_cmake, "AppLanguageService source should be in app target")
 
+    controller_h = read("app/AppController.h")
+    controller_cpp = read("app/AppController.cpp")
+    main_cpp = read("app/main.cpp")
+
+    require(
+        "Q_PROPERTY(QString currentLanguage READ currentLanguage NOTIFY currentLanguageChanged)" in controller_h,
+        "AppController should expose currentLanguage",
+    )
+    require(
+        "Q_PROPERTY(QStringList availableLanguages READ availableLanguages CONSTANT)" in controller_h,
+        "AppController should expose availableLanguages",
+    )
+    require(
+        "Q_INVOKABLE bool setLanguage(const QString& languageName)" in controller_h,
+        "AppController should expose setLanguage",
+    )
+    require(
+        "AppLanguageService::instance().applyLanguage" in controller_cpp,
+        "AppController should delegate language changes",
+    )
+    require("currentLanguageChanged" in controller_h, "AppController should emit currentLanguageChanged")
+    require(
+        "AppLanguageService::instance().applyLanguage(cfg.languageName())" in main_cpp,
+        "main should apply configured language before QML loads",
+    )
+    require(
+        "Logger::instance().init" in main_cpp
+        and main_cpp.index("Logger::instance().init") < main_cpp.index("AppLanguageService::instance().applyLanguage(cfg.languageName())"),
+        "main should initialize logging before applying language",
+    )
+
 
 if __name__ == "__main__":
     main()

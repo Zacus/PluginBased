@@ -7,11 +7,13 @@
 #include "Logger.h"
 #include "CrashHandler.h"
 #include "AppController.h"
+#include "AppLanguageService.h"
 #include "PluginManager.h"
 #include "AppConfig.h"
 
 using PluginBased::App::AppConfig;
 using PluginBased::App::AppController;
+using PluginBased::App::AppLanguageService;
 
 int main(int argc, char* argv[])
 {
@@ -45,6 +47,8 @@ int main(int argc, char* argv[])
     LOG_INFO("=== PluginBased starting (v1.0.0) ===");
     LOG_INFO("Data dir: {}", dataDir.toStdString());
     LOG_INFO("Config  : {}", cfg.path().toStdString());
+
+    AppLanguageService::instance().applyLanguage(cfg.languageName());
 
     CrashHandler::install((dataDir + "/dumps").toStdString());
     QQuickStyle::setStyle("Basic");
