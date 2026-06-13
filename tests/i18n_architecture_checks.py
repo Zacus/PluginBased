@@ -54,6 +54,10 @@ def main() -> None:
     )
     require("void languageChanged()" in service_h, "AppLanguageService should emit languageChanged()")
     require("QCoreApplication::installTranslator" in service_cpp, "AppLanguageService should install translators")
+    require(
+        "if (!QCoreApplication::installTranslator" in service_cpp,
+        "AppLanguageService should handle translator installation failure",
+    )
     require("QCoreApplication::removeTranslator" in service_cpp, "AppLanguageService should remove translators")
     require("AppConfig::instance().setLanguageName" in service_cpp, "AppLanguageService should persist selected language")
     require(

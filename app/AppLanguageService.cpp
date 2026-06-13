@@ -93,7 +93,11 @@ bool AppLanguageService::installTranslationFor(const QString& languageName)
         return false;
     }
 
-    QCoreApplication::installTranslator(translator.get());
+    if (!QCoreApplication::installTranslator(translator.get())) {
+        LOG_WARN("AppLanguageService: failed to install {}", resourcePath.toStdString());
+        return false;
+    }
+
     m_appTranslator = std::move(translator);
     return true;
 }
