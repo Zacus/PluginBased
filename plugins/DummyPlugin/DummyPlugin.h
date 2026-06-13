@@ -32,9 +32,9 @@ public:
     QString id()          const override { return QStringLiteral("dummy"); }
     QString name()        const override { return QStringLiteral("DummyPlugin"); }
     QString version()     const override { return QStringLiteral("1.0.0"); }
-    QString description() const override { return QStringLiteral("Stub plugin for framework validation"); }
+    QString description() const override { return tr("Stub plugin for framework validation"); }
     QString cardIcon()    const override { return QStringLiteral("⬡"); }
-    QString cardName()    const override { return QStringLiteral("示例插件"); }
+    QString cardName()    const override { return tr("Example Plugin"); }
 
     // ── 生命周期 ──────────────────────────────────────────────────────────
     bool initialize() override;

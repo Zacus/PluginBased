@@ -121,6 +121,20 @@ def main() -> None:
     require('qsTr("Installed Plugins")' in home_qml, "HomePanel should translate plugin section")
     require('qsTr("Install More Plugins")' in home_qml, "HomePanel should translate install-more card")
 
+    play_h = read("plugins/PlayPlugin/PlayPlugin.h")
+    play_qml = read("plugins/PlayPlugin/qml/PlayPluginView.qml")
+    dummy_h = read("plugins/DummyPlugin/DummyPlugin.h")
+    dummy_qml = read("plugins/DummyPlugin/qml/DummyPluginView.qml")
+
+    require('tr("Built-in player: video + playlist")' in play_h, "PlayPlugin description should be translatable")
+    require('tr("Video Player")' in play_h, "PlayPlugin card name should be translatable")
+    require('qsTr("Video Player")' in play_qml, "PlayPlugin QML title should be translatable")
+    require('tr("Example Plugin")' in dummy_h, "DummyPlugin card name should be translatable")
+    require('tr("Stub plugin for framework validation")' in dummy_h, "DummyPlugin description should be translatable")
+    require("qsTr(" in dummy_qml, "DummyPlugin QML should use qsTr for visible text")
+    require("<name>PlayPluginView</name>" in translation_ts, "Chinese TS should include PlayPlugin QML context")
+    require("<name>DummyPluginView</name>" in translation_ts, "Chinese TS should include DummyPlugin QML context")
+
 
 if __name__ == "__main__":
     main()
