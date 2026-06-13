@@ -40,8 +40,13 @@ bool AppLanguageService::applyLanguage(const QString& languageName)
         ? requested
         : QString::fromLatin1(kDefaultLanguage);
 
-    if (m_currentLanguage == normalized)
+    if (m_currentLanguage == normalized) {
+        if (AppConfig::instance().languageName() != normalized) {
+            AppConfig::instance().setLanguageName(normalized);
+            AppConfig::instance().save();
+        }
         return true;
+    }
 
     removeInstalledTranslators();
 

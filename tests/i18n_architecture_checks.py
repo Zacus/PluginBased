@@ -51,6 +51,10 @@ def main() -> None:
     require("QCoreApplication::installTranslator" in service_cpp, "AppLanguageService should install translators")
     require("QCoreApplication::removeTranslator" in service_cpp, "AppLanguageService should remove translators")
     require("AppConfig::instance().setLanguageName" in service_cpp, "AppLanguageService should persist selected language")
+    require(
+        "AppConfig::instance().languageName() != normalized" in service_cpp,
+        "AppLanguageService should persist normalized language even when current language is unchanged",
+    )
     require("AppLanguageService.h" in app_cmake, "AppLanguageService header should be in app target")
     require("AppLanguageService.cpp" in app_cmake, "AppLanguageService source should be in app target")
 
