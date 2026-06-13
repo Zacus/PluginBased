@@ -152,13 +152,13 @@ Item {
                     }
                     spacing: 8
                     Text {
-                        text: "应用面板"
+                        text: AppController.currentLanguage, qsTr("Application Panel")
                         font.pixelSize: 26; font.weight: Font.DemiBold
                         color: ComponentTheme.textPrimary
                         font.letterSpacing: 0
                     }
                     Text {
-                        text: "选择一个应用开始使用"
+                        text: AppController.currentLanguage, qsTr("Select an application to start")
                         font.pixelSize: 13
                         color: ComponentTheme.textSecondary
                     }
@@ -176,7 +176,7 @@ Item {
                 Text {
                     id: pluginLabel
                     anchors { top: parent.top; topMargin: 8; left: parent.left; leftMargin: parent.hPad }
-                    text: "已安装插件"
+                    text: AppController.currentLanguage, qsTr("Installed Plugins")
                     font.pixelSize: 11
                     font.weight: Font.Bold
                     font.letterSpacing: 0
@@ -213,7 +213,9 @@ Item {
                             iconBg:   iconBgList[index % iconBgList.length]
                             cardName: PluginManager.pluginCardName(index)
                             cardDesc: PluginManager.pluginDescriptionAt(index)
-                            cardTag:  "插件"; tagBg: ComponentTheme.surfaceHover; tagFg: ComponentTheme.accent
+                            cardTag:  AppController.currentLanguage, qsTr("Plugin")
+                            tagBg: ComponentTheme.surfaceHover
+                            tagFg: ComponentTheme.accent
                             onClicked: (id) => root.pluginCardClicked(id, index)
                         }
                     }
@@ -238,7 +240,7 @@ Item {
                             }
                             Text {
                                 anchors.horizontalCenter: parent.horizontalCenter
-                                text: "安装更多插件"
+                                text: AppController.currentLanguage, qsTr("Install More Plugins")
                                 font.pixelSize: 12
                                 color: ComponentTheme.textSecondary
                             }
@@ -271,7 +273,7 @@ Item {
             BusyIndicator { anchors.horizontalCenter: parent.horizontalCenter; running: true }
             Text {
                 anchors.horizontalCenter: parent.horizontalCenter
-                text: "正在加载插件…"
+                text: AppController.currentLanguage, qsTr("Loading plugins...")
                 color: ComponentTheme.textSecondary
                 font.pixelSize: 13
             }

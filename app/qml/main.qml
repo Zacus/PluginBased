@@ -37,7 +37,7 @@ ApplicationWindow {
                 // 返回首页按钮（仅在非主页时显示）
                 IconButton {
                     iconText: "←"
-                    tooltip:  "返回主页"
+                    tooltip:  AppController.currentLanguage, qsTr("Back to Home")
                     visible:  stack.depth > 1
                     onClicked: stack.pop()
                 }
@@ -60,9 +60,26 @@ ApplicationWindow {
 
                 Item { Layout.fillWidth: true }
 
+                ComboBox {
+                    id: languageSelector
+                    implicitWidth: 92
+                    implicitHeight: 28
+                    model: ListModel {
+                        ListElement { code: "en_US"; label: "EN" }
+                        ListElement { code: "zh_CN"; label: "中文" }
+                    }
+                    textRole: "label"
+                    valueRole: "code"
+                    currentIndex: AppController.currentLanguage === "zh_CN" ? 1 : 0
+                    onActivated: function(index) {
+                        AppController.setLanguage(model.get(index).code)
+                    }
+                }
+
                 IconButton {
                     iconText: AppController.currentTheme === "dark" ? "☀" : "☾"
-                    tooltip:  AppController.currentTheme === "dark" ? "切换浅色皮肤" : "切换深色皮肤"
+                    tooltip:  AppController.currentLanguage,
+                              AppController.currentTheme === "dark" ? qsTr("Switch to light theme") : qsTr("Switch to dark theme")
                     onClicked: AppController.toggleTheme()
                 }
 
@@ -82,9 +99,10 @@ ApplicationWindow {
                             color: AppController.pluginsReady ? "#2ecc71" : "#e74c3c"
                         }
                         Text {
-                            text: AppController.pluginsReady
-                                  ? (PluginManager.pluginCount + " plugin(s) loaded")
-                                  : "loading plugins…"
+                            text: AppController.currentLanguage,
+                                  AppController.pluginsReady
+                                  ? qsTr("%1 plugin(s) loaded").arg(PluginManager.pluginCount)
+                                  : qsTr("Loading plugins...")
                             color: ComponentTheme.textPrimary
                             font.pixelSize: 11
                             anchors.verticalCenter: parent.verticalCenter
@@ -92,7 +110,11 @@ ApplicationWindow {
                     }
                 }
 
-                IconButton { iconText: "✕"; tooltip: "Quit"; onClicked: AppController.quit() }
+                IconButton {
+                    iconText: "✕"
+                    tooltip: AppController.currentLanguage, qsTr("Quit")
+                    onClicked: AppController.quit()
+                }
             }
 
             Rectangle {
@@ -179,7 +201,7 @@ ApplicationWindow {
                     BusyIndicator { anchors.horizontalCenter: parent.horizontalCenter; running: true }
                     Text {
                         anchors.horizontalCenter: parent.horizontalCenter
-                        text: "正在加载插件界面…"
+                        text: AppController.currentLanguage, qsTr("Loading plugin UI...")
                         color: ComponentTheme.textSecondary
                         font.pixelSize: 13
                     }
@@ -201,7 +223,7 @@ ApplicationWindow {
                     }
                     Text {
                         anchors.horizontalCenter: parent.horizontalCenter
-                        text: "插件界面加载失败"
+                        text: AppController.currentLanguage, qsTr("Failed to load plugin UI")
                         color: ComponentTheme.textPrimary
                         font.pixelSize: 14
                     }

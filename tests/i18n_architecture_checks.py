@@ -110,6 +110,17 @@ def main() -> None:
     require("<source>Application Panel</source>" in translation_ts, "Chinese TS should include host homepage text")
     require("<source>Video Player</source>" in translation_ts, "Chinese TS should include PlayPlugin text")
 
+    main_qml = read("app/qml/main.qml")
+    home_qml = read("app/qml/HomePanel.qml")
+
+    require('qsTr("Back to Home")' in main_qml, "main.qml should translate Back to Home")
+    require('qsTr("Loading plugin UI...")' in main_qml, "main.qml should translate loading plugin UI text")
+    require("languageSelector" in main_qml, "main.qml should include a language selector")
+    require("AppController.setLanguage" in main_qml, "language selector should call AppController.setLanguage")
+    require('qsTr("Application Panel")' in home_qml, "HomePanel should translate title")
+    require('qsTr("Installed Plugins")' in home_qml, "HomePanel should translate plugin section")
+    require('qsTr("Install More Plugins")' in home_qml, "HomePanel should translate install-more card")
+
 
 if __name__ == "__main__":
     main()
