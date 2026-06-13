@@ -36,6 +36,12 @@ qt_add_qml_module(PluginBasedApp
         ../core/PluginMetadataValidator.h  ../core/PluginMetadataValidator.cpp
 )
 
+qt_add_translations(PluginBasedApp
+    TS_FILES
+        "${CMAKE_SOURCE_DIR}/translations/pluginbased_zh_CN.ts"
+    RESOURCE_PREFIX "/i18n"
+)
+
 target_include_directories(PluginBasedApp PRIVATE
     ${CMAKE_SOURCE_DIR}/core        # PluginManager.h
     ${CMAKE_SOURCE_DIR}/plugin      # IAppPlugin.h

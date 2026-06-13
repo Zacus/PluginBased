@@ -102,6 +102,14 @@ def main() -> None:
         "main should initialize logging before applying language",
     )
 
+    translation_ts = read("translations/pluginbased_zh_CN.ts")
+
+    require("qt_add_translations" in app_cmake, "app CMake should generate translation resources")
+    require("pluginbased_zh_CN.ts" in app_cmake, "app CMake should list the Chinese TS file")
+    require('<TS version="2.1" language="zh_CN">' in translation_ts, "Chinese TS should declare zh_CN")
+    require("<source>Application Panel</source>" in translation_ts, "Chinese TS should include host homepage text")
+    require("<source>Video Player</source>" in translation_ts, "Chinese TS should include PlayPlugin text")
+
 
 if __name__ == "__main__":
     main()
