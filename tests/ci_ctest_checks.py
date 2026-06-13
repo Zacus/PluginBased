@@ -173,6 +173,18 @@ def main():
     require("CMAKE_TOOLCHAIN_FILE" in workflow,
             "CI should configure with vcpkg manifest dependencies")
 
+    main_cpp = read("app/main.cpp")
+    require('"/qml"' in main_cpp,
+            "main.cpp should add appDir/qml as a runtime QML import path")
+    require("../Resources/qml" in main_cpp,
+            "main.cpp should add macOS bundle Resources/qml as a runtime QML import path")
+    require("QML_IMPORT_PATH" in main_cpp,
+            "main.cpp should keep QML_IMPORT_PATH as a development fallback")
+    require("addRuntimeQmlImportPaths" in main_cpp,
+            "main.cpp should centralize runtime QML import path setup")
+    require(main_cpp.find("addRuntimeQmlImportPaths") < main_cpp.find("engine.load(entryUrl)"),
+            "main.cpp should add QML import paths before loading the root QML entry")
+
 
 if __name__ == "__main__":
     main()

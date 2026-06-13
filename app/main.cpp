@@ -1,8 +1,10 @@
 #include <QGuiApplication>
+#include <QCoreApplication>
 #include <QQmlApplicationEngine>
 #include <QQuickStyle>
 #include <QStandardPaths>
 #include <QDir>
+#include <QStringList>
 
 #include "Logger.h"
 #include "CrashHandler.h"
@@ -14,6 +16,43 @@
 using PluginBased::App::AppConfig;
 using PluginBased::App::AppController;
 using PluginBased::App::AppLanguageService;
+
+namespace {
+
+QStringList qmlImportPathCandidates(const QString& appDir)
+{
+    QStringList candidates;
+    candidates << QDir::cleanPath(appDir + QStringLiteral("/qml"));
+    candidates << QDir::cleanPath(appDir + QStringLiteral("/../Resources/qml"));
+#ifdef QML_IMPORT_PATH
+    candidates << QDir::cleanPath(QStringLiteral(QML_IMPORT_PATH));
+#endif
+    candidates.removeDuplicates();
+    return candidates;
+}
+
+void addRuntimeQmlImportPaths(QQmlApplicationEngine& engine, const QString& appDir)
+{
+    const QStringList candidates = qmlImportPathCandidates(appDir);
+    int addedCount = 0;
+
+    for (auto it = candidates.crbegin(); it != candidates.crend(); ++it) {
+        const QString& path = *it;
+        if (!QDir(path).exists()) {
+            LOG_DEBUG("QML import path missing, skipped: {}", path.toStdString());
+            continue;
+        }
+
+        engine.addImportPath(path);
+        ++addedCount;
+        LOG_INFO("QML import path added: {}", path.toStdString());
+    }
+
+    if (addedCount == 0)
+        LOG_WARN("No runtime QML import paths found; QML module imports may fail");
+}
+
+} // namespace
 
 int main(int argc, char* argv[])
 {
@@ -60,13 +99,8 @@ int main(int argc, char* argv[])
     QQmlApplicationEngine engine;
 
     // ── QML 模块搜索路径 ──────────────────────────────────────────────────
-    // CMAKE_BINARY_DIR 下同时存在：
-    //   PluginBased/qmldir   ← PluginBased 1.0（宿主模块）
-    //   PlayPlugin/qmldir    ← PlayPlugin 1.0（插件 C++ 类型模块）
-    // 一次 addImportPath 即可让引擎发现两个模块。
-#ifdef QML_IMPORT_PATH
-    engine.addImportPath(QStringLiteral(QML_IMPORT_PATH));
-#endif
+    // 发布包优先使用运行时 qml/ 目录，开发构建回退到 CMAKE_BINARY_DIR。
+    addRuntimeQmlImportPaths(engine, QCoreApplication::applicationDirPath());
     // qrc:/ 根路径：PlayPlugin.so 内嵌的 QML 文件通过 qrc 路径加载，
     // 无需额外 addImportPath，Loader { source: "qrc:/..." } 直接可用。
 
