@@ -2,6 +2,7 @@
 
 #include <QObject>
 #include <QString>
+#include <QStringList>
 #include <QQmlEngine>
 
 namespace PluginBased::App {
@@ -16,6 +17,8 @@ class AppController : public QObject
     Q_PROPERTY(QString appName      READ appName      CONSTANT)
     Q_PROPERTY(bool    pluginsReady READ pluginsReady NOTIFY pluginsReadyChanged)
     Q_PROPERTY(QString currentTheme READ currentTheme NOTIFY currentThemeChanged)
+    Q_PROPERTY(QString currentLanguage READ currentLanguage NOTIFY currentLanguageChanged)
+    Q_PROPERTY(QStringList availableLanguages READ availableLanguages CONSTANT)
 
 public:
     // QML_SINGLETON 要求提供此静态工厂函数
@@ -35,12 +38,15 @@ public:
     QString appName()      const { return QStringLiteral("PluginBased"); }
     bool    pluginsReady() const { return m_pluginsReady; }
     QString currentTheme() const { return m_currentTheme; }
+    QString currentLanguage() const;
+    QStringList availableLanguages() const;
 
 public slots:
     void initPlugins();
     void quit();
     Q_INVOKABLE void setTheme(const QString& themeName);
     Q_INVOKABLE void toggleTheme();
+    Q_INVOKABLE bool setLanguage(const QString& languageName);
     Q_INVOKABLE void logInfo(const QString& msg);
     Q_INVOKABLE void logWarn(const QString& msg);
     Q_INVOKABLE void logError(const QString& msg);
@@ -50,6 +56,7 @@ public slots:
 signals:
     void pluginsReadyChanged();
     void currentThemeChanged();
+    void currentLanguageChanged();
 
 private:
     explicit AppController(QObject* parent = nullptr) : QObject(parent) {}

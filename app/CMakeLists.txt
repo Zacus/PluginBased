@@ -2,6 +2,8 @@ qt_add_executable(PluginBasedApp
     main.cpp
     AppConfig.h
     AppConfig.cpp
+    AppLanguageService.h
+    AppLanguageService.cpp
     AppThemeService.h
     AppThemeService.cpp
     CrashHandler.h
@@ -32,6 +34,12 @@ qt_add_qml_module(PluginBasedApp
         ../core/PluginManager.h  ../core/PluginManager.cpp
         ../core/PluginDiscovery.h  ../core/PluginDiscovery.cpp
         ../core/PluginMetadataValidator.h  ../core/PluginMetadataValidator.cpp
+)
+
+qt_add_translations(PluginBasedApp
+    TS_FILES
+        "${CMAKE_SOURCE_DIR}/translations/pluginbased_zh_CN.ts"
+    RESOURCE_PREFIX "/i18n"
 )
 
 target_include_directories(PluginBasedApp PRIVATE

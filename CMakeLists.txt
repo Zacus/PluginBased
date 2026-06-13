@@ -6,7 +6,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 
-find_package(Qt6 REQUIRED COMPONENTS Core Gui GuiPrivate Quick QuickControls2 Multimedia ShaderTools Test)
+find_package(Qt6 REQUIRED COMPONENTS Core Gui GuiPrivate Quick QuickControls2 Multimedia ShaderTools Test LinguistTools)
 qt_standard_project_setup()
 
 find_package(spdlog REQUIRED)   # vcpkg / conan / system
@@ -201,6 +201,10 @@ if(BUILD_TESTING)
     )
     add_test(NAME ci_ctest_checks
         COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tests/ci_ctest_checks.py"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+    )
+    add_test(NAME i18n_architecture_checks
+        COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tests/i18n_architecture_checks.py"
         WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
     )
     add_executable(PluginMetadataValidatorTest

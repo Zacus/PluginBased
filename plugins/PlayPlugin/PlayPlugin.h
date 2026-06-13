@@ -28,9 +28,9 @@ public:
     QString id()          const override { return QStringLiteral("play"); }
     QString name()        const override { return QStringLiteral("PlayPlugin"); }
     QString version()     const override { return QStringLiteral("1.0.0"); }
-    QString description() const override { return QStringLiteral("内置播放器：视频 + 播放列表"); }
+    QString description() const override { return tr("Built-in player: video + playlist"); }
     QString cardIcon()    const override { return QStringLiteral("▶"); }
-    QString cardName()    const override { return QStringLiteral("视频播放器"); }
+    QString cardName()    const override { return tr("Video Player"); }
 
     // ── 生命周期 ──────────────────────────────────────────────────────────
     bool initialize() override;

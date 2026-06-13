@@ -66,6 +66,8 @@ void AppConfig::applyDefaults()
     m_settings->beginGroup(QStringLiteral("ui"));
     if (!m_settings->contains(QStringLiteral("theme")))
         m_settings->setValue(QStringLiteral("theme"), QStringLiteral("dark"));
+    if (!m_settings->contains(QStringLiteral("language")))
+        m_settings->setValue(QStringLiteral("language"), QStringLiteral("en_US"));
     m_settings->endGroup();
 
     m_settings->sync();
@@ -107,6 +109,7 @@ void AppConfig::load(const QString& configPath)
     // ── 读取 [ui] 节 ─────────────────────────────────────
     m_settings->beginGroup(QStringLiteral("ui"));
     setThemeName(m_settings->value(QStringLiteral("theme"), QStringLiteral("dark")).toString());
+    setLanguageName(m_settings->value(QStringLiteral("language"), QStringLiteral("en_US")).toString());
     m_settings->endGroup();
 }
 
@@ -117,6 +120,15 @@ void AppConfig::setThemeName(const QString& themeName)
     m_themeName = validThemeId.match(normalized).hasMatch()
         ? normalized
         : QStringLiteral("dark");
+}
+
+void AppConfig::setLanguageName(const QString& languageName)
+{
+    const QString normalized = languageName.trimmed();
+    static const QRegularExpression validLanguageId(QStringLiteral("^[a-z]{2}_[A-Z]{2}$"));
+    m_languageName = validLanguageId.match(normalized).hasMatch()
+        ? normalized
+        : QStringLiteral("en_US");
 }
 
 void AppConfig::save()
@@ -133,6 +145,7 @@ void AppConfig::save()
 
     m_settings->beginGroup(QStringLiteral("ui"));
     m_settings->setValue(QStringLiteral("theme"), m_themeName);
+    m_settings->setValue(QStringLiteral("language"), m_languageName);
     m_settings->endGroup();
 
     m_settings->sync();
