@@ -50,7 +50,9 @@ public:
 
     // ── ui 配置 ───────────────────────────────────────────
     QString themeName() const { return m_themeName; }
+    QString languageName() const { return m_languageName; }
     void setThemeName(const QString& themeName);
+    void setLanguageName(const QString& languageName);
 
     /** 将配置写回磁盘（手动调用或热重载后保存） */
     void save();
@@ -78,6 +80,7 @@ private:
     spdlog::level::level_enum m_logFlushOn   { spdlog::level::warn };
 
     QString m_themeName { "dark" };
+    QString m_languageName { "en_US" };
 };
 
 } // namespace PluginBased::App
