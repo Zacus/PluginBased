@@ -39,6 +39,21 @@ def main() -> None:
     require('QStringLiteral("en_US")' in config_cpp, "AppConfig should use en_US fallback")
     require("LinguistTools" in root_cmake, "root CMake should include Qt LinguistTools")
 
+    service_h = read("app/AppLanguageService.h")
+    service_cpp = read("app/AppLanguageService.cpp")
+    app_cmake = read("app/CMakeLists.txt")
+
+    require("class AppLanguageService" in service_h, "AppLanguageService should exist")
+    require("QTranslator" in service_h, "AppLanguageService should own translators")
+    require("QString currentLanguage() const" in service_h, "AppLanguageService should expose currentLanguage()")
+    require("QStringList availableLanguages() const" in service_h, "AppLanguageService should expose availableLanguages()")
+    require("bool applyLanguage(const QString& languageName)" in service_h, "AppLanguageService should apply language changes")
+    require("QCoreApplication::installTranslator" in service_cpp, "AppLanguageService should install translators")
+    require("QCoreApplication::removeTranslator" in service_cpp, "AppLanguageService should remove translators")
+    require("AppConfig::instance().setLanguageName" in service_cpp, "AppLanguageService should persist selected language")
+    require("AppLanguageService.h" in app_cmake, "AppLanguageService header should be in app target")
+    require("AppLanguageService.cpp" in app_cmake, "AppLanguageService source should be in app target")
+
 
 if __name__ == "__main__":
     main()
