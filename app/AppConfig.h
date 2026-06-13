@@ -24,6 +24,7 @@ namespace PluginBased::App {
  *
  * [ui]
  * theme=dark           ; themes/<id>.json，内置支持 dark / light
+ * language=en_US       ; Qt 翻译语言 ID，例如 en_US / zh_CN
  * ─────────────────────────────
  */
 class AppConfig
