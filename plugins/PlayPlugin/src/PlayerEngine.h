@@ -3,17 +3,13 @@
 #include <QObject>
 #include <QUrl>
 #include <QString>
-#include <QPointer>
 #include <QQmlEngine>
 #include <memory>
 
 #include "MediaInfo.h"
-#include "FrameQueue.h"
-#include "ClockSync.h"
-#include "FFmpegDecoder.h"
-#include "AudioRenderer.h"
-#include "VideoRenderer.h"
-#include "FFmpegSurface.h"
+
+class FFmpegSurface;
+class PlaybackPipeline;
 
 /**
  * @brief PlayerEngine — PlayPlugin 的核心播放引擎
@@ -99,7 +95,6 @@ private slots:
     // 来自 VideoRenderer 的信号
     void onVideoPosition(qint64 posMs);
     void onEndOfVideo();
-    void onNativeRenderingFailed();
 
 private:
     void setState(PlaybackState s);
@@ -107,22 +102,8 @@ private:
     void stopAllComponents();
     void maybeFinishMedia();
     void finishMedia();
-    void updateNativeVideoRenderingEnabled();
 
-    // ── 帧队列（PlayerEngine 持有，Decoder 写，Renderer 读）─────────────────
-    VideoFrameQueue m_videoQueue { 30 }; // 视频队列：30帧约1秒缓冲
-    AudioFrameQueue m_audioQueue { 64 }; // 音频队列：64帧
-
-    // ── 时钟（AudioRenderer 写，VideoRenderer 读）────────────────────────────
-    ClockSync m_clock;
-
-    // ── 组件（unique_ptr，生命周期由 PlayerEngine 管理）─────────────────────
-    std::unique_ptr<FFmpegDecoder>  m_decoder;
-    std::unique_ptr<AudioRenderer>  m_audioRenderer;
-    std::unique_ptr<VideoRenderer>  m_videoRenderer;
-
-    // ── QML 侧的渲染组件（弱引用，不拥有所有权）─────────────────────────────
-    QPointer<FFmpegSurface> m_surface;
+    std::unique_ptr<PlaybackPipeline> m_pipeline;
 
     // ── 播放状态 ─────────────────────────────────────────────────────────────
     MediaInfo*    m_mediaInfo  = nullptr;
@@ -137,7 +118,6 @@ private:
     bool          m_audioFinished = false;
     bool          m_videoFinished = false;
     bool          m_mediaFinished = false;
-    bool          m_nativeVideoRenderingEnabled = false;
     int           m_seekGeneration = 0;
     QString       m_errorString;
     QUrl          m_currentUrl; // open() 时记录，onMediaInfoReady 时写入 MediaInfo

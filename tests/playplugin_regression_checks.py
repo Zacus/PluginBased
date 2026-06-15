@@ -27,6 +27,7 @@ def require_absent(needle, files, message):
 def main():
     engine_h = read("plugins/PlayPlugin/src/PlayerEngine.h")
     engine_cpp = read("plugins/PlayPlugin/src/PlayerEngine.cpp")
+    pipeline_cpp = read("plugins/PlayPlugin/src/PlaybackPipeline.cpp")
     ffmpeg_utils_h = read("plugins/PlayPlugin/src/FFmpegUtils.h")
     decoder_h = read("plugins/PlayPlugin/src/FFmpegDecoder.h")
     decoder_cpp = read("plugins/PlayPlugin/src/FFmpegDecoder.cpp")
@@ -316,8 +317,8 @@ def main():
             "VideoRenderer should explicitly support video-only clocking")
     require("m_videoClock.restart()" in renderer_cpp and "m_videoClockBaseUs" in renderer_cpp,
             "video-only playback should establish a local clock from the first rendered frame")
-    require("m_videoRenderer->setAudioClockEnabled(m_hasAudio)" in engine_cpp,
-            "PlayerEngine should configure VideoRenderer clock mode from detected streams")
+    require("m_videoRenderer->setAudioClockEnabled(hasAudio)" in pipeline_cpp,
+            "PlaybackPipeline should configure VideoRenderer clock mode from detected streams")
     require("m_hasRenderedFrame" in renderer_h and
             "m_consecutiveDroppedFrames" in renderer_h and
             "MaxConsecutiveDropsBeforeRender" in renderer_cpp and
@@ -328,9 +329,9 @@ def main():
     require("setAcceptedSerial" in read("plugins/PlayPlugin/src/AudioRenderer.h") and
             "setAcceptedSerial" in renderer_h,
             "audio and video renderers should track the currently accepted frame serial")
-    require("m_audioRenderer->setAcceptedSerial(serial)" in engine_cpp and
-            "m_videoRenderer->completeSeek(generation, serial)" in engine_cpp,
-            "PlayerEngine should apply seek serial to all frame consumers")
+    require("m_audioRenderer->setAcceptedSerial(serial)" in pipeline_cpp and
+            "m_videoRenderer->completeSeek(generation, serial)" in pipeline_cpp,
+            "PlaybackPipeline should apply seek serial to all frame consumers")
     require("entry.serial != m_acceptedSerial" in read("plugins/PlayPlugin/src/AudioRenderer.cpp") and
             "entry.serial != m_acceptedSerial" in renderer_cpp,
             "frame consumers should discard stale frames from older seek serials")

@@ -1,6 +1,7 @@
 #include "PlayerEngine.h"
 #include "Logger.h"
 #include "PlaybackContext.h"
+#include "PlaybackPipeline.h"
 
 #include <QFileInfo>
 // ─────────────────────────────────────────────────────────────────────────────
@@ -8,31 +9,26 @@
 // ─────────────────────────────────────────────────────────────────────────────
 PlayerEngine::PlayerEngine(QObject* parent) : QObject(parent)
 {
-    // 构造时就创建好组件，队列在成员初始化时已构造
-    m_decoder = std::make_unique<FFmpegDecoder>(&m_videoQueue, &m_audioQueue);
-    m_audioRenderer = std::make_unique<AudioRenderer>(&m_audioQueue, &m_clock);
-    m_videoRenderer = std::make_unique<VideoRenderer>(&m_videoQueue, &m_clock);
+    m_pipeline = std::make_unique<PlaybackPipeline>(this);
 
-    // ── FFmpegDecoder 信号 ────────────────────────────────────────────────────
-    connect(m_decoder.get(), &FFmpegDecoder::mediaInfoReady, this, &PlayerEngine::onMediaInfoReady);
-    connect(m_decoder.get(), &FFmpegDecoder::errorOccurred, this, &PlayerEngine::onDecoderError);
-    connect(m_decoder.get(), &FFmpegDecoder::endOfFile, this, &PlayerEngine::onEndOfFile);
-    connect(m_decoder.get(), &FFmpegDecoder::positionChanged, this, &PlayerEngine::onDecoderPosition);
-    connect(m_decoder.get(), &FFmpegDecoder::seekCompleted, this,
-            &PlayerEngine::onDecoderSeekCompleted);
-
-    // ── AudioRenderer 信号 ────────────────────────────────────────────────────
-    connect(m_audioRenderer.get(), &AudioRenderer::positionChanged, this,
-            &PlayerEngine::onAudioPosition);
-    connect(m_audioRenderer.get(), &AudioRenderer::errorOccurred, this,
-            &PlayerEngine::onDecoderError);
-    connect(m_audioRenderer.get(), &AudioRenderer::endOfAudio, this,
-            &PlayerEngine::onEndOfAudio);
-
-    // ── VideoRenderer 信号 ────────────────────────────────────────────────────
-    connect(m_videoRenderer.get(), &VideoRenderer::positionChanged, this,
-            &PlayerEngine::onVideoPosition);
-    connect(m_videoRenderer.get(), &VideoRenderer::endOfVideo, this, &PlayerEngine::onEndOfVideo);
+    connect(m_pipeline.get(), &PlaybackPipeline::mediaInfoReady,
+            this, &PlayerEngine::onMediaInfoReady);
+    connect(m_pipeline.get(), &PlaybackPipeline::errorOccurred,
+            this, &PlayerEngine::onDecoderError);
+    connect(m_pipeline.get(), &PlaybackPipeline::endOfFile,
+            this, &PlayerEngine::onEndOfFile);
+    connect(m_pipeline.get(), &PlaybackPipeline::decoderPositionChanged,
+            this, &PlayerEngine::onDecoderPosition);
+    connect(m_pipeline.get(), &PlaybackPipeline::seekCompleted,
+            this, &PlayerEngine::onDecoderSeekCompleted);
+    connect(m_pipeline.get(), &PlaybackPipeline::audioPositionChanged,
+            this, &PlayerEngine::onAudioPosition);
+    connect(m_pipeline.get(), &PlaybackPipeline::endOfAudio,
+            this, &PlayerEngine::onEndOfAudio);
+    connect(m_pipeline.get(), &PlaybackPipeline::videoPositionChanged,
+            this, &PlayerEngine::onVideoPosition);
+    connect(m_pipeline.get(), &PlaybackPipeline::endOfVideo,
+            this, &PlayerEngine::onEndOfVideo);
 
     LOG_DEBUG("PlayerEngine created");
     PlaybackContext::instance().registerEngine(this);
@@ -50,25 +46,7 @@ PlayerEngine::~PlayerEngine()
 // ─────────────────────────────────────────────────────────────────────────────
 void PlayerEngine::setSurface(FFmpegSurface* surface)
 {
-    // 断开旧的连接
-    if (m_surface) {
-        disconnect(m_videoRenderer.get(), &VideoRenderer::frameReady, m_surface.data(),
-                   &FFmpegSurface::onFrameReady);
-        disconnect(m_surface.data(), &FFmpegSurface::nativeRenderingFailed,
-                   this, &PlayerEngine::onNativeRenderingFailed);
-    }
-
-    m_surface = surface;
-
-    if (m_surface) {
-        connect(m_videoRenderer.get(), &VideoRenderer::frameReady, m_surface.data(),
-                &FFmpegSurface::onFrameReady,
-                Qt::DirectConnection); // 主线程 → 主线程，直接调用
-        connect(m_surface.data(), &FFmpegSurface::nativeRenderingFailed,
-                this, &PlayerEngine::onNativeRenderingFailed);
-    }
-
-    updateNativeVideoRenderingEnabled();
+    m_pipeline->setSurface(surface);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -80,7 +58,7 @@ void PlayerEngine::setVolume(float v)
     if (qFuzzyCompare(m_volume, v))
         return;
     m_volume = v;
-    m_audioRenderer->setVolume(v);
+    m_pipeline->setVolume(v);
     emit volumeChanged(m_volume);
 }
 
@@ -89,7 +67,7 @@ void PlayerEngine::setMuted(bool m)
     if (m_muted == m)
         return;
     m_muted = m;
-    m_audioRenderer->setMuted(m);
+    m_pipeline->setMuted(m);
     emit mutedChanged(m_muted);
 }
 
@@ -101,8 +79,7 @@ void PlayerEngine::open(const QUrl& url)
     LOG_INFO("PlayerEngine: open({})", url.toString().toStdString());
     stop();
 
-    if (m_surface)
-        m_surface->clear();
+    m_pipeline->clearSurface();
 
     m_currentUrl = url;
     m_hasAudio = false;
@@ -112,20 +89,9 @@ void PlayerEngine::open(const QUrl& url)
     m_videoFinished = false;
     m_mediaFinished = false;
     m_seekGeneration = 0;
-    m_audioRenderer->setAcceptedSerial(0);
-    m_videoRenderer->setAcceptedSerial(0);
-
-    // 重置队列 abort 状态（stop 时 abort 了，open 前需要恢复）
-    m_videoQueue.resetAbort();
-    m_audioQueue.resetAbort();
-
-    // 重置时钟
-    m_clock.invalidate();
-
-    updateNativeVideoRenderingEnabled();
 
     // 通知解码器打开文件（异步，解码器线程内执行）
-    m_decoder->openFile(url);
+    m_pipeline->openFile(url);
 
     setState(Playing);
 }
@@ -134,9 +100,7 @@ void PlayerEngine::play()
 {
     if (m_state == Playing)
         return;
-    m_decoder->setPaused(false);
-    m_audioRenderer->setPaused(false);
-    m_videoRenderer->setPaused(false);
+    m_pipeline->setPaused(false);
     // VideoRenderer 定时器持续运行：
     //   暂停期间音频时钟冻结，held 帧的 decide() 始终返回 Wait，定时器空转不渲染。
     //   恢复后时钟继续，held 帧正常渲染，无需额外控制定时器。
@@ -148,14 +112,7 @@ void PlayerEngine::pause()
 {
     if (m_state != Playing)
         return;
-    if (m_decoder)
-        m_decoder->setPaused(true);
-    if (m_audioRenderer)
-        m_audioRenderer->setPaused(true);
-    if (m_videoRenderer)
-        m_videoRenderer->setPaused(true);
-    // m_decoder->setPaused(true);
-    // m_audioRenderer->setPaused(true);
+    m_pipeline->setPaused(true);
     // VideoRenderer 定时器刻意不停：
     //   音频 sink suspend 后 processedUSecs() 冻结，m_heldEntry 的 PTS 超前于冻结时钟，
     //   decide() 持续返回 Wait，不会渲染新帧，也不会丢帧。
@@ -184,8 +141,7 @@ void PlayerEngine::stop()
     emit positionChanged(m_position);
     emit durationChanged(m_duration);
     emit currentMediaChanged(nullptr);
-    if (m_surface)
-        m_surface->clear();
+    m_pipeline->clearSurface();
     LOG_INFO("PlayerEngine: stop");
 }
 
@@ -207,14 +163,7 @@ void PlayerEngine::seek(qint64 positionMs)
     const int seekGeneration = ++m_seekGeneration;
 
     // 通知各组件 seek
-    m_videoRenderer->beginSeek(seekGeneration);
-    m_audioRenderer->setAcceptedSerial(seekGeneration);
-    m_decoder->seekTo(positionMs, seekGeneration);
-    m_audioRenderer->flush();
-    m_videoRenderer->flush();
-
-    // 时钟重置（flush 后由 AudioRenderer 重新建立）
-    m_clock.invalidate();
+    m_pipeline->seek(positionMs, seekGeneration);
 
     // 立即更新 UI 进度条（不等音频时钟重建）
     m_position = positionMs;
@@ -222,9 +171,7 @@ void PlayerEngine::seek(qint64 positionMs)
 
     if (resumeAfterSeek)
     {
-        m_decoder->setPaused(false);
-        m_audioRenderer->setPaused(false);
-        m_videoRenderer->setPaused(false);
+        m_pipeline->setPaused(false);
         setState(Playing);
     }
 }
@@ -237,52 +184,12 @@ void PlayerEngine::togglePlayPause()
         play();
 }
 
-void PlayerEngine::updateNativeVideoRenderingEnabled()
-{
-    const bool enabled = m_surface && m_surface->supportsNativeVideoToolboxRendering();
-    if (m_nativeVideoRenderingEnabled == enabled)
-        return;
-
-    m_nativeVideoRenderingEnabled = enabled;
-    m_decoder->setVideoToolboxDirectRenderingEnabled(enabled);
-    LOG_INFO("PlayerEngine: VideoToolbox native rendering {}",
-             enabled ? "enabled" : "disabled");
-}
-
-void PlayerEngine::onNativeRenderingFailed()
-{
-    if (!m_nativeVideoRenderingEnabled)
-        return;
-
-    m_nativeVideoRenderingEnabled = false;
-    m_decoder->setVideoToolboxDirectRenderingEnabled(false);
-    LOG_WARN("PlayerEngine: disabled VideoToolbox native rendering after Surface failure");
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
 // 停止所有组件
 // ─────────────────────────────────────────────────────────────────────────────
 void PlayerEngine::stopAllComponents()
 {
-    // 解码器先停：abort 队列，使阻塞的 push 立即返回
-    m_decoder->stopDecoding();
-    m_decoder->wait();
-
-    // 音频渲染器
-    m_audioRenderer->stopRenderer();
-    m_audioRenderer->wait();
-
-    // 视频渲染器（主线程，只需停止定时器）
-    m_videoRenderer->stop();
-    m_videoRenderer->reset();
-
-    // 清空队列
-    m_videoQueue.flush();
-    m_audioQueue.flush();
-
-    // 重置队列 abort 状态，下次 open 时可以正常使用
-    m_videoQueue.resetAbort();
-    m_audioQueue.resetAbort();
+    m_pipeline->stopComponents();
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -302,20 +209,12 @@ void PlayerEngine::onMediaInfoReady(qint64 durationMs, int width, int height, do
     // 这里不再提前做 CPU 侧的视频格式初始化。
     m_hasAudio = sampleRate > 0 && channels > 0;
     m_hasVideo = width > 0 && height > 0;
-    m_videoRenderer->setAudioClockEnabled(m_hasAudio);
-    m_videoRenderer->setPaused(false);
-
-    if (m_hasAudio)
-    {
-        m_audioRenderer->setSourceFormat(sampleRate, channels,
-                                         static_cast<AVSampleFormat>(sampleFmt),
-                                         channelLayoutMask);
-        if (!m_audioRenderer->isRunning())
-            m_audioRenderer->start(QThread::HighPriority);
-    }
-
-    if (m_hasVideo)
-        m_videoRenderer->start();
+    m_pipeline->startRenderersForMedia(m_hasAudio,
+                                       m_hasVideo,
+                                       sampleRate,
+                                       channels,
+                                       channelLayoutMask,
+                                       sampleFmt);
 
     // 更新 MediaInfo（QML 侧显示文件信息）
     // onMediaInfoReady 通过 Qt::AutoConnection 在主线程执行，安全
@@ -366,8 +265,8 @@ void PlayerEngine::onDecoderPosition(qint64 posMs)
 
 void PlayerEngine::onDecoderSeekCompleted(int generation, int serial)
 {
-    m_audioRenderer->setAcceptedSerial(serial);
-    m_videoRenderer->completeSeek(generation, serial);
+    Q_UNUSED(generation);
+    Q_UNUSED(serial);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -441,9 +340,7 @@ void PlayerEngine::finishMedia()
         return;
 
     m_mediaFinished = true;
-    m_decoder->setPaused(true);
-    m_audioRenderer->setPaused(true);
-    m_videoRenderer->setPaused(true);
+    m_pipeline->setPaused(true);
     setState(Paused);
     emit endOfMedia();
 }
