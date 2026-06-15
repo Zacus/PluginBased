@@ -6,7 +6,6 @@ import QtQuick.Controls.Basic
 import QtQuick.Layouts
 import QtQuick.Dialogs
 import AppLog    1.0          // Log 单例（基础设施层，所有插件共用）
-import PluginBased 1.0
 import PlayPlugin 1.0          // PlayerEngine、PlaylistModel、MediaInfo、PlaybackContext
 import QuickUI.Components 1.0
 
@@ -40,9 +39,8 @@ Item {
 
     FileDialog {
         id: fileDlg
-        title: AppController.currentLanguage, qsTr("Open Media File")
-        nameFilters: AppController.currentLanguage,
-                     [qsTr("Video files (*.mp4 *.mkv *.avi *.mov *.flv *.webm)"),
+        title: qsTr("Open Media File")
+        nameFilters: [qsTr("Video files (*.mp4 *.mkv *.avi *.mov *.flv *.webm)"),
                       qsTr("Audio files (*.mp3 *.flac *.aac *.ogg *.wav)"),
                       qsTr("All files (*)")]
         onAccepted: {
@@ -79,7 +77,7 @@ Item {
                 }
                 Text {
                     anchors.horizontalCenter: parent.horizontalCenter
-                    text: AppController.currentLanguage, qsTr("Open a media file to start playback")
+                    text: qsTr("Open a media file to start playback")
                     color: ComponentTheme.textSecondary
                     font.pixelSize: 14
                 }

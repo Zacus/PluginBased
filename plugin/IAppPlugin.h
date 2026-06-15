@@ -1,11 +1,12 @@
 #pragma once
 
 #include <QString>
+#include <QStringList>
 #include <QUrl>
 #include <QtPlugin>
 
 inline constexpr int PluginBasedPluginApiVersion = 1;
-inline constexpr int PluginBasedPluginAbiVersion = 1;
+inline constexpr int PluginBasedPluginAbiVersion = 2;
 
 #define IAppPlugin_IID "com.pluginbased.IAppPlugin/1.0"
 
@@ -27,6 +28,11 @@ public:
     virtual QString cardIcon() const { return QStringLiteral("⬡"); }
     virtual QUrl cardIconUrl() const { return QUrl{}; }
     virtual QString cardName() const { return name(); }
+    virtual QStringList translationResourcePaths(const QString& languageName) const
+    {
+        Q_UNUSED(languageName);
+        return {};
+    }
 };
 
 Q_DECLARE_INTERFACE(IAppPlugin, IAppPlugin_IID)

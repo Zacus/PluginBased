@@ -39,4 +39,5 @@ public:
     // ── QML UI ────────────────────────────────────────────────────────────
     bool hasQmlUI()        const override { return true; }
     QUrl qmlComponentUrl() const override;
+    QStringList translationResourcePaths(const QString& languageName) const override;
 };

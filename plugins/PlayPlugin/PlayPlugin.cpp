@@ -57,3 +57,11 @@ QUrl PlayPlugin::qmlComponentUrl() const
 {
     return QUrl(QStringLiteral("qrc:/PlayPlugin/qml/PlayPluginView.qml"));
 }
+
+QStringList PlayPlugin::translationResourcePaths(const QString& languageName) const
+{
+    if (languageName == QStringLiteral("zh_CN"))
+        return { QStringLiteral(":/PlayPlugin/i18n/PlayPlugin_zh_CN.qm") };
+
+    return {};
+}

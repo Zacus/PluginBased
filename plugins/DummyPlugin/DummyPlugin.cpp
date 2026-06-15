@@ -35,3 +35,11 @@ QUrl DummyPlugin::qmlComponentUrl() const
 {
     return QUrl(QStringLiteral("qrc:/DummyPlugin/qml/DummyPluginView.qml"));
 }
+
+QStringList DummyPlugin::translationResourcePaths(const QString& languageName) const
+{
+    if (languageName == QStringLiteral("zh_CN"))
+        return { QStringLiteral(":/DummyPlugin/i18n/DummyPlugin_zh_CN.qm") };
+
+    return {};
+}

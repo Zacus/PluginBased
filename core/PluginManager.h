@@ -6,6 +6,7 @@
 #include <QStringList>
 #include <QUrl>
 #include <QPluginLoader>
+#include <QTranslator>
 #include <memory>
 #include <vector>
 
@@ -36,6 +37,7 @@ public:
     void loadAll(const QString& pluginDir);
     bool loadPlugin(const QString& filePath);
     void unloadAll();
+    void applyLanguage(const QString& languageName);
 
     int         pluginCount() const { return static_cast<int>(m_plugins.size()); }
     QStringList pluginNames() const;
@@ -77,5 +79,8 @@ private:
         PluginEntry& operator=(const PluginEntry&) = delete;
     };
 
+    void removeInstalledTranslators();
+
     std::vector<PluginEntry> m_plugins;
+    std::vector<std::unique_ptr<QTranslator>> m_pluginTranslators;
 };

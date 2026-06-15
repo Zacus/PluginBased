@@ -1,7 +1,6 @@
 import QtQuick
 import QtQuick.Controls.Basic
 import QtQuick.Layouts
-import PluginBased 1.0
 import QuickUI.Components 1.0
 
 Item {
@@ -35,14 +34,14 @@ Item {
                     spacing: 1
 
                     Text {
-                        text: AppController.currentLanguage, qsTr("Playlist")
+                        text: qsTr("Playlist")
                         color: ComponentTheme.textPrimary
                         font.pixelSize: 15
                         font.bold: true
                     }
 
                     Text {
-                        text: AppController.currentLanguage, qsTr("%1 item(s)").arg(listView.count)
+                        text: qsTr("%1 item(s)").arg(listView.count)
                         color: ComponentTheme.textSecondary
                         font.pixelSize: 11
                     }
@@ -50,7 +49,7 @@ Item {
 
                 IconButton {
                     iconText: "⌫"
-                    tooltip: AppController.currentLanguage, qsTr("Clear playlist")
+                    tooltip: qsTr("Clear playlist")
                     fontSize: 14
                     enabled: listView.count > 0
                     onClicked: {
@@ -61,7 +60,7 @@ Item {
 
                 IconButton {
                     iconText: "×"
-                    tooltip: AppController.currentLanguage, qsTr("Close playlist")
+                    tooltip: qsTr("Close playlist")
                     fontSize: 17
                     onClicked: root.closeRequested()
                 }
@@ -89,7 +88,7 @@ Item {
                 anchors.centerIn: parent
                 width: parent.width - 48
                 visible: listView.count === 0
-                text: AppController.currentLanguage, qsTr("No playlist items\nClick + in the lower left to add media files")
+                text: qsTr("No playlist items\nClick + in the lower left to add media files")
                 horizontalAlignment: Text.AlignHCenter
                 color: ComponentTheme.textSecondary
                 font.pixelSize: 13
@@ -163,7 +162,7 @@ Item {
                         iconText: "×"
                         fontSize: 13
                         visible: delegateHover.hovered
-                        tooltip: AppController.currentLanguage, qsTr("Remove")
+                        tooltip: qsTr("Remove")
                         onClicked: {
                             if (root.playlistModel)
                                 root.playlistModel.remove(index)
@@ -187,7 +186,7 @@ Item {
 
             Text {
                 anchors.centerIn: parent
-                text: AppController.currentLanguage, qsTr("Double-click to play, hover to remove")
+                text: qsTr("Double-click to play, hover to remove")
                 color: ComponentTheme.textSecondary
                 font.pixelSize: 11
             }

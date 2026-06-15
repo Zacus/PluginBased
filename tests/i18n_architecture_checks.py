@@ -74,6 +74,9 @@ def main() -> None:
     controller_h = read("app/AppController.h")
     controller_cpp = read("app/AppController.cpp")
     main_cpp = read("app/main.cpp")
+    plugin_interface_h = read("plugin/IAppPlugin.h")
+    plugin_manager_h = read("core/PluginManager.h")
+    plugin_manager_cpp = read("core/PluginManager.cpp")
 
     require(
         "Q_PROPERTY(QString currentLanguage READ currentLanguage NOTIFY currentLanguageChanged)" in controller_h,
@@ -101,6 +104,50 @@ def main() -> None:
         and main_cpp.index("Logger::instance().init") < main_cpp.index("AppLanguageService::instance().applyLanguage(cfg.languageName())"),
         "main should initialize logging before applying language",
     )
+    require(
+        "engine.retranslate()" in main_cpp,
+        "main should trigger QQmlEngine::retranslate() after runtime language changes",
+    )
+    require(
+        "&AppLanguageService::languageChanged" in main_cpp,
+        "main should connect AppLanguageService languageChanged to QML retranslation",
+    )
+    require(
+        "PluginManager::instance().applyLanguage(AppLanguageService::instance().currentLanguage())" in main_cpp
+        and main_cpp.index("PluginManager::instance().applyLanguage(AppLanguageService::instance().currentLanguage())")
+        < main_cpp.index("engine.retranslate()"),
+        "main should install plugin translators before QML retranslation on runtime language changes",
+    )
+    require(
+        "PluginManager::instance().applyLanguage(AppLanguageService::instance().currentLanguage())" in controller_cpp,
+        "AppController should apply plugin translators after initial plugin loading",
+    )
+    require(
+        "virtual QStringList translationResourcePaths(const QString& languageName) const" in plugin_interface_h,
+        "IAppPlugin should expose plugin-owned translation resource paths",
+    )
+    require(
+        "PluginBasedPluginAbiVersion = 2" in plugin_interface_h,
+        "IAppPlugin ABI version should be bumped when adding a virtual method",
+    )
+    require("QTranslator" in plugin_manager_h, "PluginManager should own plugin translators")
+    require(
+        "void applyLanguage(const QString& languageName)" in plugin_manager_h,
+        "PluginManager should expose plugin translator application",
+    )
+    require(
+        "removeInstalledTranslators" in plugin_manager_h and "removeInstalledTranslators" in plugin_manager_cpp,
+        "PluginManager should remove installed plugin translators before replacement or unload",
+    )
+    require(
+        "translationResourcePaths(languageName)" in plugin_manager_cpp,
+        "PluginManager should query each plugin for language-specific translation resources",
+    )
+    require(
+        "QCoreApplication::installTranslator" in plugin_manager_cpp
+        and "QCoreApplication::removeTranslator" in plugin_manager_cpp,
+        "PluginManager should install and remove plugin translators through QCoreApplication",
+    )
 
     translation_ts = read("translations/pluginbased_zh_CN.ts")
 
@@ -108,7 +155,10 @@ def main() -> None:
     require("pluginbased_zh_CN.ts" in app_cmake, "app CMake should list the Chinese TS file")
     require('<TS version="2.1" language="zh_CN">' in translation_ts, "Chinese TS should declare zh_CN")
     require("<source>Application Panel</source>" in translation_ts, "Chinese TS should include host homepage text")
-    require("<source>Video Player</source>" in translation_ts, "Chinese TS should include PlayPlugin text")
+    require("<name>PlayPlugin</name>" not in translation_ts, "Host Chinese TS should not own PlayPlugin C++ translations")
+    require("<name>PlayPluginView</name>" not in translation_ts, "Host Chinese TS should not own PlayPlugin QML translations")
+    require("<name>DummyPlugin</name>" not in translation_ts, "Host Chinese TS should not own DummyPlugin C++ translations")
+    require("<name>DummyPluginView</name>" not in translation_ts, "Host Chinese TS should not own DummyPlugin QML translations")
 
     main_qml = read("app/qml/main.qml")
     home_qml = read("app/qml/HomePanel.qml")
@@ -142,26 +192,51 @@ def main() -> None:
     )
 
     play_h = read("plugins/PlayPlugin/PlayPlugin.h")
+    play_cpp = read("plugins/PlayPlugin/PlayPlugin.cpp")
+    play_cmake = read("plugins/PlayPlugin/CMakeLists.txt")
+    play_ts = read("plugins/PlayPlugin/translations/PlayPlugin_zh_CN.ts")
     play_qml = read("plugins/PlayPlugin/qml/PlayPluginView.qml")
     player_view_qml = read("plugins/PlayPlugin/qml/PlayerView.qml")
     playlist_view_qml = read("plugins/PlayPlugin/qml/PlaylistView.qml")
     control_bar_qml = read("plugins/PlayPlugin/qml/ControlBar.qml")
     dummy_h = read("plugins/DummyPlugin/DummyPlugin.h")
+    dummy_cpp = read("plugins/DummyPlugin/DummyPlugin.cpp")
+    dummy_cmake = read("plugins/DummyPlugin/CMakeLists.txt")
+    dummy_ts = read("plugins/DummyPlugin/translations/DummyPlugin_zh_CN.ts")
     dummy_qml = read("plugins/DummyPlugin/qml/DummyPluginView.qml")
 
     require('tr("Built-in player: video + playlist")' in play_h, "PlayPlugin description should be translatable")
     require('tr("Video Player")' in play_h, "PlayPlugin card name should be translatable")
+    require("translationResourcePaths" in play_h, "PlayPlugin should override translation resource paths")
+    require(":/PlayPlugin/i18n/PlayPlugin_zh_CN.qm" in play_cpp, "PlayPlugin should return its own Chinese qm resource")
+    require("qt_add_translations(PlayPlugin" in play_cmake, "PlayPlugin CMake should generate plugin translations")
+    require("PlayPlugin_zh_CN.ts" in play_cmake, "PlayPlugin CMake should list its Chinese TS file")
+    require('RESOURCE_PREFIX "/PlayPlugin/i18n"' in play_cmake, "PlayPlugin translations should use plugin resource namespace")
+    require("<name>PlayPlugin</name>" in play_ts, "PlayPlugin TS should include C++ plugin context")
+    require("<name>ControlBar</name>" in play_ts, "PlayPlugin TS should include ControlBar context")
     require('qsTr("Video Player")' in play_qml, "PlayPlugin QML title should be translatable")
-    require("import PluginBased 1.0" in player_view_qml, "PlayerView should access AppController for language refresh")
-    require("import PluginBased 1.0" in playlist_view_qml, "PlaylistView should access AppController for language refresh")
-    require("import PluginBased 1.0" in control_bar_qml, "ControlBar should access AppController for language refresh")
+    for plugin_qml_path, plugin_qml_text in (
+        ("plugins/PlayPlugin/qml/PlayPluginView.qml", play_qml),
+        ("plugins/PlayPlugin/qml/PlayerView.qml", player_view_qml),
+        ("plugins/PlayPlugin/qml/PlaylistView.qml", playlist_view_qml),
+        ("plugins/PlayPlugin/qml/ControlBar.qml", control_bar_qml),
+        ("plugins/DummyPlugin/qml/DummyPluginView.qml", dummy_qml),
+    ):
+        require(
+            "import PluginBased 1.0" not in plugin_qml_text,
+            f"{plugin_qml_path} should not depend on host PluginBased module for i18n refresh",
+        )
+        require(
+            "AppController.currentLanguage" not in plugin_qml_text,
+            f"{plugin_qml_path} should rely on QQmlEngine::retranslate() instead of host language bindings",
+        )
     require(
-        'title: AppController.currentLanguage, qsTr("Open Media File")' in player_view_qml,
-        "PlayerView file dialog title should refresh when language changes",
+        'title: qsTr("Open Media File")' in player_view_qml,
+        "PlayerView file dialog title should use plain qsTr",
     )
     require(
-        'text: AppController.currentLanguage, qsTr("Open a media file to start playback")' in player_view_qml,
-        "PlayerView empty-state text should refresh when language changes",
+        'text: qsTr("Open a media file to start playback")' in player_view_qml,
+        "PlayerView empty-state text should use plain qsTr",
     )
     require('qsTr("Playlist")' in playlist_view_qml, "PlaylistView title should be translatable")
     require('qsTr("%1 item(s)")' in playlist_view_qml, "PlaylistView item count should be translatable")
@@ -177,15 +252,14 @@ def main() -> None:
     require('qsTr("Hide playlist")' in control_bar_qml, "ControlBar playlist tooltip should be translatable")
     require('tr("Example Plugin")' in dummy_h, "DummyPlugin card name should be translatable")
     require('tr("Stub plugin for framework validation")' in dummy_h, "DummyPlugin description should be translatable")
+    require("translationResourcePaths" in dummy_h, "DummyPlugin should override translation resource paths")
+    require(":/DummyPlugin/i18n/DummyPlugin_zh_CN.qm" in dummy_cpp, "DummyPlugin should return its own Chinese qm resource")
+    require("qt_add_translations(DummyPlugin" in dummy_cmake, "DummyPlugin CMake should generate plugin translations")
+    require("DummyPlugin_zh_CN.ts" in dummy_cmake, "DummyPlugin CMake should list its Chinese TS file")
+    require('RESOURCE_PREFIX "/DummyPlugin/i18n"' in dummy_cmake, "DummyPlugin translations should use plugin resource namespace")
+    require("<name>DummyPlugin</name>" in dummy_ts, "DummyPlugin TS should include C++ plugin context")
+    require("<name>DummyPluginView</name>" in dummy_ts, "DummyPlugin TS should include QML context")
     require("qsTr(" in dummy_qml, "DummyPlugin QML should use qsTr for visible text")
-    require("<name>PlayPluginView</name>" in translation_ts, "Chinese TS should include PlayPlugin QML context")
-    require("<name>PlayerView</name>" in translation_ts, "Chinese TS should include PlayerView QML context")
-    require("<source>Open a media file to start playback</source>" in translation_ts, "Chinese TS should include player empty-state text")
-    require("<name>PlaylistView</name>" in translation_ts, "Chinese TS should include PlaylistView QML context")
-    require("<source>Playlist</source>" in translation_ts, "Chinese TS should include playlist title")
-    require("<name>ControlBar</name>" in translation_ts, "Chinese TS should include ControlBar QML context")
-    require("<source>Open file</source>" in translation_ts, "Chinese TS should include control tooltip text")
-    require("<name>DummyPluginView</name>" in translation_ts, "Chinese TS should include DummyPlugin QML context")
 
 
 if __name__ == "__main__":

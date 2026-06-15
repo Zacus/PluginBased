@@ -1,12 +1,11 @@
 import QtQuick
 import QtQuick.Layouts
-import PluginBased 1.0
 import QuickUI.Components 1.0      // PlayerEngine、PlaylistModel、PlaybackContext 等
 
 Item {
     id: root
 
-    property string pageTitle: AppController.currentLanguage, qsTr("Component Test")
+    property string pageTitle: qsTr("Component Test")
 
     // ── 非视觉对象放在 Item 层级 ─────────────────────────────
     TimelineModel {
@@ -84,16 +83,15 @@ Item {
             Layout.margins: 8
 
             Button {
-                text: AppController.currentLanguage, qsTr("Overview")
+                text: qsTr("Overview")
                 onClicked: timeline.fitAll()
             }
             Button {
-                text: AppController.currentLanguage, qsTr("Zoom In")
+                text: qsTr("Zoom In")
                 onClicked: timeline.zoom(1.5)
             }
             Button {
-                text: AppController.currentLanguage,
-                      playTimer.running ? qsTr("Pause") : qsTr("Play")
+                text: playTimer.running ? qsTr("Pause") : qsTr("Play")
                 onClicked: playTimer.running = !playTimer.running
             }
         }

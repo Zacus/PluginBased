@@ -98,7 +98,7 @@ def test_generated_metadata_uses_plugin_schema():
             "generated plugins should declare metadata schemaVersion")
     require('"apiVersion": 1' in text,
             "generated plugins should declare plugin API version")
-    require('"abiVersion": 1' in text,
+    require('"abiVersion": 2' in text,
             "generated plugins should declare plugin ABI version")
     require('"id": "%2"' in text,
             "generated plugins should declare stable kebab-case plugin id")

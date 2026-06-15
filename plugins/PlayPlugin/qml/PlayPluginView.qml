@@ -3,14 +3,13 @@
 // 依赖 PlayPlugin 1.0、Qt 标准模块，以及宿主提供的 QuickUI.Components。
 
 import QtQuick
-import PluginBased 1.0
 import PlayPlugin 1.0
 import QuickUI.Components 1.0
 
 Item {
     id: root
 
-    property string pageTitle: AppController.currentLanguage, qsTr("Video Player")
+    property string pageTitle: qsTr("Video Player")
     property bool playlistOpen: false
     readonly property int drawerWidth: Math.min(340, Math.max(292, Math.round(width * 0.28)))
 

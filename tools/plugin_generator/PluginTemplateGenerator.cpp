@@ -342,7 +342,7 @@ QString PluginTemplateGenerator::metadataText(const Options& options) const
     "MetaData": {
         "schemaVersion": 1,
         "apiVersion": 1,
-        "abiVersion": 1,
+        "abiVersion": 2,
         "id": "%2",
         "name": "%1",
         "version": "1.0.0",

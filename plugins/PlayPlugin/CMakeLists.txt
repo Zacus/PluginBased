@@ -90,6 +90,12 @@ qt_add_qml_module(PlayPlugin
         src/FFmpegSurface.h    src/FFmpegSurface.cpp
 )
 
+qt_add_translations(PlayPlugin
+    TS_FILES
+        "${CMAKE_CURRENT_SOURCE_DIR}/translations/PlayPlugin_zh_CN.ts"
+    RESOURCE_PREFIX "/PlayPlugin/i18n"
+)
+
 qt6_add_shaders(PlayPlugin "PlayPluginShaders"
     PREFIX "/PlayPlugin/shaders"
     BASE shaders

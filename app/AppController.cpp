@@ -110,6 +110,7 @@ void AppController::initPlugins()
     } else {
         LOG_INFO("AppController: plugin dir = {}", pluginDir.toStdString());
         PluginManager::instance().loadAll(pluginDir);
+        PluginManager::instance().applyLanguage(AppLanguageService::instance().currentLanguage());
     }
  
     m_pluginsReady = true;

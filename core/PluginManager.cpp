@@ -3,6 +3,7 @@
 #include "PluginDiscovery.h"
 #include "PluginMetadataValidator.h"
 
+#include <QCoreApplication>
 #include <QDir>
 #include <QFileInfo>
 
@@ -13,6 +14,8 @@ namespace PluginDiscovery = PluginBased::Plugins::PluginDiscovery;
 
 void PluginManager::unloadAll()
 {
+    removeInstalledTranslators();
+
     // 逆序 shutdown，再逆序 unload，保证依赖顺序
     for (auto it = m_plugins.rbegin(); it != m_plugins.rend(); ++it)
         if (it->plugin) it->plugin->shutdown();
@@ -22,6 +25,45 @@ void PluginManager::unloadAll()
 
     m_plugins.clear();
     LOG_INFO("PluginManager: all plugins unloaded");
+}
+
+void PluginManager::applyLanguage(const QString& languageName)
+{
+    removeInstalledTranslators();
+
+    for (const auto& entry : m_plugins) {
+        if (!entry.plugin)
+            continue;
+
+        const QStringList resourcePaths = entry.plugin->translationResourcePaths(languageName);
+        for (const QString& resourcePath : resourcePaths) {
+            auto translator = std::make_unique<QTranslator>();
+            if (!translator->load(resourcePath)) {
+                LOG_WARN("PluginManager: failed to load plugin translation '{}'",
+                         resourcePath.toStdString());
+                continue;
+            }
+
+            if (!QCoreApplication::installTranslator(translator.get())) {
+                LOG_WARN("PluginManager: failed to install plugin translation '{}'",
+                         resourcePath.toStdString());
+                continue;
+            }
+
+            LOG_INFO("PluginManager: installed plugin translation '{}'",
+                     resourcePath.toStdString());
+            m_pluginTranslators.push_back(std::move(translator));
+        }
+    }
+}
+
+void PluginManager::removeInstalledTranslators()
+{
+    for (auto it = m_pluginTranslators.rbegin(); it != m_pluginTranslators.rend(); ++it) {
+        if (*it)
+            QCoreApplication::removeTranslator(it->get());
+    }
+    m_pluginTranslators.clear();
 }
 
 void PluginManager::loadAll(const QString& pluginDir)

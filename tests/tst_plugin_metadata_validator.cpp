@@ -39,7 +39,7 @@ private:
   "MetaData": {
     "schemaVersion": 1,
     "apiVersion": 1,
-    "abiVersion": 1,
+    "abiVersion": 2,
     "id": "play-plugin",
     "name": "PlayPlugin",
     "version": "1.0.0",
@@ -61,7 +61,7 @@ void PluginMetadataValidatorTest::acceptsValidMetadata()
     QCOMPARE(result.metadata.iid, QStringLiteral("com.pluginbased.IAppPlugin/1.0"));
     QCOMPARE(result.metadata.schemaVersion, 1);
     QCOMPARE(result.metadata.apiVersion, 1);
-    QCOMPARE(result.metadata.abiVersion, 1);
+    QCOMPARE(result.metadata.abiVersion, 2);
     QCOMPARE(result.metadata.id, QStringLiteral("play-plugin"));
     QCOMPARE(result.metadata.name, QStringLiteral("PlayPlugin"));
     QCOMPARE(result.metadata.version, QStringLiteral("1.0.0"));
@@ -112,7 +112,7 @@ void PluginMetadataValidatorTest::rejectsWrongAbiVersion()
   "MetaData": {
     "schemaVersion": 1,
     "apiVersion": 1,
-    "abiVersion": 2,
+    "abiVersion": 1,
     "id": "play-plugin",
     "name": "PlayPlugin",
     "version": "1.0.0",
@@ -125,7 +125,7 @@ void PluginMetadataValidatorTest::rejectsWrongAbiVersion()
 
     QVERIFY(!result.ok);
     QVERIFY(result.error.contains(QStringLiteral("abiVersion")));
-    QVERIFY(result.error.contains(QStringLiteral("expected 1")));
+    QVERIFY(result.error.contains(QStringLiteral("expected 2")));
 }
 
 void PluginMetadataValidatorTest::rejectsWrongIid()
@@ -136,7 +136,7 @@ void PluginMetadataValidatorTest::rejectsWrongIid()
   "MetaData": {
     "schemaVersion": 1,
     "apiVersion": 1,
-    "abiVersion": 1,
+    "abiVersion": 2,
     "id": "play-plugin",
     "name": "PlayPlugin",
     "version": "1.0.0",
@@ -159,7 +159,7 @@ void PluginMetadataValidatorTest::rejectsUnsafeId()
   "MetaData": {
     "schemaVersion": 1,
     "apiVersion": 1,
-    "abiVersion": 1,
+    "abiVersion": 2,
     "id": "../PlayPlugin",
     "name": "PlayPlugin",
     "version": "1.0.0",
@@ -194,7 +194,7 @@ void PluginMetadataValidatorTest::rejectsInvalidVersion()
   "MetaData": {
     "schemaVersion": 1,
     "apiVersion": 1,
-    "abiVersion": 1,
+    "abiVersion": 2,
     "id": "play-plugin",
     "name": "PlayPlugin",
     "version": "1",

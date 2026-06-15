@@ -19,6 +19,13 @@ qt_add_qml_module(DummyPlugin
     QML_FILES
         qml/DummyPluginView.qml
 )
+
+qt_add_translations(DummyPlugin
+    TS_FILES
+        "${CMAKE_CURRENT_SOURCE_DIR}/translations/DummyPlugin_zh_CN.ts"
+    RESOURCE_PREFIX "/DummyPlugin/i18n"
+)
+
 # 符号可见性：只导出 Qt 插件入口符号，减小库体积、避免符号污染
 set_target_properties(DummyPlugin PROPERTIES
     CXX_VISIBILITY_PRESET     hidden

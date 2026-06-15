@@ -98,6 +98,16 @@ int main(int argc, char* argv[])
 
     QQmlApplicationEngine engine;
 
+    QObject::connect(
+        &AppLanguageService::instance(),
+        &AppLanguageService::languageChanged,
+        &engine,
+        [&engine]() {
+            PluginManager::instance().applyLanguage(AppLanguageService::instance().currentLanguage());
+            engine.retranslate();
+        }
+    );
+
     // ── QML 模块搜索路径 ──────────────────────────────────────────────────
     // 发布包优先使用运行时 qml/ 目录，开发构建回退到 CMAKE_BINARY_DIR。
     addRuntimeQmlImportPaths(engine, QCoreApplication::applicationDirPath());
