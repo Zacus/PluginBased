@@ -17,6 +17,7 @@ PluginBased/
 │   ├── main.cpp                 # 入口：读配置 → 初始化日志 → 加载插件 → 启动 QML
 │   ├── AppConfig.h/.cpp         # INI 配置管理（QSettings，零额外依赖）
 │   ├── AppController.h/.cpp     # 应用级单例，QML_SINGLETON
+│   ├── AppLanguageService.h/.cpp # 语言切换与宿主翻译安装
 │   ├── CrashHandler.h/.cpp      # Crash 捕获（Windows MiniDump / Unix signal）
 │   └── qml/
 │       ├── main.qml             # 根窗口 + StackView 导航
@@ -36,12 +37,16 @@ PluginBased/
 │
 ├── plugins/                     # 插件实现
 │   ├── DummyPlugin/             # 最小示例插件
+│   │   ├── qml/                 # 示例插件界面
+│   │   └── translations/        # 插件自带翻译 TS
 │   └── PlayPlugin/              # 自包含视频播放器插件
 │       ├── PlayPlugin.h/.cpp    # IAppPlugin 实现
 │       ├── qml/                 # 播放器界面、控制栏、播放列表
 │       ├── shaders/             # YUV 视频渲染 shader
+│       ├── translations/        # 插件自带翻译 TS
 │       └── src/                 # FFmpeg 解码、音视频渲染、硬件解码后端
 │
+├── translations/                # 宿主应用翻译 TS
 ├── tests/                       # 轻量回归检查脚本
 └── tools/                       # 打包、部署、依赖验证工具
 ```
@@ -94,8 +99,12 @@ ctest --test-dir build --output-on-failure
 | 测试 | 说明 |
 |---|---|
 | `playplugin_regression_checks` | 播放插件、重命名和插件接口回归检查 |
-| `plugin_generator_checks` | 可视化插件生成器、模板输出和图片图标支持检查 |
+| `plugin_generator_checks` | 可视化插件生成器、模板输出、图片图标和插件内置翻译检查 |
 | `ci_ctest_checks` | CI/CTest 配置结构检查 |
+| `i18n_architecture_checks` | 宿主/插件多语言边界和运行时刷新检查 |
+| `plugin_metadata_validator` | 插件 JSON 元数据校验 |
+| `plugin_discovery` | 插件发现和清单解析检查 |
+| `app_theme_service_checks` | 主题服务结构检查 |
 | `plugin_generator_backend_smoke` | C++ 插件生成后端 smoke test |
 
 本地运行：
@@ -128,6 +137,7 @@ flush_on         = warn
 
 [ui]
 theme            = dark     ; themes/<id>.json，内置支持 dark / light
+language         = en_US    ; 默认 en_US，当前支持 en_US / zh_CN
 ```
 
 ### 皮肤切换
@@ -141,6 +151,19 @@ theme            = dark     ; themes/<id>.json，内置支持 dark / light
 - macOS bundle：`PluginBasedApp.app/Contents/Resources/themes`
 
 宿主优先加载运行时目录中的 `themes/<id>.json`，找不到时由 QtQuickComponents 内置 `dark` / `light` JSON 作为 fallback。
+
+### 多语言
+
+应用默认语言为英文 `en_US`，当前内置中文 `zh_CN`。语言选择保存到 `pluginbased.ini` 的 `[ui] language`，运行时切换语言时会更新宿主 translator、插件 translator，并调用 `QQmlEngine::retranslate()` 刷新已加载页面。
+
+翻译资源按归属拆分：
+
+- 宿主文本维护在 `translations/pluginbased_zh_CN.ts`，由 `app/CMakeLists.txt` 编译为 `:/i18n/pluginbased_zh_CN.qm`
+- 插件文本维护在各自目录，例如 `plugins/PlayPlugin/translations/PlayPlugin_zh_CN.ts`
+- 插件通过 `IAppPlugin::translationResourcePaths(languageName)` 返回自己的 `.qm` 资源路径
+- `PluginManager` 负责安装和卸载插件 translator，插件不直接依赖宿主 QML 模块
+
+插件 QML 中的可见文本应使用普通 `qsTr(...)`；插件 C++ 中显示到主页卡片的文本应使用 `tr(...)`。不要为了刷新语言在插件 QML 中导入 `PluginBased 1.0` 或绑定 `AppController.currentLanguage`。
 
 ### 插件系统
 
@@ -182,6 +205,14 @@ cmake --build build --target PluginGeneratorApp --parallel
 
 在界面中填写插件名、显示名、描述、文字图标、可选图片图标和输出目录，并选择插件类型。选择图片图标时，生成器会把图片复制到插件 `assets/` 目录并嵌入 Qt resource；未选择图片时会使用文字图标作为卡片 fallback。
 
+生成器会默认生成插件内置多语言结构：
+
+- `translations/<PluginName>_zh_CN.ts`
+- `qt_add_translations(<PluginName> ... RESOURCE_PREFIX "/<PluginName>/i18n")`
+- `translationResourcePaths()` override
+- C++ 卡片标题/描述使用 `tr(...)`
+- QML 可见文本使用 `qsTr(...)`
+
 | 类型 | 说明 |
 |---|---|
 | 带 QML 页面 | 生成 `qml/<PluginName>View.qml`，首页卡片点击后会打开插件页面 |
@@ -214,7 +245,7 @@ cmake --build build --target PluginGeneratorApp --parallel
    QString id() const override { return "my-plugin"; }
    QString name() const override { return "MyPlugin"; }
    QString version() const override { return "1.0.0"; }
-   QString description() const override { return "我的插件"; }
+   QString description() const override { return tr("我的插件"); }
 
    bool initialize() override;
    void shutdown() override;
@@ -222,6 +253,17 @@ cmake --build build --target PluginGeneratorApp --parallel
    bool hasQmlUI() const override { return true; }
    QUrl qmlComponentUrl() const override {
        return QUrl(QStringLiteral("qrc:/MyPlugin/qml/MyPluginView.qml"));
+   }
+
+   QStringList translationResourcePaths(const QString& languageName) const override;
+   ```
+   ```cpp
+   QStringList MyPlugin::translationResourcePaths(const QString& languageName) const
+   {
+       if (languageName == QStringLiteral("zh_CN"))
+           return { QStringLiteral(":/MyPlugin/i18n/MyPlugin_zh_CN.qm") };
+
+       return {};
    }
    ```
 5. 编写插件元数据文件：
@@ -231,7 +273,7 @@ cmake --build build --target PluginGeneratorApp --parallel
      "MetaData": {
        "schemaVersion": 1,
        "apiVersion": 1,
-       "abiVersion": 1,
+       "abiVersion": 2,
        "id": "my-plugin",
        "name": "MyPlugin",
        "version": "1.0.0",
@@ -240,7 +282,15 @@ cmake --build build --target PluginGeneratorApp --parallel
      }
    }
    ```
-6. 编译后插件产物和同名 JSON 放入 `build/plugins/`，`PluginManager::loadAll()` 启动时只加载根目录 `plugins.json` 中列出的插件。
+6. 在插件 `CMakeLists.txt` 中编译插件自己的翻译资源：
+   ```cmake
+   qt_add_translations(MyPlugin
+       TS_FILES
+           "${CMAKE_CURRENT_SOURCE_DIR}/translations/MyPlugin_zh_CN.ts"
+       RESOURCE_PREFIX "/MyPlugin/i18n"
+   )
+   ```
+7. 编译后插件产物和同名 JSON 放入 `build/plugins/`，`PluginManager::loadAll()` 启动时只加载根目录 `plugins.json` 中列出的插件。
 
 宿主会在实例化动态库前校验插件 JSON：`IID`、`schemaVersion`、`apiVersion`、`abiVersion`、`id`、`name`、`version`、`description`、`hasQml` 都必须有效；`name` 必须与 `plugins.json` 中的插件名一致。`apiVersion` 或 `abiVersion` 与宿主不匹配时，插件会被拒绝加载，但不会影响其他插件。
 
