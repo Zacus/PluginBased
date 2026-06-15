@@ -1,5 +1,6 @@
 #include "FFmpegSurface.h"
 #include "render/VideoNode.h"
+#include "render/VideoSurfaceGeometry.h"
 
 #include <QQuickWindow>
 #include <QSGRendererInterface>
@@ -78,23 +79,12 @@ QSGNode* FFmpegSurface::updatePaintNode(QSGNode*         old_node,
         return nullptr;
     }
 
-    // ── 计算绘制区域（支持 KeepAspectRatio / KeepAspectRatioByExpanding）──
-    QRectF draw_rect = boundingRect();
-
     const QSize video_size = frame
         ? QSize(frame->frame ? frame->frame->width  : 0,
                 frame->frame ? frame->frame->height : 0)
         : (node ? node->videoSize() : QSize{});
-
-    if (video_size.isValid() && m_aspectRatioMode != Qt::IgnoreAspectRatio) {
-        const QSizeF scaled =
-            QSizeF(video_size).scaled(boundingRect().size(), m_aspectRatioMode);
-        draw_rect = QRectF(
-            (boundingRect().width()  - scaled.width())  / 2.0,
-            (boundingRect().height() - scaled.height()) / 2.0,
-            scaled.width(),
-            scaled.height());
-    }
+    const QRectF draw_rect =
+        VideoSurfaceGeometry::videoDrawRect(boundingRect(), video_size, m_aspectRatioMode);
 
     // ── 创建或更新节点 ────────────────────────────────────────────────────
     if (!node)

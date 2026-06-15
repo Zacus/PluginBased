@@ -24,12 +24,16 @@ def main():
     material_cpp_path = ROOT / "plugins/PlayPlugin/src/render/VideoMaterial.cpp"
     node_h_path = ROOT / "plugins/PlayPlugin/src/render/VideoNode.h"
     node_cpp_path = ROOT / "plugins/PlayPlugin/src/render/VideoNode.cpp"
+    geometry_h_path = ROOT / "plugins/PlayPlugin/src/render/VideoSurfaceGeometry.h"
+    geometry_cpp_path = ROOT / "plugins/PlayPlugin/src/render/VideoSurfaceGeometry.cpp"
     require(format_h_path.exists(), "VideoPixelFormat.h should exist")
     require(format_cpp_path.exists(), "VideoPixelFormat.cpp should exist")
     require(material_h_path.exists(), "VideoMaterial.h should exist")
     require(material_cpp_path.exists(), "VideoMaterial.cpp should exist")
     require(node_h_path.exists(), "VideoNode.h should exist")
     require(node_cpp_path.exists(), "VideoNode.cpp should exist")
+    require(geometry_h_path.exists(), "VideoSurfaceGeometry.h should exist")
+    require(geometry_cpp_path.exists(), "VideoSurfaceGeometry.cpp should exist")
 
     surface_cpp = read("plugins/PlayPlugin/src/FFmpegSurface.cpp")
     format_h = read("plugins/PlayPlugin/src/render/VideoPixelFormat.h")
@@ -38,6 +42,8 @@ def main():
     material_cpp = read("plugins/PlayPlugin/src/render/VideoMaterial.cpp")
     node_h = read("plugins/PlayPlugin/src/render/VideoNode.h")
     node_cpp = read("plugins/PlayPlugin/src/render/VideoNode.cpp")
+    geometry_h = read("plugins/PlayPlugin/src/render/VideoSurfaceGeometry.h")
+    geometry_cpp = read("plugins/PlayPlugin/src/render/VideoSurfaceGeometry.cpp")
     cmake = read("plugins/PlayPlugin/CMakeLists.txt")
     root_cmake = read("CMakeLists.txt")
 
@@ -47,6 +53,8 @@ def main():
             "VideoPixelFormat.cpp should explain its file purpose")
     require("#include \"render/VideoNode.h\"" in surface_cpp,
             "FFmpegSurface should include the extracted video node helper")
+    require("#include \"render/VideoSurfaceGeometry.h\"" in surface_cpp,
+            "FFmpegSurface should include the extracted geometry helper")
     require("#include \"render/VideoPixelFormat.h\"" not in surface_cpp and
             "#include \"render/VideoMaterial.h\"" not in surface_cpp,
             "FFmpegSurface should not include pixel/material render internals directly")
@@ -60,6 +68,8 @@ def main():
                 f"FFmpegSurface should not define material helper inline: {forbidden}")
     require("class VideoNode" not in surface_cpp,
             "FFmpegSurface should not define VideoNode inline")
+    require("QSizeF(video_size).scaled" not in surface_cpp,
+            "FFmpegSurface should not calculate aspect-ratio draw rectangles inline")
     require("struct PixelFormatInfo" in format_h and "enum class PlaneLayout" in format_h,
             "VideoPixelFormat.h should own pixel format types")
     require("PixelFormatInfo::fromAVFormat" in format_cpp,
@@ -89,6 +99,12 @@ def main():
             "VideoNode should depend on material and pixel format details")
     require("setNativeFrame" in node_cpp and "ensureTextures" in node_cpp and "releaseTextures" in node_cpp,
             "VideoNode.cpp should own native/software texture lifecycle")
+    require("Calculates the video draw rectangle for FFmpegSurface" in geometry_h,
+            "VideoSurfaceGeometry.h should explain its file purpose")
+    require("Implements FFmpegSurface aspect-ratio geometry calculations" in geometry_cpp,
+            "VideoSurfaceGeometry.cpp should explain its file purpose")
+    require("videoDrawRect" in geometry_h and "videoDrawRect" in geometry_cpp,
+            "VideoSurfaceGeometry should expose and implement videoDrawRect")
     require("src/render/VideoPixelFormat.h" in cmake and
             "src/render/VideoPixelFormat.cpp" in cmake,
             "PlayPlugin CMake should compile the extracted pixel format helper")
@@ -98,6 +114,9 @@ def main():
     require("src/render/VideoNode.h" in cmake and
             "src/render/VideoNode.cpp" in cmake,
             "PlayPlugin CMake should compile the extracted node helper")
+    require("src/render/VideoSurfaceGeometry.h" in cmake and
+            "src/render/VideoSurfaceGeometry.cpp" in cmake,
+            "PlayPlugin CMake should compile the extracted geometry helper")
     require("playplugin_surface_decoupling_checks" in root_cmake,
             "CTest should run the Surface decoupling check")
 
