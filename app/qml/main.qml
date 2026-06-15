@@ -64,6 +64,7 @@ ApplicationWindow {
                     id: languageSelector
                     implicitWidth: 92
                     implicitHeight: 28
+                    popupMaxVisibleItems: 4
                     model: ListModel {
                         ListElement { code: "en_US"; label: "EN" }
                         ListElement { code: "zh_CN"; label: "中文" }
@@ -155,6 +156,7 @@ ApplicationWindow {
                         // 插件提供自己的 QML 页面，通过 Loader 动态加载
                         stack.push(pluginPageComponent, {
                             "pluginQmlUrl":  PluginManager.pluginQmlUrl(pluginIndex),
+                            "pluginIndex":   pluginIndex,
                             "pluginTitle":   PluginManager.pluginCardName(pluginIndex)
                         })
                     } else {
@@ -173,8 +175,10 @@ ApplicationWindow {
         Item {
             // 由 stack.push() 注入
             property url    pluginQmlUrl: ""
+            property int    pluginIndex:  -1
             property string pluginTitle:  ""
-            property string pageTitle:    pluginTitle
+            property string pageTitle:    AppController.currentLanguage,
+                                          pluginIndex >= 0 ? PluginManager.pluginCardName(pluginIndex) : pluginTitle
 
             Loader {
                 id: pluginLoader

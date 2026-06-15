@@ -211,8 +211,8 @@ Item {
                             iconText: PluginManager.pluginCardIcon(index)
                             iconUrl:  PluginManager.pluginCardIconUrl(index)
                             iconBg:   iconBgList[index % iconBgList.length]
-                            cardName: PluginManager.pluginCardName(index)
-                            cardDesc: PluginManager.pluginDescriptionAt(index)
+                            cardName: AppController.currentLanguage, PluginManager.pluginCardName(index)
+                            cardDesc: AppController.currentLanguage, PluginManager.pluginDescriptionAt(index)
                             cardTag:  AppController.currentLanguage, qsTr("Plugin")
                             tagBg: ComponentTheme.surfaceHover
                             tagFg: ComponentTheme.accent

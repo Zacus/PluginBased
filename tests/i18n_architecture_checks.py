@@ -117,22 +117,74 @@ def main() -> None:
     require('qsTr("Loading plugin UI...")' in main_qml, "main.qml should translate loading plugin UI text")
     require("languageSelector" in main_qml, "main.qml should include a language selector")
     require("AppController.setLanguage" in main_qml, "language selector should call AppController.setLanguage")
+    require(
+        "property int" in main_qml and "pluginIndex" in main_qml,
+        "plugin page wrapper should retain plugin index for language refresh",
+    )
+    require(
+        "PluginManager.pluginCardName(pluginIndex)" in main_qml,
+        "plugin page title should re-read plugin card name when language changes",
+    )
+    require(
+        '"pluginIndex":   pluginIndex' in main_qml,
+        "plugin page push should pass plugin index into the wrapper",
+    )
     require('qsTr("Application Panel")' in home_qml, "HomePanel should translate title")
     require('qsTr("Installed Plugins")' in home_qml, "HomePanel should translate plugin section")
     require('qsTr("Install More Plugins")' in home_qml, "HomePanel should translate install-more card")
+    require(
+        "cardName: AppController.currentLanguage, PluginManager.pluginCardName(index)" in home_qml,
+        "plugin card names should depend on currentLanguage so they refresh at runtime",
+    )
+    require(
+        "cardDesc: AppController.currentLanguage, PluginManager.pluginDescriptionAt(index)" in home_qml,
+        "plugin card descriptions should depend on currentLanguage so they refresh at runtime",
+    )
 
     play_h = read("plugins/PlayPlugin/PlayPlugin.h")
     play_qml = read("plugins/PlayPlugin/qml/PlayPluginView.qml")
+    player_view_qml = read("plugins/PlayPlugin/qml/PlayerView.qml")
+    playlist_view_qml = read("plugins/PlayPlugin/qml/PlaylistView.qml")
+    control_bar_qml = read("plugins/PlayPlugin/qml/ControlBar.qml")
     dummy_h = read("plugins/DummyPlugin/DummyPlugin.h")
     dummy_qml = read("plugins/DummyPlugin/qml/DummyPluginView.qml")
 
     require('tr("Built-in player: video + playlist")' in play_h, "PlayPlugin description should be translatable")
     require('tr("Video Player")' in play_h, "PlayPlugin card name should be translatable")
     require('qsTr("Video Player")' in play_qml, "PlayPlugin QML title should be translatable")
+    require("import PluginBased 1.0" in player_view_qml, "PlayerView should access AppController for language refresh")
+    require("import PluginBased 1.0" in playlist_view_qml, "PlaylistView should access AppController for language refresh")
+    require("import PluginBased 1.0" in control_bar_qml, "ControlBar should access AppController for language refresh")
+    require(
+        'title: AppController.currentLanguage, qsTr("Open Media File")' in player_view_qml,
+        "PlayerView file dialog title should refresh when language changes",
+    )
+    require(
+        'text: AppController.currentLanguage, qsTr("Open a media file to start playback")' in player_view_qml,
+        "PlayerView empty-state text should refresh when language changes",
+    )
+    require('qsTr("Playlist")' in playlist_view_qml, "PlaylistView title should be translatable")
+    require('qsTr("%1 item(s)")' in playlist_view_qml, "PlaylistView item count should be translatable")
+    require(
+        'qsTr("No playlist items\\nClick + in the lower left to add media files")' in playlist_view_qml,
+        "PlaylistView empty-state text should be translatable",
+    )
+    require(
+        'qsTr("Double-click to play, hover to remove")' in playlist_view_qml,
+        "PlaylistView footer hint should be translatable",
+    )
+    require('qsTr("Open file")' in control_bar_qml, "ControlBar open tooltip should be translatable")
+    require('qsTr("Hide playlist")' in control_bar_qml, "ControlBar playlist tooltip should be translatable")
     require('tr("Example Plugin")' in dummy_h, "DummyPlugin card name should be translatable")
     require('tr("Stub plugin for framework validation")' in dummy_h, "DummyPlugin description should be translatable")
     require("qsTr(" in dummy_qml, "DummyPlugin QML should use qsTr for visible text")
     require("<name>PlayPluginView</name>" in translation_ts, "Chinese TS should include PlayPlugin QML context")
+    require("<name>PlayerView</name>" in translation_ts, "Chinese TS should include PlayerView QML context")
+    require("<source>Open a media file to start playback</source>" in translation_ts, "Chinese TS should include player empty-state text")
+    require("<name>PlaylistView</name>" in translation_ts, "Chinese TS should include PlaylistView QML context")
+    require("<source>Playlist</source>" in translation_ts, "Chinese TS should include playlist title")
+    require("<name>ControlBar</name>" in translation_ts, "Chinese TS should include ControlBar QML context")
+    require("<source>Open file</source>" in translation_ts, "Chinese TS should include control tooltip text")
     require("<name>DummyPluginView</name>" in translation_ts, "Chinese TS should include DummyPlugin QML context")
 
 

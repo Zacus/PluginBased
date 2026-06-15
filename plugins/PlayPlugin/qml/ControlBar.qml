@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls.Basic
 import QtQuick.Layouts
+import PluginBased 1.0
 import QuickUI.Components 1.0
 
 Rectangle {
@@ -108,25 +109,27 @@ Rectangle {
             Layout.fillWidth: true
             spacing: 6
 
-            IconButton { iconText: "＋"; tooltip: "Open file"; fontSize: 16; onClicked: root.openRequested() }
+            IconButton { iconText: "＋"; tooltip: AppController.currentLanguage, qsTr("Open file"); fontSize: 16; onClicked: root.openRequested() }
             Item { width: 8 }
-            IconButton { iconText: "⏮"; tooltip: "Previous"; fontSize: 15; onClicked: root.previousRequested() }
+            IconButton { iconText: "⏮"; tooltip: AppController.currentLanguage, qsTr("Previous"); fontSize: 15; onClicked: root.previousRequested() }
 
             IconButton {
                 iconText: root.playbackState === 1 ? "⏸" : "▶"
-                tooltip: root.playbackState === 1 ? "Pause" : "Play"
+                tooltip: AppController.currentLanguage,
+                         root.playbackState === 1 ? qsTr("Pause") : qsTr("Play")
                 fontSize: 20
                 onClicked: root.playPauseRequested()
             }
 
-            IconButton { iconText: "⏹"; tooltip: "Stop"; fontSize: 15; onClicked: root.stopRequested() }
-            IconButton { iconText: "⏭"; tooltip: "Next"; fontSize: 15; onClicked: root.nextRequested() }
+            IconButton { iconText: "⏹"; tooltip: AppController.currentLanguage, qsTr("Stop"); fontSize: 15; onClicked: root.stopRequested() }
+            IconButton { iconText: "⏭"; tooltip: AppController.currentLanguage, qsTr("Next"); fontSize: 15; onClicked: root.nextRequested() }
 
             Item { Layout.fillWidth: true }
 
             IconButton {
                 iconText: root.muted ? "◖" : "◕"
-                tooltip: root.muted ? "Unmute" : "Mute"
+                tooltip: AppController.currentLanguage,
+                         root.muted ? qsTr("Unmute") : qsTr("Mute")
                 fontSize: 15
                 onClicked: root.muteRequested()
             }
@@ -170,7 +173,8 @@ Rectangle {
             IconButton {
                 visible: root.showPlaylistButton
                 iconText: root.playlistOpen ? "☰" : "☷"
-                tooltip: root.playlistOpen ? "Hide playlist" : "Show playlist"
+                tooltip: AppController.currentLanguage,
+                         root.playlistOpen ? qsTr("Hide playlist") : qsTr("Show playlist")
                 fontSize: 16
                 onClicked: root.playlistRequested()
             }
