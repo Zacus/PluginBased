@@ -45,6 +45,7 @@ def main():
     audio_cpp = read("plugins/PlayPlugin/src/AudioRenderer.cpp")
     audio_h = read("plugins/PlayPlugin/src/AudioRenderer.h")
     surface_cpp = read("plugins/PlayPlugin/src/FFmpegSurface.cpp")
+    video_material_cpp = read("plugins/PlayPlugin/src/render/VideoMaterial.cpp")
     video_pixel_format_cpp = read("plugins/PlayPlugin/src/render/VideoPixelFormat.cpp")
     shader_frag = read("plugins/PlayPlugin/shaders/yuvvideo.frag")
     renderer_cpp = read("plugins/PlayPlugin/src/VideoRenderer.cpp")
@@ -289,7 +290,7 @@ def main():
     require("stopAllComponents();" in engine_cpp[engine_cpp.find("void PlayerEngine::onDecoderError"):],
             "decoder errors should stop playback components")
 
-    require("bytesPerSample" in surface_cpp,
+    require("bytesPerSample" in video_material_cpp,
             "black placeholder upload should account for R16 byte width")
     require('LOG_DEBUG("VideoRenderer: pts=' not in renderer_cpp,
             "per-frame video sync debug logging should be removed or throttled")
@@ -359,8 +360,8 @@ def main():
             "VideoPixelFormat should distinguish planar and semiplanar YUV layouts")
     require("QRhiTexture::RG8" in video_pixel_format_cpp and "QRhiTexture::RG16" in video_pixel_format_cpp,
             "NV12/P010 UV planes should upload as two-channel RHI textures")
-    require("formatMode" in video_pixel_format_cpp and "formatMode" in surface_cpp,
-            "VideoPixelFormat should pass a compact shader format mode through FFmpegSurface")
+    require("formatMode" in video_pixel_format_cpp and "formatMode" in video_material_cpp,
+            "VideoPixelFormat should pass a compact shader format mode through VideoMaterial")
     require("needs10BitExpansion" in video_pixel_format_cpp and "needs10bitExpansion" in shader_frag,
             "P010 should not reuse planar low-10bit expansion and cause color or brightness shifts")
     require(".rg" in shader_frag and "semiplanar" in shader_frag,
