@@ -113,6 +113,8 @@ QVariantMap PluginTemplateGenerator::writePlugin(const Options& options) const
 
     if (options.withQml && !pluginDir.mkpath(pluginPath + QStringLiteral("/qml")))
         return failure(QStringLiteral("Failed to create qml directory: %1/qml").arg(pluginPath));
+    if (!pluginDir.mkpath(pluginPath + QStringLiteral("/translations")))
+        return failure(QStringLiteral("Failed to create translations directory: %1/translations").arg(pluginPath));
     if (!options.iconPath.isEmpty() && !pluginDir.mkpath(pluginPath + QStringLiteral("/assets")))
         return failure(QStringLiteral("Failed to create assets directory: %1/assets").arg(pluginPath));
 
@@ -125,6 +127,7 @@ QVariantMap PluginTemplateGenerator::writePlugin(const Options& options) const
         {options.pluginName + QStringLiteral(".h"), headerText(options)},
         {options.pluginName + QStringLiteral(".cpp"), sourceText(options)},
         {options.pluginName + QStringLiteral(".json"), metadataText(options)},
+        {QStringLiteral("translations/") + options.pluginName + QStringLiteral("_zh_CN.ts"), translationText(options)},
     };
 
     for (const FileSpec& file : files) {
@@ -212,6 +215,11 @@ QString PluginTemplateGenerator::qmlString(const QString& value)
     return cppString(value);
 }
 
+QString PluginTemplateGenerator::xmlString(const QString& value)
+{
+    return value.toHtmlEscaped();
+}
+
 QVariantMap PluginTemplateGenerator::success(const QString& path)
 {
     return {
@@ -268,12 +276,13 @@ public:
     QString id()          const override { return QStringLiteral("%2"); }
     QString name()        const override { return QStringLiteral("%1"); }
     QString version()     const override { return QStringLiteral("1.0.0"); }
-    QString description() const override { return QStringLiteral("%3"); }
+    QString description() const override { return tr("%3"); }
     QString cardIcon()    const override { return QStringLiteral("%4"); }
-    QString cardName()    const override { return QStringLiteral("%5"); }
+    QString cardName()    const override { return tr("%5"); }
 
     bool initialize() override;
     void shutdown() override;
+    QStringList translationResourcePaths(const QString& languageName) const override;
 %6};
 )")
         .arg(options.pluginName,
@@ -331,7 +340,15 @@ void %1::shutdown()
 {
     LOG_INFO("%1::shutdown()");
 }
-%2%3)CPP")
+%2%3
+QStringList %1::translationResourcePaths(const QString& languageName) const
+{
+    if (languageName == QStringLiteral("zh_CN"))
+        return { QStringLiteral(":/%1/i18n/%1_zh_CN.qm") };
+
+    return {};
+}
+)CPP")
         .arg(options.pluginName, qmlImplementation, iconImplementation);
 }
 
@@ -393,6 +410,12 @@ qt_add_resources(%1 "%1Assets"
 )
 %2
 %4
+qt_add_translations(%1
+    TS_FILES
+        "${CMAKE_CURRENT_SOURCE_DIR}/translations/%1_zh_CN.ts"
+    RESOURCE_PREFIX "/%1/i18n"
+)
+
 set_target_properties(%1 PROPERTIES
     CXX_VISIBILITY_PRESET     hidden
     VISIBILITY_INLINES_HIDDEN ON
@@ -446,7 +469,7 @@ import QuickUI.Components 1.0
 Item {
     id: root
 
-    property string pageTitle: "%1"
+    property string pageTitle: qsTr("%1")
 
     Rectangle {
         anchors.fill: parent
@@ -469,7 +492,7 @@ Item {
 
         Text {
             Layout.fillWidth: true
-            text: "%2"
+            text: qsTr("%2")
             color: ComponentTheme.textSecondary
             font.pixelSize: 14
             wrapMode: Text.WordWrap
@@ -479,4 +502,47 @@ Item {
 }
 )")
         .arg(qmlString(options.displayName), qmlString(options.description));
+}
+
+QString PluginTemplateGenerator::translationText(const Options& options) const
+{
+    QString qmlContext;
+    if (options.withQml) {
+        qmlContext = QStringLiteral(R"(
+<context>
+    <name>%1View</name>
+    <message>
+        <source>%2</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>%3</source>
+        <translation type="unfinished"></translation>
+    </message>
+</context>
+)")
+            .arg(xmlString(options.pluginName),
+                 xmlString(options.displayName),
+                 xmlString(options.description));
+    }
+
+    return QStringLiteral(R"(<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE TS>
+<TS version="2.1" language="zh_CN">
+<context>
+    <name>%1</name>
+    <message>
+        <source>%2</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>%3</source>
+        <translation type="unfinished"></translation>
+    </message>
+</context>%4</TS>
+)")
+        .arg(xmlString(options.pluginName),
+             xmlString(options.displayName),
+             xmlString(options.description),
+             qmlContext);
 }

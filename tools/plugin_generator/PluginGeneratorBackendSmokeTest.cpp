@@ -54,12 +54,15 @@ static void verifyQmlPlugin(PluginTemplateGenerator& generator, const QString& p
     require(QFile::exists(pluginDir + QStringLiteral("/CameraToolPlugin.cpp")), QStringLiteral("missing source"));
     require(QFile::exists(pluginDir + QStringLiteral("/CameraToolPlugin.json")), QStringLiteral("missing metadata"));
     require(QFile::exists(pluginDir + QStringLiteral("/qml/CameraToolPluginView.qml")), QStringLiteral("missing qml view"));
+    require(QFile::exists(pluginDir + QStringLiteral("/translations/CameraToolPlugin_zh_CN.ts")),
+            QStringLiteral("missing plugin translation TS"));
     require(QFile::exists(pluginDir + QStringLiteral("/assets/icon.png")), QStringLiteral("missing copied icon asset"));
 
     const QString header = readFile(pluginDir + QStringLiteral("/CameraToolPlugin.h"));
     const QString source = readFile(pluginDir + QStringLiteral("/CameraToolPlugin.cpp"));
     const QString cmake = readFile(pluginDir + QStringLiteral("/CMakeLists.txt"));
     const QString qml = readFile(pluginDir + QStringLiteral("/qml/CameraToolPluginView.qml"));
+    const QString translations = readFile(pluginDir + QStringLiteral("/translations/CameraToolPlugin_zh_CN.ts"));
 
     require(header.contains(QStringLiteral("class CameraToolPlugin : public QObject, public IAppPlugin")),
             QStringLiteral("header should implement IAppPlugin"));
@@ -71,19 +74,37 @@ static void verifyQmlPlugin(PluginTemplateGenerator& generator, const QString& p
             QStringLiteral("QML plugin should expose UI"));
     require(header.contains(QStringLiteral("QUrl cardIconUrl() const override;")),
             QStringLiteral("plugin should expose an image icon URL"));
+    require(header.contains(QStringLiteral("QString description() const override { return tr(\"Camera utilities\"); }")),
+            QStringLiteral("description should be translatable"));
+    require(header.contains(QStringLiteral("QString cardName()    const override { return tr(\"Camera Tool\"); }")),
+            QStringLiteral("card name should be translatable"));
+    require(header.contains(QStringLiteral("QStringList translationResourcePaths(const QString& languageName) const override;")),
+            QStringLiteral("plugin should expose translation resource paths"));
     require(source.contains(QStringLiteral("qrc:/CameraToolPlugin/qml/CameraToolPluginView.qml")),
             QStringLiteral("source should return QML resource URL"));
     require(source.contains(QStringLiteral("qrc:/CameraToolPlugin/assets/icon.png")),
             QStringLiteral("source should return icon resource URL"));
+    require(source.contains(QStringLiteral(":/CameraToolPlugin/i18n/CameraToolPlugin_zh_CN.qm")),
+            QStringLiteral("source should return plugin translation resource URL"));
     require(cmake.contains(QStringLiteral("qt_add_qml_module(CameraToolPlugin")),
             QStringLiteral("QML plugin should add a QML module"));
     require(cmake.contains(QStringLiteral("NO_PLUGIN")),
             QStringLiteral("QML plugin should use NO_PLUGIN"));
+    require(cmake.contains(QStringLiteral("qt_add_translations(CameraToolPlugin")) &&
+            cmake.contains(QStringLiteral("translations/CameraToolPlugin_zh_CN.ts")) &&
+            cmake.contains(QStringLiteral("RESOURCE_PREFIX \"/CameraToolPlugin/i18n\"")),
+            QStringLiteral("CMake should embed plugin-owned translations"));
     require(cmake.contains(QStringLiteral("qt_add_resources(CameraToolPlugin")) &&
             cmake.contains(QStringLiteral("assets/icon.png")),
             QStringLiteral("CMake should embed copied icon assets"));
-    require(qml.contains(QStringLiteral("property string pageTitle: \"Camera Tool\"")),
-            QStringLiteral("QML should expose pageTitle"));
+    require(qml.contains(QStringLiteral("property string pageTitle: qsTr(\"Camera Tool\")")),
+            QStringLiteral("QML should translate pageTitle"));
+    require(qml.contains(QStringLiteral("text: qsTr(\"Camera utilities\")")),
+            QStringLiteral("QML should translate description text"));
+    require(translations.contains(QStringLiteral("<name>CameraToolPlugin</name>")) &&
+            translations.contains(QStringLiteral("<source>Camera Tool</source>")) &&
+            translations.contains(QStringLiteral("<source>Camera utilities</source>")),
+            QStringLiteral("translation TS should contain generated plugin text"));
 }
 
 static void verifyNoQmlPlugin(PluginTemplateGenerator& generator, const QString& parentDir)
@@ -105,8 +126,16 @@ static void verifyNoQmlPlugin(PluginTemplateGenerator& generator, const QString&
 
     require(!header.contains(QStringLiteral("hasQmlUI")), QStringLiteral("No-QML plugin should use default hasQmlUI"));
     require(!header.contains(QStringLiteral("qmlComponentUrl")), QStringLiteral("No-QML plugin should not declare QML URL"));
+    require(header.contains(QStringLiteral("QStringList translationResourcePaths(const QString& languageName) const override;")),
+            QStringLiteral("No-QML plugin should still expose translation resources"));
+    require(source.contains(QStringLiteral(":/AuditPlugin/i18n/AuditPlugin_zh_CN.qm")),
+            QStringLiteral("No-QML plugin should still return translation resource URL"));
     require(!source.contains(QStringLiteral("qrc:/")), QStringLiteral("No-QML plugin should not return qrc URL"));
     require(!cmake.contains(QStringLiteral("qt_add_qml_module")), QStringLiteral("No-QML plugin should not add QML module"));
+    require(cmake.contains(QStringLiteral("qt_add_translations(AuditPlugin")),
+            QStringLiteral("No-QML plugin should still embed translations"));
+    require(QFile::exists(pluginDir + QStringLiteral("/translations/AuditPlugin_zh_CN.ts")),
+            QStringLiteral("No-QML plugin should still create translation TS"));
 }
 
 static void verifyInvalidName(PluginTemplateGenerator& generator, const QString& parentDir)

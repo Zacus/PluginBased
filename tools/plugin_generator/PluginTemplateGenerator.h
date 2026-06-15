@@ -35,6 +35,7 @@ private:
     static QString cppString(const QString& value);
     static QString jsonString(const QString& value);
     static QString qmlString(const QString& value);
+    static QString xmlString(const QString& value);
     static QVariantMap success(const QString& path);
     static QVariantMap failure(const QString& message);
 
@@ -46,5 +47,6 @@ private:
     QString metadataText(const Options& options) const;
     QString cmakeText(const Options& options) const;
     QString qmlText(const Options& options) const;
+    QString translationText(const Options& options) const;
     bool copyIconAsset(const Options& options, const QString& pluginPath, QString* error) const;
 };

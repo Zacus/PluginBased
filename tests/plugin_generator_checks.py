@@ -89,6 +89,10 @@ def test_generated_qml_uses_component_theme():
             "generated QML plugins should use ComponentTheme surface tokens")
     require("ComponentTheme.textPrimary" in text and "ComponentTheme.textSecondary" in text,
             "generated QML plugins should use ComponentTheme text tokens")
+    require('property string pageTitle: qsTr("%1")' in text,
+            "generated QML plugins should translate page titles with qsTr")
+    require('text: qsTr("%2")' in text,
+            "generated QML plugins should translate description text with qsTr")
 
 
 def test_generated_metadata_uses_plugin_schema():
@@ -104,6 +108,25 @@ def test_generated_metadata_uses_plugin_schema():
             "generated plugins should declare stable kebab-case plugin id")
     require('"hasQml": %3' in text,
             "generated plugins should declare whether they provide QML UI")
+
+
+def test_generated_plugins_embed_their_own_translations():
+    generator_cpp = ROOT / "tools" / "plugin_generator" / "PluginTemplateGenerator.cpp"
+    text = generator_cpp.read_text(encoding="utf-8")
+    require("translationResourcePaths(const QString& languageName) const override" in text,
+            "generated plugins should declare plugin-owned translation resources")
+    require("translationResourcePaths(const QString& languageName) const" in text,
+            "generated plugins should implement plugin-owned translation resources")
+    require(':/%1/i18n/%1_zh_CN.qm' in text,
+            "generated plugins should return their own zh_CN qm resource path")
+    require("qt_add_translations(%1" in text,
+            "generated plugin CMake should compile translations into the plugin target")
+    require('RESOURCE_PREFIX "/%1/i18n"' in text,
+            "generated plugin translations should use a plugin-local resource namespace")
+    require("translations/%1_zh_CN.ts" in text,
+            "generated plugins should create a plugin-local Chinese TS file")
+    require('tr("%3")' in text and 'tr("%5")' in text,
+            "generated plugin card text should be translated through QObject::tr")
 
 
 def test_host_supports_image_card_icons():
@@ -128,6 +151,7 @@ def main():
     test_visual_qml_exposes_plugin_type_choice()
     test_generated_qml_uses_component_theme()
     test_generated_metadata_uses_plugin_schema()
+    test_generated_plugins_embed_their_own_translations()
     test_host_supports_image_card_icons()
 
 
