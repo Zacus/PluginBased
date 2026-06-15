@@ -3,6 +3,7 @@
 #include "FFmpegUtils.h"
 #include "FrameQueue.h"
 #include "decode/DecodePerformance.h"
+#include "decode/VideoFrameProcessor.h"
 #include "hw/HardwareDecoderBackend.h"
 
 #include <QThread>
@@ -102,12 +103,6 @@ private:
     void doSeek(qint64 posMs, int serial);
     bool sendPacketToDecoder(AVCodecContext* ctx, AVPacket* pkt,
                              FrameQueue<AVFramePtr>* queue, int serial);
-    AVFramePtr prepareVideoFrameForQueue(AVFramePtr frame);
-    bool shouldPreserveHardwareFrameForDirectRender(const AVFrame* frame) const;
-    NativeVideoFrame makeNativeVideoFrameMetadata(const AVFrame* frame) const;
-    AVFramePtr transferHardwareFrameToCpu(AVFramePtr frame);
-    void copyFrameMetadata(const AVFrame* source, AVFrame* destination) const;
-    AVFramePtr normalizeVideoFrame(AVFramePtr frame);
     void closeInternal();
 
     // ── 队列（外部持有，不拥有所有权）───────────────────────────────────────
@@ -118,11 +113,10 @@ private:
     AVFormatContextPtr m_fmtCtx;
     AVCodecContextPtr  m_videoCodecCtx;
     AVCodecContextPtr  m_audioCodecCtx;
-    SwsContextPtr      m_videoSwsCtx;
     std::unique_ptr<HardwareDecoderBackend> m_hardwareDecoder;
-    int m_hardwareTransferFailureCount = 0;
     QString m_activeVideoDecoderName = QStringLiteral("software");
     DecodePerformanceLogger m_decodePerf;
+    VideoFrameProcessor m_videoFrameProcessor;
     int  m_videoStreamIdx = -1;
     int  m_audioStreamIdx = -1;
 

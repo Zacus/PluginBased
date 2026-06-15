@@ -33,6 +33,8 @@ def main():
     decoder_cpp = read("plugins/PlayPlugin/src/FFmpegDecoder.cpp")
     decode_perf_h = read("plugins/PlayPlugin/src/decode/DecodePerformance.h")
     decode_perf_cpp = read("plugins/PlayPlugin/src/decode/DecodePerformance.cpp")
+    video_processor_h = read("plugins/PlayPlugin/src/decode/VideoFrameProcessor.h")
+    video_processor_cpp = read("plugins/PlayPlugin/src/decode/VideoFrameProcessor.cpp")
     hw_backend_h = read("plugins/PlayPlugin/src/hw/HardwareDecoderBackend.h")
     hw_factory_h = read("plugins/PlayPlugin/src/hw/HardwareDecoderFactory.h")
     hw_factory_cpp = read("plugins/PlayPlugin/src/hw/HardwareDecoderFactory.cpp")
@@ -357,7 +359,7 @@ def main():
             "PlayerEngine should not consume host-originated pending open requests")
     require("buildColorMatrix" not in surface_cpp and "colorMatrix" not in surface_cpp,
             "FFmpegSurface should not keep obsolete color matrix code or comments")
-    require("AV_PIX_FMT_NV12" in decoder_cpp and "AV_PIX_FMT_P010LE" in decoder_cpp,
+    require("AV_PIX_FMT_NV12" in video_processor_cpp and "AV_PIX_FMT_P010LE" in video_processor_cpp,
             "decoder should let NV12 and P010 frames bypass sws normalization")
     require("PlaneLayout" in video_pixel_format_cpp and "Semiplanar" in video_pixel_format_cpp,
             "VideoPixelFormat should distinguish planar and semiplanar YUV layouts")
@@ -375,10 +377,10 @@ def main():
             "Apple bridge should create Metal textures from CVPixelBuffer planes")
     require("QRhiTexture::NativeTexture" in apple_bridge_mm and "createFrom" in apple_bridge_mm,
             "Apple bridge should wrap Metal textures with QRhiTexture::createFrom")
-    require("AV_PIX_FMT_VIDEOTOOLBOX" in decoder_cpp and
-            "shouldPreserveHardwareFrameForDirectRender" in decoder_cpp,
+    require("AV_PIX_FMT_VIDEOTOOLBOX" in video_processor_cpp and
+            "shouldPreserveHardwareFrameForDirectRender" in video_processor_cpp,
             "decoder should preserve VideoToolbox frames when native render is enabled")
-    require("transferHardwareFrameToCpu" in decoder_cpp and "nativeFallbackVideoFrames" in decode_perf_h,
+    require("transferHardwareFrameToCpu" in video_processor_cpp and "nativeFallbackVideoFrames" in decode_perf_h,
             "native render failures should be observable and keep CPU fallback available")
     require("AppleMetalVideoTextureBridge" in video_node_cpp and "setNativeFrame" in video_node_cpp,
             "VideoNode should consume native VideoToolbox frames")
@@ -423,7 +425,7 @@ def main():
     require("HoverHandler" in playlist_qml and "TapHandler" in playlist_qml and
             "id: delegateMouse" not in playlist_qml,
             "playlist row hover/double-click handling should not cover remove buttons")
-    require("normalizeVideoFrame" in decoder_h and "sws_getCachedContext" in decoder_cpp,
+    require("normalizeVideoFrame" in video_processor_h and "sws_getCachedContext" in video_processor_cpp,
             "unsupported video pixel formats should be converted before rendering")
     require("class HardwareDecoderBackend" in hw_backend_h,
             "hardware decoder backend interface should exist")
@@ -496,20 +498,21 @@ def main():
             "VideoToolbox backend should attach hardware device to AVCodecContext")
     require("av_hwframe_transfer_data" in videotoolbox_cpp,
             "VideoToolbox backend should transfer hardware frames to CPU frames")
-    require("copyFrameMetadata" in decoder_cpp,
+    require("copyFrameMetadata" in video_processor_cpp,
             "FFmpegDecoder should preserve timing and color metadata after hardware transfer")
-    require("prepareVideoFrameForQueue" in decoder_h and "prepareVideoFrameForQueue(std::move(frame))" in decoder_cpp,
-            "FFmpegDecoder should prepare video frames through a single helper before queueing")
-    prepare_body = decoder_cpp[decoder_cpp.find("AVFramePtr FFmpegDecoder::prepareVideoFrameForQueue"):
-                               decoder_cpp.find("AVFramePtr FFmpegDecoder::normalizeVideoFrame")]
+    require("prepareForQueue" in video_processor_h and
+            "m_videoFrameProcessor.prepareForQueue" in decoder_cpp,
+            "FFmpegDecoder should prepare video frames through VideoFrameProcessor before queueing")
+    prepare_body = video_processor_cpp[video_processor_cpp.find("AVFramePtr VideoFrameProcessor::prepareForQueue"):
+                                       video_processor_cpp.find("bool VideoFrameProcessor::shouldPreserveHardwareFrameForDirectRender")]
     require("transferHardwareFrameToCpu" in prepare_body and
             prepare_body.find("transferHardwareFrameToCpu") < prepare_body.find("normalizeVideoFrame"),
             "hardware frames should be transferred before normalizeVideoFrame")
-    require("m_hardwareTransferFailureCount" in decoder_h,
-            "FFmpegDecoder should count hardware transfer failures")
-    require("MaxHardwareTransferFailureLogs" in decoder_cpp,
+    require("m_hardwareTransferFailureCount" in video_processor_h,
+            "VideoFrameProcessor should count hardware transfer failures")
+    require("MaxHardwareTransferFailureLogs" in video_processor_cpp,
             "hardware transfer failure logs should be throttled")
-    require("hardware frame transfer failed" in decoder_cpp,
+    require("hardware frame transfer failed" in video_processor_cpp,
             "decoder should log hardware transfer failures at the decode boundary")
     require("LOG_WARN(\"VideoToolboxBackend: av_hwframe_transfer_data failed" not in videotoolbox_cpp,
             "backend should not emit one warning for every failed transfer")

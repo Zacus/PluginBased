@@ -76,6 +76,7 @@ qt_add_qml_module(PlayPlugin
         src/FFmpegUtils.h
         src/FrameQueue.h
         src/decode/DecodePerformance.h src/decode/DecodePerformance.cpp
+        src/decode/VideoFrameProcessor.h src/decode/VideoFrameProcessor.cpp
         src/FFmpegDecoder.h    src/FFmpegDecoder.cpp
         src/hw/HardwareDecoderBackend.h
         src/hw/HardwareDecoderFactory.h src/hw/HardwareDecoderFactory.cpp

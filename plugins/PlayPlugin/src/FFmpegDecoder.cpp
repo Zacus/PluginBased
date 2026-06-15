@@ -4,29 +4,6 @@
 
 #include <QFileInfo>
 
-namespace {
-
-constexpr int MaxHardwareTransferFailureLogs = 3;
-
-static bool isRendererSupportedVideoFormat(int format)
-{
-    switch (format)
-    {
-    case AV_PIX_FMT_YUV420P:
-    case AV_PIX_FMT_YUVJ420P:
-    case AV_PIX_FMT_NV12:
-    case AV_PIX_FMT_YUV420P10LE:
-    case AV_PIX_FMT_P010LE:
-    case AV_PIX_FMT_YUV422P10LE:
-    case AV_PIX_FMT_YUV444P10LE:
-        return true;
-    default:
-        return false;
-    }
-}
-
-} // namespace
-
 // ─────────────────────────────────────────────────────────────────────────────
 // 构造 / 析构
 // ─────────────────────────────────────────────────────────────────────────────
@@ -496,7 +473,11 @@ bool FFmpegDecoder::sendPacketToDecoder(AVCodecContext* ctx, AVPacket* pkt,
             if (frame->pts != AV_NOPTS_VALUE)
                 emit positionChanged(frame->pts / 1000);
 
-            frame = prepareVideoFrameForQueue(std::move(frame));
+            frame = m_videoFrameProcessor.prepareForQueue(
+                std::move(frame),
+                m_hardwareDecoder.get(),
+                m_videoToolboxDirectRenderingEnabled.loadRelaxed() != 0,
+                m_decodePerf.stats());
             if (!frame)
             {
                 m_decodePerf.maybeLog(m_activeVideoDecoderName);
@@ -535,168 +516,6 @@ bool FFmpegDecoder::sendPacketToDecoder(AVCodecContext* ctx, AVPacket* pkt,
         }
     }
     return true;
-}
-
-void FFmpegDecoder::copyFrameMetadata(const AVFrame* source, AVFrame* destination) const
-{
-    destination->pts = source->pts;
-    destination->sample_aspect_ratio = source->sample_aspect_ratio;
-    destination->color_range = source->color_range;
-    destination->colorspace = source->colorspace;
-    destination->color_primaries = source->color_primaries;
-    destination->color_trc = source->color_trc;
-    destination->chroma_location = source->chroma_location;
-}
-
-AVFramePtr FFmpegDecoder::transferHardwareFrameToCpu(AVFramePtr frame)
-{
-    if (!m_hardwareDecoder || !m_hardwareDecoder->isHardwareFrame(frame.get()))
-        return frame;
-
-    ++m_decodePerf.stats().hardwareVideoFrames;
-    QElapsedTimer transferTimer;
-    transferTimer.start();
-    AVFramePtr cpuFrame = m_hardwareDecoder->transferToCpuFrame(frame.get());
-    const qint64 transferUs = transferTimer.nsecsElapsed() / 1000;
-    m_decodePerf.stats().transferTotalUs += transferUs;
-    if (transferUs > m_decodePerf.stats().transferMaxUs)
-        m_decodePerf.stats().transferMaxUs = transferUs;
-
-    if (!cpuFrame)
-    {
-        ++m_decodePerf.stats().transferFailures;
-        ++m_hardwareTransferFailureCount;
-        if (m_hardwareTransferFailureCount <= MaxHardwareTransferFailureLogs)
-        {
-            LOG_WARN("FFmpegDecoder: hardware frame transfer failed, dropping frame");
-        }
-        return {};
-    }
-
-    m_hardwareTransferFailureCount = 0;
-    ++m_decodePerf.stats().transferredVideoFrames;
-    m_decodePerf.stats().cpuPixelFormat = cpuFrame->format;
-    copyFrameMetadata(frame.get(), cpuFrame.get());
-    return cpuFrame;
-}
-
-AVFramePtr FFmpegDecoder::prepareVideoFrameForQueue(AVFramePtr frame)
-{
-    if (shouldPreserveHardwareFrameForDirectRender(frame.get()))
-    {
-        ++m_decodePerf.stats().nativeVideoFrames;
-        return frame;
-    }
-
-    if (m_hardwareDecoder && m_hardwareDecoder->isHardwareFrame(frame.get()))
-        ++m_decodePerf.stats().nativeFallbackVideoFrames;
-
-    frame = transferHardwareFrameToCpu(std::move(frame));
-    if (!frame)
-        return {};
-    return normalizeVideoFrame(std::move(frame));
-}
-
-bool FFmpegDecoder::shouldPreserveHardwareFrameForDirectRender(const AVFrame* frame) const
-{
-    return m_videoToolboxDirectRenderingEnabled.loadRelaxed() &&
-           m_hardwareDecoder &&
-           frame &&
-           frame->format == AV_PIX_FMT_VIDEOTOOLBOX;
-}
-
-NativeVideoFrame FFmpegDecoder::makeNativeVideoFrameMetadata(const AVFrame* frame) const
-{
-    NativeVideoFrame native;
-    if (!frame || frame->format != AV_PIX_FMT_VIDEOTOOLBOX)
-        return native;
-
-    native.kind = NativeFrameKind::VideoToolbox;
-    native.bt709 =
-        frame->colorspace == AVCOL_SPC_BT709 ||
-        (frame->colorspace == AVCOL_SPC_UNSPECIFIED && frame->width >= 1280);
-    return native;
-}
-
-AVFramePtr FFmpegDecoder::normalizeVideoFrame(AVFramePtr frame)
-{
-    if (!frame || isRendererSupportedVideoFormat(frame->format))
-        return frame;
-
-    QElapsedTimer normalizeTimer;
-    normalizeTimer.start();
-
-    auto converted = make_frame();
-    converted->format = AV_PIX_FMT_YUV420P;
-    converted->width = frame->width;
-    converted->height = frame->height;
-    converted->pts = frame->pts;
-    converted->sample_aspect_ratio = frame->sample_aspect_ratio;
-    converted->color_range = frame->color_range;
-    converted->colorspace = frame->colorspace;
-    converted->color_primaries = frame->color_primaries;
-    converted->color_trc = frame->color_trc;
-    converted->chroma_location = frame->chroma_location;
-
-    int ret = av_frame_get_buffer(converted.get(), 32);
-    if (ret < 0)
-    {
-        LOG_WARN("FFmpegDecoder: av_frame_get_buffer for pixel format fallback failed: {}",
-                 av_err(ret));
-        return {};
-    }
-
-    ret = av_frame_make_writable(converted.get());
-    if (ret < 0)
-    {
-        LOG_WARN("FFmpegDecoder: av_frame_make_writable for pixel format fallback failed: {}",
-                 av_err(ret));
-        return {};
-    }
-
-    SwsContext* oldCtx = m_videoSwsCtx.release();
-    SwsContext* sws = sws_getCachedContext(
-        oldCtx,
-        frame->width,
-        frame->height,
-        static_cast<AVPixelFormat>(frame->format),
-        converted->width,
-        converted->height,
-        AV_PIX_FMT_YUV420P,
-        SWS_BILINEAR,
-        nullptr,
-        nullptr,
-        nullptr);
-
-    if (!sws)
-    {
-        LOG_WARN("FFmpegDecoder: sws_getCachedContext failed for pixel format {}",
-                 frame->format);
-        return {};
-    }
-    m_videoSwsCtx.reset(sws);
-
-    ret = sws_scale(m_videoSwsCtx.get(),
-                    frame->data,
-                    frame->linesize,
-                    0,
-                    frame->height,
-                    converted->data,
-                    converted->linesize);
-    if (ret <= 0)
-    {
-        LOG_WARN("FFmpegDecoder: sws_scale failed for pixel format fallback");
-        return {};
-    }
-
-    const qint64 normalizeUs = normalizeTimer.nsecsElapsed() / 1000;
-    ++m_decodePerf.stats().normalizedVideoFrames;
-    m_decodePerf.stats().normalizeTotalUs += normalizeUs;
-    if (normalizeUs > m_decodePerf.stats().normalizeMaxUs)
-        m_decodePerf.stats().normalizeMaxUs = normalizeUs;
-    m_decodePerf.stats().cpuPixelFormat = converted->format;
-
-    return converted;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -741,7 +560,7 @@ void FFmpegDecoder::closeInternal()
     m_hardwareDecoder.reset();
     m_videoCodecCtx.reset();
     m_audioCodecCtx.reset();
-    m_videoSwsCtx.reset();
+    m_videoFrameProcessor.reset();
     m_fmtCtx.reset();
     m_videoStreamIdx = -1;
     m_audioStreamIdx = -1;
@@ -753,7 +572,6 @@ void FFmpegDecoder::closeInternal()
     m_audioSampleRate = 0;
     m_audioChannelLayoutMask = 0;
     m_audioSampleFmt = AV_SAMPLE_FMT_FLTP;
-    m_hardwareTransferFailureCount = 0;
     m_videoToolboxDirectRenderingEnabled.storeRelaxed(0);
     m_activeVideoDecoderName = QStringLiteral("software");
     m_decodePerf.reset();
