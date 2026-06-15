@@ -1,4 +1,5 @@
 #include "FFmpegSurface.h"
+#include "render/VideoPixelFormat.h"
 
 #if defined(Q_OS_APPLE)
 #include "native/AppleMetalVideoTextureBridge.h"
@@ -66,100 +67,6 @@ struct PendingUpload
     bool valid = false;
 };
 
-// ══════════════════════════════════════════════════════════════════════════════
-// VideoMaterial
-// ══════════════════════════════════════════════════════════════════════════════
-enum class PlaneLayout { Planar, Semiplanar };
-
-// ══════════════════════════════════════════════════════════════════════════════
-// PixelFormatInfo
-//
-// 描述一种 YUV 像素格式的所有属性，集中管理格式判断逻辑。
-// 新增格式只需在 fromAVFormat() 里加一行。
-// ══════════════════════════════════════════════════════════════════════════════
-
-struct PixelFormatInfo
-{
-    // 格式是否有效
-    bool valid = false;
-
-    // RHI 纹理格式
-    QRhiTexture::Format lumaFormat = QRhiTexture::R8;
-    QRhiTexture::Format chromaFormat = QRhiTexture::R8;
-
-    // 色度平面相对亮度平面的尺寸比例
-    int chromaWidthDivisor  = 2;  // UV 宽 = Y 宽 / divisor
-    int chromaHeightDivisor = 2;  // UV 高 = Y 高 / divisor
-
-    // shader 里是否需要 10bit 归一化
-    bool is10bit = false;
-
-    // planar 10bit 格式用低 10bit 存储，需要 shader 从 R16 归一化值扩回 10bit。
-    // P010 使用高 10bit 存储，R16 采样后已经接近目标归一化值，不应再次扩展。
-    bool needs10BitExpansion = false;
-
-    // shader 格式模式：0=8bit planar, 1=10bit planar, 2=8bit semiplanar, 3=10bit semiplanar
-    float formatMode = 0.0f;
-
-    PlaneLayout planeLayout = PlaneLayout::Planar;
-
-    // 色度平面实际尺寸
-    int chromaWidth (int w) const { return (w + chromaWidthDivisor  - 1) / chromaWidthDivisor;  }
-    int chromaHeight(int h) const { return (h + chromaHeightDivisor - 1) / chromaHeightDivisor; }
-    bool isSemiplanar() const { return planeLayout == PlaneLayout::Semiplanar; }
-
-    // ── 工厂方法：从 AVPixelFormat 构造 ─────────────────────────────────────
-    static PixelFormatInfo fromAVFormat(int avFormat)
-    {
-        switch (avFormat) {
-        // 8-bit YUV420
-        case AV_PIX_FMT_YUV420P:
-        case AV_PIX_FMT_YUVJ420P:
-            return { true, QRhiTexture::R8,  QRhiTexture::R8,  2, 2, false, false, 0.0f,
-                     PlaneLayout::Planar };
-
-        // 8-bit NV12（Y + 交错 UV）
-        case AV_PIX_FMT_NV12:
-            return { true, QRhiTexture::R8, QRhiTexture::RG8, 2, 2, false, false, 2.0f,
-                     PlaneLayout::Semiplanar };
-
-        // 10-bit YUV420
-        case AV_PIX_FMT_YUV420P10LE:
-            return { true, QRhiTexture::R16, QRhiTexture::R16, 2, 2, true, true, 1.0f,
-                     PlaneLayout::Planar };
-
-        // 10-bit P010（Y + 交错 UV）
-        case AV_PIX_FMT_P010LE:
-            return { true, QRhiTexture::R16, QRhiTexture::RG16, 2, 2, true, false, 3.0f,
-                     PlaneLayout::Semiplanar };
-
-        // 10-bit YUV422（色度与亮度等高）
-        case AV_PIX_FMT_YUV422P10LE:
-            return { true, QRhiTexture::R16, QRhiTexture::R16, 2, 1, true, true, 1.0f,
-                     PlaneLayout::Planar };
-
-        // 10-bit YUV444（色度与亮度等宽等高）
-        case AV_PIX_FMT_YUV444P10LE:
-            return { true, QRhiTexture::R16, QRhiTexture::R16, 1, 1, true, true, 1.0f,
-                     PlaneLayout::Planar };
-
-        default:
-            return {};  // valid = false
-        }
-    }
-
-    bool operator==(const PixelFormatInfo& o) const {
-        return lumaFormat          == o.lumaFormat
-            && chromaFormat        == o.chromaFormat
-            && chromaWidthDivisor  == o.chromaWidthDivisor
-            && chromaHeightDivisor == o.chromaHeightDivisor
-            && is10bit             == o.is10bit
-            && needs10BitExpansion == o.needs10BitExpansion
-            && formatMode          == o.formatMode
-            && planeLayout         == o.planeLayout;
-    }
-    bool operator!=(const PixelFormatInfo& o) const { return !(*this == o); }
-};
 class VideoMaterial : public QSGMaterial
 {
 public:

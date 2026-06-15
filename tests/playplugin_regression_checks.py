@@ -45,6 +45,7 @@ def main():
     audio_cpp = read("plugins/PlayPlugin/src/AudioRenderer.cpp")
     audio_h = read("plugins/PlayPlugin/src/AudioRenderer.h")
     surface_cpp = read("plugins/PlayPlugin/src/FFmpegSurface.cpp")
+    video_pixel_format_cpp = read("plugins/PlayPlugin/src/render/VideoPixelFormat.cpp")
     shader_frag = read("plugins/PlayPlugin/shaders/yuvvideo.frag")
     renderer_cpp = read("plugins/PlayPlugin/src/VideoRenderer.cpp")
     renderer_h = read("plugins/PlayPlugin/src/VideoRenderer.h")
@@ -354,13 +355,13 @@ def main():
             "FFmpegSurface should not keep obsolete color matrix code or comments")
     require("AV_PIX_FMT_NV12" in decoder_cpp and "AV_PIX_FMT_P010LE" in decoder_cpp,
             "decoder should let NV12 and P010 frames bypass sws normalization")
-    require("PlaneLayout" in surface_cpp and "Semiplanar" in surface_cpp,
-            "FFmpegSurface should distinguish planar and semiplanar YUV layouts")
-    require("QRhiTexture::RG8" in surface_cpp and "QRhiTexture::RG16" in surface_cpp,
+    require("PlaneLayout" in video_pixel_format_cpp and "Semiplanar" in video_pixel_format_cpp,
+            "VideoPixelFormat should distinguish planar and semiplanar YUV layouts")
+    require("QRhiTexture::RG8" in video_pixel_format_cpp and "QRhiTexture::RG16" in video_pixel_format_cpp,
             "NV12/P010 UV planes should upload as two-channel RHI textures")
-    require("formatMode" in surface_cpp,
-            "FFmpegSurface should pass a compact shader format mode")
-    require("needs10BitExpansion" in surface_cpp and "needs10bitExpansion" in shader_frag,
+    require("formatMode" in video_pixel_format_cpp and "formatMode" in surface_cpp,
+            "VideoPixelFormat should pass a compact shader format mode through FFmpegSurface")
+    require("needs10BitExpansion" in video_pixel_format_cpp and "needs10bitExpansion" in shader_frag,
             "P010 should not reuse planar low-10bit expansion and cause color or brightness shifts")
     require(".rg" in shader_frag and "semiplanar" in shader_frag,
             "shader should sample NV12/P010 UV from texU.rg")
