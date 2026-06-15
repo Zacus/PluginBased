@@ -2,6 +2,7 @@
 
 #include "FFmpegUtils.h"
 #include "FrameQueue.h"
+#include "decode/DecodePerformance.h"
 #include "hw/HardwareDecoderBackend.h"
 
 #include <QThread>
@@ -10,7 +11,6 @@
 #include <QMutex>
 #include <QAtomicInt>
 #include <QWaitCondition>
-#include <QElapsedTimer>
 
 #include <memory>
 
@@ -94,24 +94,6 @@ protected:
     void run() override;
 
 private:
-    struct DecodePerformanceStats {
-        qint64 decodedVideoFrames = 0;
-        qint64 hardwareVideoFrames = 0;
-        qint64 transferredVideoFrames = 0;
-        qint64 transferFailures = 0;
-        qint64 transferTotalUs = 0;
-        qint64 transferMaxUs = 0;
-        qint64 nativeVideoFrames = 0;
-        qint64 nativeFallbackVideoFrames = 0;
-        qint64 normalizedVideoFrames = 0;
-        qint64 normalizeTotalUs = 0;
-        qint64 normalizeMaxUs = 0;
-        qint64 queuedVideoFrames = 0;
-        qint64 queueDroppedVideoFrames = 0;
-        int sourcePixelFormat = AV_PIX_FMT_NONE;
-        int cpuPixelFormat = AV_PIX_FMT_NONE;
-    };
-
     // ── 内部方法 ─────────────────────────────────────────────────────────────
     bool openInternal(const QString& path);
     bool openVideoCodec(AVStream* stream, const AVCodec* codec);
@@ -126,8 +108,6 @@ private:
     AVFramePtr transferHardwareFrameToCpu(AVFramePtr frame);
     void copyFrameMetadata(const AVFrame* source, AVFrame* destination) const;
     AVFramePtr normalizeVideoFrame(AVFramePtr frame);
-    void resetDecodePerformanceStats();
-    void maybeLogDecodePerformance();
     void closeInternal();
 
     // ── 队列（外部持有，不拥有所有权）───────────────────────────────────────
@@ -142,8 +122,7 @@ private:
     std::unique_ptr<HardwareDecoderBackend> m_hardwareDecoder;
     int m_hardwareTransferFailureCount = 0;
     QString m_activeVideoDecoderName = QStringLiteral("software");
-    DecodePerformanceStats m_decodePerf;
-    QElapsedTimer m_decodePerfLogTimer;
+    DecodePerformanceLogger m_decodePerf;
     int  m_videoStreamIdx = -1;
     int  m_audioStreamIdx = -1;
 

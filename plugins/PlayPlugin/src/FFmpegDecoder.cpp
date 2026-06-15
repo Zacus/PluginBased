@@ -6,7 +6,6 @@
 
 namespace {
 
-constexpr int PerformanceLogIntervalMs = 2000;
 constexpr int MaxHardwareTransferFailureLogs = 3;
 
 static bool isRendererSupportedVideoFormat(int format)
@@ -24,19 +23,6 @@ static bool isRendererSupportedVideoFormat(int format)
     default:
         return false;
     }
-}
-
-std::string pixelFormatName(int format)
-{
-    if (format == AV_PIX_FMT_NONE)
-        return "none";
-    const char* name = av_get_pix_fmt_name(static_cast<AVPixelFormat>(format));
-    return name ? name : "unknown";
-}
-
-qint64 averageUs(qint64 totalUs, qint64 count)
-{
-    return count > 0 ? totalUs / count : 0;
 }
 
 } // namespace
@@ -181,7 +167,7 @@ void FFmpegDecoder::run()
                             m_audioSampleRate, m_audioChannels, m_audioChannelLayoutMask,
                             m_audioSampleFmt, m_formatName);
 
-        resetDecodePerformanceStats();
+        m_decodePerf.reset();
         decodeLoop();
         closeInternal();
     }
@@ -504,8 +490,8 @@ bool FFmpegDecoder::sendPacketToDecoder(AVCodecContext* ctx, AVPacket* pkt,
 
         if (ctx == m_videoCodecCtx.get())
         {
-            ++m_decodePerf.decodedVideoFrames;
-            m_decodePerf.sourcePixelFormat = frame->format;
+            ++m_decodePerf.stats().decodedVideoFrames;
+            m_decodePerf.stats().sourcePixelFormat = frame->format;
 
             if (frame->pts != AV_NOPTS_VALUE)
                 emit positionChanged(frame->pts / 1000);
@@ -513,23 +499,23 @@ bool FFmpegDecoder::sendPacketToDecoder(AVCodecContext* ctx, AVPacket* pkt,
             frame = prepareVideoFrameForQueue(std::move(frame));
             if (!frame)
             {
-                maybeLogDecodePerformance();
+                m_decodePerf.maybeLog(m_activeVideoDecoderName);
                 continue;
             }
 
-            m_decodePerf.cpuPixelFormat = frame->format;
+            m_decodePerf.stats().cpuPixelFormat = frame->format;
 
             if (m_audioStreamIdx >= 0)
             {
                 // 有音频时以音频时钟为主，视频落后可丢帧追赶。
                 if (!queue->tryPush(std::move(frame), serial))
                 {
-                    ++m_decodePerf.queueDroppedVideoFrames;
+                    ++m_decodePerf.stats().queueDroppedVideoFrames;
                     LOG_DEBUG("FFmpegDecoder: video queue full, frame dropped");
                 }
                 else
                 {
-                    ++m_decodePerf.queuedVideoFrames;
+                    ++m_decodePerf.stats().queuedVideoFrames;
                 }
             }
             else
@@ -537,9 +523,9 @@ bool FFmpegDecoder::sendPacketToDecoder(AVCodecContext* ctx, AVPacket* pkt,
                 // 无音频时视频队列就是唯一节奏来源，必须保留背压避免跳帧。
                 if (!queue->push(std::move(frame), serial))
                     return false;
-                ++m_decodePerf.queuedVideoFrames;
+                ++m_decodePerf.stats().queuedVideoFrames;
             }
-            maybeLogDecodePerformance();
+            m_decodePerf.maybeLog(m_activeVideoDecoderName);
         }
         else
         {
@@ -567,18 +553,18 @@ AVFramePtr FFmpegDecoder::transferHardwareFrameToCpu(AVFramePtr frame)
     if (!m_hardwareDecoder || !m_hardwareDecoder->isHardwareFrame(frame.get()))
         return frame;
 
-    ++m_decodePerf.hardwareVideoFrames;
+    ++m_decodePerf.stats().hardwareVideoFrames;
     QElapsedTimer transferTimer;
     transferTimer.start();
     AVFramePtr cpuFrame = m_hardwareDecoder->transferToCpuFrame(frame.get());
     const qint64 transferUs = transferTimer.nsecsElapsed() / 1000;
-    m_decodePerf.transferTotalUs += transferUs;
-    if (transferUs > m_decodePerf.transferMaxUs)
-        m_decodePerf.transferMaxUs = transferUs;
+    m_decodePerf.stats().transferTotalUs += transferUs;
+    if (transferUs > m_decodePerf.stats().transferMaxUs)
+        m_decodePerf.stats().transferMaxUs = transferUs;
 
     if (!cpuFrame)
     {
-        ++m_decodePerf.transferFailures;
+        ++m_decodePerf.stats().transferFailures;
         ++m_hardwareTransferFailureCount;
         if (m_hardwareTransferFailureCount <= MaxHardwareTransferFailureLogs)
         {
@@ -588,8 +574,8 @@ AVFramePtr FFmpegDecoder::transferHardwareFrameToCpu(AVFramePtr frame)
     }
 
     m_hardwareTransferFailureCount = 0;
-    ++m_decodePerf.transferredVideoFrames;
-    m_decodePerf.cpuPixelFormat = cpuFrame->format;
+    ++m_decodePerf.stats().transferredVideoFrames;
+    m_decodePerf.stats().cpuPixelFormat = cpuFrame->format;
     copyFrameMetadata(frame.get(), cpuFrame.get());
     return cpuFrame;
 }
@@ -598,12 +584,12 @@ AVFramePtr FFmpegDecoder::prepareVideoFrameForQueue(AVFramePtr frame)
 {
     if (shouldPreserveHardwareFrameForDirectRender(frame.get()))
     {
-        ++m_decodePerf.nativeVideoFrames;
+        ++m_decodePerf.stats().nativeVideoFrames;
         return frame;
     }
 
     if (m_hardwareDecoder && m_hardwareDecoder->isHardwareFrame(frame.get()))
-        ++m_decodePerf.nativeFallbackVideoFrames;
+        ++m_decodePerf.stats().nativeFallbackVideoFrames;
 
     frame = transferHardwareFrameToCpu(std::move(frame));
     if (!frame)
@@ -704,56 +690,13 @@ AVFramePtr FFmpegDecoder::normalizeVideoFrame(AVFramePtr frame)
     }
 
     const qint64 normalizeUs = normalizeTimer.nsecsElapsed() / 1000;
-    ++m_decodePerf.normalizedVideoFrames;
-    m_decodePerf.normalizeTotalUs += normalizeUs;
-    if (normalizeUs > m_decodePerf.normalizeMaxUs)
-        m_decodePerf.normalizeMaxUs = normalizeUs;
-    m_decodePerf.cpuPixelFormat = converted->format;
+    ++m_decodePerf.stats().normalizedVideoFrames;
+    m_decodePerf.stats().normalizeTotalUs += normalizeUs;
+    if (normalizeUs > m_decodePerf.stats().normalizeMaxUs)
+        m_decodePerf.stats().normalizeMaxUs = normalizeUs;
+    m_decodePerf.stats().cpuPixelFormat = converted->format;
 
     return converted;
-}
-
-void FFmpegDecoder::resetDecodePerformanceStats()
-{
-    m_decodePerf = {};
-    m_decodePerfLogTimer.restart();
-}
-
-void FFmpegDecoder::maybeLogDecodePerformance()
-{
-    if (!m_decodePerfLogTimer.isValid())
-        m_decodePerfLogTimer.start();
-    if (m_decodePerfLogTimer.elapsed() < PerformanceLogIntervalMs)
-        return;
-    if (m_decodePerf.decodedVideoFrames <= 0)
-    {
-        m_decodePerfLogTimer.restart();
-        return;
-    }
-
-    LOG_INFO("PlayPerf: decoder backend={} decoded={} hw={} native={} native_fallback={} "
-             "transfer={} fail={} "
-             "transfer_avg_us={} transfer_max_us={} normalize={} normalize_avg_us={} "
-             "normalize_max_us={} queued={} queue_drop={} src_fmt={} cpu_fmt={}",
-             m_activeVideoDecoderName.toStdString(),
-             m_decodePerf.decodedVideoFrames,
-             m_decodePerf.hardwareVideoFrames,
-             m_decodePerf.nativeVideoFrames,
-             m_decodePerf.nativeFallbackVideoFrames,
-             m_decodePerf.transferredVideoFrames,
-             m_decodePerf.transferFailures,
-             averageUs(m_decodePerf.transferTotalUs, m_decodePerf.transferredVideoFrames),
-             m_decodePerf.transferMaxUs,
-             m_decodePerf.normalizedVideoFrames,
-             averageUs(m_decodePerf.normalizeTotalUs, m_decodePerf.normalizedVideoFrames),
-             m_decodePerf.normalizeMaxUs,
-             m_decodePerf.queuedVideoFrames,
-             m_decodePerf.queueDroppedVideoFrames,
-             pixelFormatName(m_decodePerf.sourcePixelFormat),
-             pixelFormatName(m_decodePerf.cpuPixelFormat));
-
-    m_decodePerf = {};
-    m_decodePerfLogTimer.restart();
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -813,6 +756,6 @@ void FFmpegDecoder::closeInternal()
     m_hardwareTransferFailureCount = 0;
     m_videoToolboxDirectRenderingEnabled.storeRelaxed(0);
     m_activeVideoDecoderName = QStringLiteral("software");
-    resetDecodePerformanceStats();
+    m_decodePerf.reset();
     LOG_DEBUG("FFmpegDecoder: closed");
 }

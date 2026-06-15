@@ -203,6 +203,10 @@ if(BUILD_TESTING)
         COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tests/playplugin_surface_decoupling_checks.py"
         WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
     )
+    add_test(NAME playplugin_decoder_decoupling_checks
+        COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tests/playplugin_decoder_decoupling_checks.py"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+    )
     add_test(NAME plugin_generator_checks
         COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tests/plugin_generator_checks.py"
         WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"

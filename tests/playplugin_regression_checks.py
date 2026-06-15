@@ -31,6 +31,8 @@ def main():
     ffmpeg_utils_h = read("plugins/PlayPlugin/src/FFmpegUtils.h")
     decoder_h = read("plugins/PlayPlugin/src/FFmpegDecoder.h")
     decoder_cpp = read("plugins/PlayPlugin/src/FFmpegDecoder.cpp")
+    decode_perf_h = read("plugins/PlayPlugin/src/decode/DecodePerformance.h")
+    decode_perf_cpp = read("plugins/PlayPlugin/src/decode/DecodePerformance.cpp")
     hw_backend_h = read("plugins/PlayPlugin/src/hw/HardwareDecoderBackend.h")
     hw_factory_h = read("plugins/PlayPlugin/src/hw/HardwareDecoderFactory.h")
     hw_factory_cpp = read("plugins/PlayPlugin/src/hw/HardwareDecoderFactory.cpp")
@@ -299,12 +301,12 @@ def main():
             "per-frame drop logging should stay out of the render loop")
     require('LOG_DEBUG("FFmpegDecoder: converted video pixel format' not in decoder_cpp,
             "per-frame pixel format conversion logging should stay out of the decode loop")
-    require("DecodePerformanceStats" in decoder_h and
-            "maybeLogDecodePerformance" in decoder_cpp and
-            "PlayPerf: decoder" in decoder_cpp,
+    require("DecodePerformanceStats" in decode_perf_h and
+            "DecodePerformanceLogger" in decoder_h and
+            "PlayPerf: decoder" in decode_perf_cpp,
             "decoder should report throttled playback performance summaries")
-    require("m_decodePerfLogTimer" in decoder_h and
-            "PerformanceLogIntervalMs" in decoder_cpp,
+    require("QElapsedTimer m_logTimer" in decode_perf_h and
+            "PerformanceLogIntervalMs" in decode_perf_cpp,
             "decode performance logs should be time-throttled")
     require("VideoRenderPerformanceStats" in renderer_h and
             "maybeLogRenderPerformance" in renderer_cpp and
@@ -376,7 +378,7 @@ def main():
     require("AV_PIX_FMT_VIDEOTOOLBOX" in decoder_cpp and
             "shouldPreserveHardwareFrameForDirectRender" in decoder_cpp,
             "decoder should preserve VideoToolbox frames when native render is enabled")
-    require("transferHardwareFrameToCpu" in decoder_cpp and "nativeFallbackVideoFrames" in decoder_h,
+    require("transferHardwareFrameToCpu" in decoder_cpp and "nativeFallbackVideoFrames" in decode_perf_h,
             "native render failures should be observable and keep CPU fallback available")
     require("AppleMetalVideoTextureBridge" in video_node_cpp and "setNativeFrame" in video_node_cpp,
             "VideoNode should consume native VideoToolbox frames")

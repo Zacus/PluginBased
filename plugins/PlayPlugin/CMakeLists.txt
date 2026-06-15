@@ -75,6 +75,7 @@ qt_add_qml_module(PlayPlugin
         # Step 2 — FFmpeg 解码器
         src/FFmpegUtils.h
         src/FrameQueue.h
+        src/decode/DecodePerformance.h src/decode/DecodePerformance.cpp
         src/FFmpegDecoder.h    src/FFmpegDecoder.cpp
         src/hw/HardwareDecoderBackend.h
         src/hw/HardwareDecoderFactory.h src/hw/HardwareDecoderFactory.cpp
