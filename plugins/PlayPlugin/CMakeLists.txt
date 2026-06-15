@@ -85,6 +85,7 @@ qt_add_qml_module(PlayPlugin
         src/native/AppleMetalVideoTextureBridge.h
         src/native/AppleMetalVideoTextureBridge.mm
         src/render/VideoMaterial.h src/render/VideoMaterial.cpp
+        src/render/VideoNode.h src/render/VideoNode.cpp
         src/render/VideoPixelFormat.h src/render/VideoPixelFormat.cpp
         # Step 3 — 渲染器 + 时钟同步 + 视频输出组件
         src/ClockSync.h

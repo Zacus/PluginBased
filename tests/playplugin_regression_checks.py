@@ -46,6 +46,7 @@ def main():
     audio_h = read("plugins/PlayPlugin/src/AudioRenderer.h")
     surface_cpp = read("plugins/PlayPlugin/src/FFmpegSurface.cpp")
     video_material_cpp = read("plugins/PlayPlugin/src/render/VideoMaterial.cpp")
+    video_node_cpp = read("plugins/PlayPlugin/src/render/VideoNode.cpp")
     video_pixel_format_cpp = read("plugins/PlayPlugin/src/render/VideoPixelFormat.cpp")
     shader_frag = read("plugins/PlayPlugin/shaders/yuvvideo.frag")
     renderer_cpp = read("plugins/PlayPlugin/src/VideoRenderer.cpp")
@@ -377,19 +378,19 @@ def main():
             "decoder should preserve VideoToolbox frames when native render is enabled")
     require("transferHardwareFrameToCpu" in decoder_cpp and "nativeFallbackVideoFrames" in decoder_h,
             "native render failures should be observable and keep CPU fallback available")
-    require("AppleMetalVideoTextureBridge" in surface_cpp and "setNativeFrame" in surface_cpp,
-            "FFmpegSurface should consume native VideoToolbox frames")
+    require("AppleMetalVideoTextureBridge" in video_node_cpp and "setNativeFrame" in video_node_cpp,
+            "VideoNode should consume native VideoToolbox frames")
     require("supportsNativeVideoToolboxRendering" in surface_cpp and
             "setVideoToolboxDirectRenderingEnabled" in decoder_h and
             "nativeRenderingFailed" in surface_cpp,
             "native rendering should be enabled by a Surface-to-Decoder capability handshake")
     require("CoreVideo" in cmake and "Metal" in cmake and "QuartzCore" in cmake,
             "PlayPlugin should link Apple frameworks for CVMetalTextureCache")
-    ensure_textures = surface_cpp[surface_cpp.find("void ensureTextures"):
-                                  surface_cpp.find("void releaseTextures")]
-    require(ensure_textures.count("m_material_.paramsDirty") == 1 and
-            ensure_textures.count("m_material_.cachedFullRange") == 1 and
-            ensure_textures.count("m_material_.cachedBt709") == 1,
+    ensure_textures = video_node_cpp[video_node_cpp.find("void VideoNode::ensureTextures"):
+                                     video_node_cpp.find("void VideoNode::releaseTextures")]
+    require(ensure_textures.count("m_material.paramsDirty") == 1 and
+            ensure_textures.count("m_material.cachedFullRange") == 1 and
+            ensure_textures.count("m_material.cachedBt709") == 1,
             "texture recreation should mark material state dirty once")
 
     require("import QuickUI.Components 1.0" in control_qml and
