@@ -3,6 +3,7 @@
 #include "FFmpegUtils.h"
 #include "FrameQueue.h"
 #include "decode/DecodePerformance.h"
+#include "decode/MediaOpener.h"
 #include "decode/VideoFrameProcessor.h"
 #include "hw/HardwareDecoderBackend.h"
 
@@ -97,8 +98,6 @@ protected:
 private:
     // ── 内部方法 ─────────────────────────────────────────────────────────────
     bool openInternal(const QString& path);
-    bool openVideoCodec(AVStream* stream, const AVCodec* codec);
-    AVCodecContext* createVideoCodecContext(AVStream* stream, const AVCodec* codec);
     void decodeLoop();
     void doSeek(qint64 posMs, int serial);
     bool sendPacketToDecoder(AVCodecContext* ctx, AVPacket* pkt,
@@ -116,6 +115,7 @@ private:
     std::unique_ptr<HardwareDecoderBackend> m_hardwareDecoder;
     QString m_activeVideoDecoderName = QStringLiteral("software");
     DecodePerformanceLogger m_decodePerf;
+    MediaOpener m_mediaOpener;
     VideoFrameProcessor m_videoFrameProcessor;
     int  m_videoStreamIdx = -1;
     int  m_audioStreamIdx = -1;

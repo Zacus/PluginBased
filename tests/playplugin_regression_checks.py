@@ -33,6 +33,8 @@ def main():
     decoder_cpp = read("plugins/PlayPlugin/src/FFmpegDecoder.cpp")
     decode_perf_h = read("plugins/PlayPlugin/src/decode/DecodePerformance.h")
     decode_perf_cpp = read("plugins/PlayPlugin/src/decode/DecodePerformance.cpp")
+    media_opener_h = read("plugins/PlayPlugin/src/decode/MediaOpener.h")
+    media_opener_cpp = read("plugins/PlayPlugin/src/decode/MediaOpener.cpp")
     video_processor_h = read("plugins/PlayPlugin/src/decode/VideoFrameProcessor.h")
     video_processor_cpp = read("plugins/PlayPlugin/src/decode/VideoFrameProcessor.cpp")
     hw_backend_h = read("plugins/PlayPlugin/src/hw/HardwareDecoderBackend.h")
@@ -345,7 +347,7 @@ def main():
     require("quint64 channelLayoutMask" in decoder_h and
             "m_audioChannelLayoutMask" in decoder_h,
             "decoder should expose the source audio channel layout mask")
-    require("actx->ch_layout.u.mask" in decoder_cpp,
+    require("actx->ch_layout.u.mask" in media_opener_cpp,
             "decoder should capture FFmpeg's native channel layout mask")
     require("m_srcChannelLayoutMask" in audio_h and
             "av_channel_layout_from_mask" in audio_cpp and
@@ -456,28 +458,28 @@ def main():
             "VAAPI backend should be explicitly unavailable in phase 1")
     require("videotoolbox" in videotoolbox_cpp,
             "VideoToolbox backend should expose a stable backend name")
-    require('#include "hw/HardwareDecoderFactory.h"' in decoder_cpp,
-            "FFmpegDecoder should include the hardware backend factory")
+    require('#include "hw/HardwareDecoderFactory.h"' in media_opener_cpp,
+            "MediaOpener should include the hardware backend factory")
     require("std::unique_ptr<HardwareDecoderBackend> m_hardwareDecoder" in decoder_h,
             "FFmpegDecoder should own the selected hardware backend")
-    require("createHardwareDecoderBackend(codec, stream->codecpar->codec_id)" in decoder_cpp,
-            "FFmpegDecoder should ask the factory for video hardware decoding")
+    require("createHardwareDecoderBackend(codec, stream->codecpar->codec_id)" in media_opener_cpp,
+            "MediaOpener should ask the factory for video hardware decoding")
     require("m_hardwareDecoder.reset();" in decoder_cpp[decoder_cpp.find("void FFmpegDecoder::closeInternal"):],
             "FFmpegDecoder should release hardware backend on close")
     require("Q_OS_APPLE" not in decoder_cpp and
             "Q_OS_WIN" not in decoder_cpp and
             "Q_OS_LINUX" not in decoder_cpp,
             "FFmpegDecoder should not contain platform branching for hardware backend selection")
-    require("bool openVideoCodec(AVStream* stream, const AVCodec* codec)" in decoder_h,
-            "FFmpegDecoder should open video codec through a retryable helper")
-    require("openVideoCodec(vs, vcodec)" in decoder_cpp,
-            "openInternal should delegate video codec opening")
-    require("configureContext(vctx)" in decoder_cpp,
+    require("bool openVideoCodec(OpenedMedia& media, AVStream* stream, const AVCodec* codec)" in media_opener_h,
+            "MediaOpener should open video codec through a retryable helper")
+    require("m_mediaOpener.open(path)" in decoder_cpp,
+            "openInternal should delegate media opening")
+    require("configureContext(vctx)" in media_opener_cpp,
             "video codec helper should configure hardware before avcodec_open2")
-    require("fallback to software decoding" in decoder_cpp,
+    require("fallback to software decoding" in media_opener_cpp,
             "hardware open failure should log software fallback")
-    require("AVCodecContext* FFmpegDecoder::createVideoCodecContext" in decoder_cpp and
-            "vctx = createVideoCodecContext(stream, codec)" in decoder_cpp,
+    require("AVCodecContext* MediaOpener::createVideoCodecContext" in media_opener_cpp and
+            "vctx = createVideoCodecContext(stream, codec)" in media_opener_cpp,
             "software fallback should rebuild a clean AVCodecContext")
     require("#include <libavutil/hwcontext.h>" in ffmpeg_utils_h,
             "FFmpegUtils should expose FFmpeg hardware context APIs")

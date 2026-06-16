@@ -1,8 +1,5 @@
 #include "FFmpegDecoder.h"
 #include "Logger.h"
-#include "hw/HardwareDecoderFactory.h"
-
-#include <QFileInfo>
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 构造 / 析构
@@ -155,171 +152,32 @@ void FFmpegDecoder::run()
 // ─────────────────────────────────────────────────────────────────────────────
 // 打开文件
 // ─────────────────────────────────────────────────────────────────────────────
-AVCodecContext* FFmpegDecoder::createVideoCodecContext(AVStream* stream, const AVCodec* codec)
-{
-    AVCodecContext* ctx = avcodec_alloc_context3(codec);
-    if (!ctx)
-        return nullptr;
-
-    const int ret = avcodec_parameters_to_context(ctx, stream->codecpar);
-    if (ret < 0)
-    {
-        LOG_WARN("FFmpegDecoder: avcodec_parameters_to_context for video failed: {}",
-                 av_err(ret));
-        avcodec_free_context(&ctx);
-        return nullptr;
-    }
-
-    ctx->thread_count = 0;
-    return ctx;
-}
-
-bool FFmpegDecoder::openVideoCodec(AVStream* stream, const AVCodec* codec)
-{
-    AVCodecContext* vctx = createVideoCodecContext(stream, codec);
-    if (!vctx)
-        return false;
-
-    m_hardwareDecoder = createHardwareDecoderBackend(codec, stream->codecpar->codec_id);
-    if (m_hardwareDecoder)
-    {
-        LOG_INFO("FFmpegDecoder: selected hardware decoder {}",
-                 m_hardwareDecoder->name().toStdString());
-        if (!m_hardwareDecoder->configureContext(vctx))
-        {
-            LOG_WARN("FFmpegDecoder: hardware setup failed, fallback to software decoding");
-            m_hardwareDecoder->reset();
-            m_hardwareDecoder.reset();
-        }
-    }
-
-    int ret = avcodec_open2(vctx, codec, nullptr);
-    if (ret < 0 && m_hardwareDecoder)
-    {
-        LOG_WARN("FFmpegDecoder: hardware codec open failed: {}, fallback to software decoding",
-                 av_err(ret));
-        avcodec_free_context(&vctx);
-        m_hardwareDecoder->reset();
-        m_hardwareDecoder.reset();
-
-        vctx = createVideoCodecContext(stream, codec);
-        if (!vctx)
-            return false;
-        ret = avcodec_open2(vctx, codec, nullptr);
-    }
-
-    if (ret < 0)
-    {
-        avcodec_free_context(&vctx);
-        LOG_WARN("FFmpegDecoder: failed to open video decoder: {}", av_err(ret));
-        return false;
-    }
-
-    m_activeVideoDecoderName = m_hardwareDecoder
-        ? m_hardwareDecoder->name()
-        : QStringLiteral("software");
-    m_videoCodecCtx.reset(vctx);
-    m_videoWidth = vctx->width;
-    m_videoHeight = vctx->height;
-    AVRational fr = stream->avg_frame_rate;
-    m_videoFps = (fr.den > 0) ? av_q2d(fr) : 25.0;
-    return true;
-}
-
 bool FFmpegDecoder::openInternal(const QString& path)
 {
-    LOG_INFO("FFmpegDecoder: opening {}", path.toStdString());
-
-    // ── 打开容器 ──────────────────────────────────────────────────────────────
-    AVFormatContext* fmtRaw = nullptr;
-    int ret = avformat_open_input(&fmtRaw, path.toUtf8().constData(), nullptr, nullptr);
-    if (ret < 0)
+    MediaOpenResult result = m_mediaOpener.open(path);
+    if (!result.ok)
     {
-        emit errorOccurred(
-            QString("无法打开文件: %1 (%2)").arg(path).arg(QString::fromStdString(av_err(ret))));
-        return false;
-    }
-    m_fmtCtx.reset(fmtRaw);
-
-    // ── 探测流信息 ────────────────────────────────────────────────────────────
-    ret = avformat_find_stream_info(m_fmtCtx.get(), nullptr);
-    if (ret < 0)
-    {
-        emit errorOccurred(QString("无法读取流信息: %1").arg(QString::fromStdString(av_err(ret))));
+        emit errorOccurred(result.errorMessage);
         return false;
     }
 
-    // ── 总时长（微秒 → 毫秒）────────────────────────────────────────────────
-    m_durationMs = (m_fmtCtx->duration != AV_NOPTS_VALUE) ? (m_fmtCtx->duration / 1000) : 0;
-
-    // ── 格式名称 ─────────────────────────────────────────────────────────────
-    m_formatName = QString::fromUtf8(m_fmtCtx->iformat ? m_fmtCtx->iformat->long_name : "unknown");
-
-    // ── 找最佳视频流并打开解码器 ─────────────────────────────────────────────
-    m_videoStreamIdx = av_find_best_stream(m_fmtCtx.get(), AVMEDIA_TYPE_VIDEO, -1, -1, nullptr, 0);
-    if (m_videoStreamIdx >= 0)
-    {
-        AVStream* vs = m_fmtCtx->streams[m_videoStreamIdx];
-        const AVCodec* vcodec = avcodec_find_decoder(vs->codecpar->codec_id);
-        if (!vcodec)
-        {
-            LOG_WARN("FFmpegDecoder: no video decoder for codec_id={}",
-                     static_cast<int>(vs->codecpar->codec_id));
-            m_videoStreamIdx = -1;
-        }
-        else
-        {
-            if (!openVideoCodec(vs, vcodec))
-                m_videoStreamIdx = -1;
-        }
-    }
-
-    // ── 找最佳音频流并打开解码器 ─────────────────────────────────────────────
-    m_audioStreamIdx = av_find_best_stream(m_fmtCtx.get(), AVMEDIA_TYPE_AUDIO, -1, -1, nullptr, 0);
-    if (m_audioStreamIdx >= 0)
-    {
-        AVStream* as = m_fmtCtx->streams[m_audioStreamIdx];
-        const AVCodec* acodec = avcodec_find_decoder(as->codecpar->codec_id);
-        if (!acodec)
-        {
-            LOG_WARN("FFmpegDecoder: no audio decoder for codec_id={}",
-                     static_cast<int>(as->codecpar->codec_id));
-            m_audioStreamIdx = -1;
-        }
-        else
-        {
-            AVCodecContext* actx = avcodec_alloc_context3(acodec);
-            avcodec_parameters_to_context(actx, as->codecpar);
-            ret = avcodec_open2(actx, acodec, nullptr);
-            if (ret < 0)
-            {
-                avcodec_free_context(&actx);
-                LOG_WARN("FFmpegDecoder: failed to open audio decoder: {}", av_err(ret));
-                m_audioStreamIdx = -1;
-            }
-            else
-            {
-                m_audioCodecCtx.reset(actx);
-                m_audioChannels = actx->ch_layout.nb_channels;
-                m_audioSampleRate = actx->sample_rate;
-                m_audioChannelLayoutMask =
-                    (actx->ch_layout.order == AV_CHANNEL_ORDER_NATIVE)
-                        ? static_cast<quint64>(actx->ch_layout.u.mask)
-                        : 0;
-                m_audioSampleFmt = static_cast<int>(actx->sample_fmt);
-            }
-        }
-    }
-
-    if (m_videoStreamIdx < 0 && m_audioStreamIdx < 0)
-    {
-        emit errorOccurred("文件中未找到可解码的视频流或音频流");
-        return false;
-    }
-
-    LOG_INFO("FFmpegDecoder: opened OK — duration={}ms video={}x{} @{:.1f}fps audio={}ch@{}Hz",
-             m_durationMs, m_videoWidth, m_videoHeight, m_videoFps, m_audioChannels,
-             m_audioSampleRate);
+    OpenedMedia& media = result.media;
+    m_fmtCtx = std::move(media.formatContext);
+    m_videoCodecCtx = std::move(media.videoCodecContext);
+    m_audioCodecCtx = std::move(media.audioCodecContext);
+    m_hardwareDecoder = std::move(media.hardwareDecoder);
+    m_videoStreamIdx = media.videoStreamIndex;
+    m_audioStreamIdx = media.audioStreamIndex;
+    m_durationMs = media.durationMs;
+    m_videoWidth = media.videoWidth;
+    m_videoHeight = media.videoHeight;
+    m_videoFps = media.videoFps;
+    m_audioChannels = media.audioChannels;
+    m_audioSampleRate = media.audioSampleRate;
+    m_audioChannelLayoutMask = media.audioChannelLayoutMask;
+    m_audioSampleFmt = media.audioSampleFormat;
+    m_formatName = media.formatName;
+    m_activeVideoDecoderName = media.activeVideoDecoderName;
     return true;
 }
 
