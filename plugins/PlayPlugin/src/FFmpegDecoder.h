@@ -3,6 +3,7 @@
 #include "FFmpegUtils.h"
 #include "FrameQueue.h"
 #include "decode/DecodePerformance.h"
+#include "decode/DecodeLoopControl.h"
 #include "decode/MediaOpener.h"
 #include "decode/StreamFrameDecoder.h"
 #include "decode/VideoFrameProcessor.h"
@@ -115,6 +116,7 @@ private:
     AVCodecContextPtr  m_audioCodecCtx;
     std::unique_ptr<HardwareDecoderBackend> m_hardwareDecoder;
     QString m_activeVideoDecoderName = QStringLiteral("software");
+    DecodeLoopControl m_decodeLoopControl;
     DecodePerformanceLogger m_decodePerf;
     MediaOpener m_mediaOpener;
     StreamFrameDecoder m_streamFrameDecoder;

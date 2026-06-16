@@ -185,15 +185,16 @@ void FFmpegDecoder::decodeLoop()
 
         // ── seek 处理 ─────────────────────────────────────────────────────────
         {
-            QMutexLocker lk(&m_seekMutex);
-            if (m_seekRequested)
+            const PendingSeekRequest seekRequest =
+                m_decodeLoopControl.consumeSeekRequest(
+                    m_seekMutex,
+                    m_seekRequested,
+                    m_seekTargetMs,
+                    m_seekGeneration);
+            if (seekRequest.requested)
             {
-                const qint64 seekTargetMs = m_seekTargetMs;
-                const int seekGeneration = m_seekGeneration;
-                m_seekRequested = false;
-                lk.unlock();
-                doSeek(seekTargetMs, seekGeneration);
-                emit seekCompleted(seekGeneration, m_flushSerial);
+                doSeek(seekRequest.targetMs, seekRequest.generation);
+                emit seekCompleted(seekRequest.generation, m_flushSerial);
                 continue;
             }
         }
@@ -216,15 +217,16 @@ void FFmpegDecoder::decodeLoop()
             while (!m_stop.loadRelaxed())
             {
                 {
-                    QMutexLocker lk(&m_seekMutex);
-                    if (m_seekRequested)
+                    const PendingSeekRequest seekRequest =
+                        m_decodeLoopControl.consumeSeekRequest(
+                            m_seekMutex,
+                            m_seekRequested,
+                            m_seekTargetMs,
+                            m_seekGeneration);
+                    if (seekRequest.requested)
                     {
-                        const qint64 seekTargetMs = m_seekTargetMs;
-                        const int seekGeneration = m_seekGeneration;
-                        m_seekRequested = false;
-                        lk.unlock();
-                        doSeek(seekTargetMs, seekGeneration);
-                        emit seekCompleted(seekGeneration, m_flushSerial);
+                        doSeek(seekRequest.targetMs, seekRequest.generation);
+                        emit seekCompleted(seekRequest.generation, m_flushSerial);
                         break;
                     }
                 }
