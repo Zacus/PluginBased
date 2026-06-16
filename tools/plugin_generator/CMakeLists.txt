@@ -13,8 +13,13 @@ qt_add_qml_module(PluginGeneratorApp
     QML_FILES
         qml/Main.qml
     SOURCES
+        PluginGeneratorOptions.h
+        PluginScaffoldWriter.h
+        PluginScaffoldWriter.cpp
         PluginTemplateGenerator.h
         PluginTemplateGenerator.cpp
+        PluginTemplateRenderer.h
+        PluginTemplateRenderer.cpp
 )
 
 target_link_libraries(PluginGeneratorApp PRIVATE
@@ -30,8 +35,13 @@ target_compile_definitions(PluginGeneratorApp PRIVATE
 
 add_executable(PluginGeneratorBackendSmokeTest
     PluginGeneratorBackendSmokeTest.cpp
+    PluginGeneratorOptions.h
+    PluginScaffoldWriter.h
+    PluginScaffoldWriter.cpp
     PluginTemplateGenerator.h
     PluginTemplateGenerator.cpp
+    PluginTemplateRenderer.h
+    PluginTemplateRenderer.cpp
 )
 
 target_link_libraries(PluginGeneratorBackendSmokeTest PRIVATE

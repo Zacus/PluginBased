@@ -42,6 +42,10 @@ def find_smoke_test_binary():
     raise AssertionError("PluginGeneratorBackendSmokeTest binary was not produced")
 
 
+def generator_template_text():
+    return (ROOT / "tools" / "plugin_generator" / "PluginTemplateRenderer.cpp").read_text(encoding="utf-8")
+
+
 def test_backend_smoke_test_passes():
     run(["cmake", "--build", "build", "--target", "PluginGeneratorBackendSmokeTest", "--parallel"])
     smoke_test = find_smoke_test_binary()
@@ -81,8 +85,7 @@ def test_visual_qml_exposes_plugin_type_choice():
 
 
 def test_generated_qml_uses_component_theme():
-    generator_cpp = ROOT / "tools" / "plugin_generator" / "PluginTemplateGenerator.cpp"
-    text = generator_cpp.read_text(encoding="utf-8")
+    text = generator_template_text()
     require("import QuickUI.Components 1.0" in text,
             "generated QML plugins should import QuickUI.Components")
     require("ComponentTheme.surface" in text,
@@ -96,8 +99,7 @@ def test_generated_qml_uses_component_theme():
 
 
 def test_generated_metadata_uses_plugin_schema():
-    generator_cpp = ROOT / "tools" / "plugin_generator" / "PluginTemplateGenerator.cpp"
-    text = generator_cpp.read_text(encoding="utf-8")
+    text = generator_template_text()
     require('"schemaVersion": 1' in text,
             "generated plugins should declare metadata schemaVersion")
     require('"apiVersion": 1' in text,
@@ -111,8 +113,7 @@ def test_generated_metadata_uses_plugin_schema():
 
 
 def test_generated_plugins_embed_their_own_translations():
-    generator_cpp = ROOT / "tools" / "plugin_generator" / "PluginTemplateGenerator.cpp"
-    text = generator_cpp.read_text(encoding="utf-8")
+    text = generator_template_text()
     require("translationResourcePaths(const QString& languageName) const override" in text,
             "generated plugins should declare plugin-owned translation resources")
     require("translationResourcePaths(const QString& languageName) const" in text,

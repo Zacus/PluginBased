@@ -6,6 +6,8 @@ qt_add_executable(PluginBasedApp
     AppLanguageService.cpp
     AppThemeService.h
     AppThemeService.cpp
+    PluginPathResolver.h
+    PluginPathResolver.cpp
     CrashHandler.h
     CrashHandler.cpp
 )
@@ -31,6 +33,7 @@ qt_add_qml_module(PluginBasedApp
         qml/HomePanel.qml
     SOURCES
         AppController.h     AppController.cpp
+        PluginPathResolver.h PluginPathResolver.cpp
         ../core/PluginManager.h  ../core/PluginManager.cpp
         ../core/PluginDiscovery.h  ../core/PluginDiscovery.cpp
         ../core/PluginMetadataValidator.h  ../core/PluginMetadataValidator.cpp
