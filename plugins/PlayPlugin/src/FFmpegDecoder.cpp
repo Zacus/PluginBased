@@ -1,5 +1,6 @@
 #include "FFmpegDecoder.h"
 #include "Logger.h"
+#include "decode/FFmpegLogBridge.h"
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 构造 / 析构
@@ -7,25 +8,7 @@
 FFmpegDecoder::FFmpegDecoder(VideoFrameQueue* videoQ, AudioFrameQueue* audioQ, QObject* parent)
     : QThread(parent), m_videoQueue(videoQ), m_audioQueue(audioQ)
 {
-    // FFmpeg 日志重定向到 spdlog
-    av_log_set_callback(
-        [](void*, int level, const char* fmt, va_list args)
-        {
-            if (level > AV_LOG_WARNING)
-                return;
-            char buf[1024];
-            vsnprintf(buf, sizeof(buf), fmt, args);
-            // 去掉末尾换行
-            std::string s(buf);
-            while (!s.empty() && (s.back() == '\n' || s.back() == '\r'))
-                s.pop_back();
-            if (s.empty())
-                return;
-            if (level <= AV_LOG_ERROR)
-                LOG_ERROR("[FFmpeg] {}", s);
-            else
-                LOG_WARN("[FFmpeg] {}", s);
-        });
+    installFFmpegLogBridge();
 }
 
 FFmpegDecoder::~FFmpegDecoder()
