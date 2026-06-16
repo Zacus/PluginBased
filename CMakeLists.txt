@@ -215,6 +215,10 @@ if(BUILD_TESTING)
         COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tests/playplugin_media_opener_checks.py"
         WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
     )
+    add_test(NAME playplugin_stream_frame_decoder_checks
+        COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tests/playplugin_stream_frame_decoder_checks.py"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+    )
     add_test(NAME plugin_generator_checks
         COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tests/plugin_generator_checks.py"
         WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"

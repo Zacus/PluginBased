@@ -4,6 +4,7 @@
 #include "FrameQueue.h"
 #include "decode/DecodePerformance.h"
 #include "decode/MediaOpener.h"
+#include "decode/StreamFrameDecoder.h"
 #include "decode/VideoFrameProcessor.h"
 #include "hw/HardwareDecoderBackend.h"
 
@@ -116,6 +117,7 @@ private:
     QString m_activeVideoDecoderName = QStringLiteral("software");
     DecodePerformanceLogger m_decodePerf;
     MediaOpener m_mediaOpener;
+    StreamFrameDecoder m_streamFrameDecoder;
     VideoFrameProcessor m_videoFrameProcessor;
     int  m_videoStreamIdx = -1;
     int  m_audioStreamIdx = -1;

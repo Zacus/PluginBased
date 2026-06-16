@@ -287,13 +287,6 @@ void FFmpegDecoder::decodeLoop()
 bool FFmpegDecoder::sendPacketToDecoder(AVCodecContext* ctx, AVPacket* pkt,
                                         FrameQueue<AVFramePtr>* queue, int serial)
 {
-    int ret = avcodec_send_packet(ctx, pkt);
-    if (ret < 0 && ret != AVERROR(EAGAIN) && ret != AVERROR_EOF)
-    {
-        LOG_WARN("FFmpegDecoder: avcodec_send_packet: {}", av_err(ret));
-        return false;
-    }
-
     // 取出流的 time_base，用于把 PTS 换算为微秒
     AVRational tb = {0, 1};
     if (ctx == m_videoCodecCtx.get() && m_videoStreamIdx >= 0)
@@ -301,79 +294,63 @@ bool FFmpegDecoder::sendPacketToDecoder(AVCodecContext* ctx, AVPacket* pkt,
     else if (ctx == m_audioCodecCtx.get() && m_audioStreamIdx >= 0)
         tb = m_fmtCtx->streams[m_audioStreamIdx]->time_base;
 
-    while (true)
-    {
-        auto frame = make_frame();
-        ret = avcodec_receive_frame(ctx, frame.get());
-        if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF)
-            break;
-        if (ret < 0)
+    return m_streamFrameDecoder.sendPacket(
+        ctx,
+        pkt,
+        tb,
+        [this, ctx, queue, serial](AVFramePtr frame) -> bool
         {
-            LOG_WARN("FFmpegDecoder: avcodec_receive_frame: {}", av_err(ret));
-            return false;
-        }
-
-        // 把 PTS 统一换算为微秒存入 frame->pts
-        // VideoRenderer 和 AudioClock 均以微秒为单位，后续直接使用
-        qint64 pts = frame->best_effort_timestamp;
-        if (pts == AV_NOPTS_VALUE)
-            pts = frame->pts;
-        if (pts != AV_NOPTS_VALUE && tb.den > 0)
-            frame->pts = av_rescale_q(pts, tb, {1, AV_TIME_BASE});
-        else
-            frame->pts = AV_NOPTS_VALUE;
-
-        if (ctx == m_videoCodecCtx.get())
-        {
-            ++m_decodePerf.stats().decodedVideoFrames;
-            m_decodePerf.stats().sourcePixelFormat = frame->format;
-
-            if (frame->pts != AV_NOPTS_VALUE)
-                emit positionChanged(frame->pts / 1000);
-
-            frame = m_videoFrameProcessor.prepareForQueue(
-                std::move(frame),
-                m_hardwareDecoder.get(),
-                m_videoToolboxDirectRenderingEnabled.loadRelaxed() != 0,
-                m_decodePerf.stats());
-            if (!frame)
+            if (ctx == m_videoCodecCtx.get())
             {
-                m_decodePerf.maybeLog(m_activeVideoDecoderName);
-                continue;
-            }
+                ++m_decodePerf.stats().decodedVideoFrames;
+                m_decodePerf.stats().sourcePixelFormat = frame->format;
 
-            m_decodePerf.stats().cpuPixelFormat = frame->format;
+                if (frame->pts != AV_NOPTS_VALUE)
+                    emit positionChanged(frame->pts / 1000);
 
-            if (m_audioStreamIdx >= 0)
-            {
-                // 有音频时以音频时钟为主，视频落后可丢帧追赶。
-                if (!queue->tryPush(std::move(frame), serial))
+                frame = m_videoFrameProcessor.prepareForQueue(
+                    std::move(frame),
+                    m_hardwareDecoder.get(),
+                    m_videoToolboxDirectRenderingEnabled.loadRelaxed() != 0,
+                    m_decodePerf.stats());
+                if (!frame)
                 {
-                    ++m_decodePerf.stats().queueDroppedVideoFrames;
-                    LOG_DEBUG("FFmpegDecoder: video queue full, frame dropped");
+                    m_decodePerf.maybeLog(m_activeVideoDecoderName);
+                    return true;
+                }
+
+                m_decodePerf.stats().cpuPixelFormat = frame->format;
+
+                if (m_audioStreamIdx >= 0)
+                {
+                    // 有音频时以音频时钟为主，视频落后可丢帧追赶。
+                    if (!queue->tryPush(std::move(frame), serial))
+                    {
+                        ++m_decodePerf.stats().queueDroppedVideoFrames;
+                        LOG_DEBUG("FFmpegDecoder: video queue full, frame dropped");
+                    }
+                    else
+                    {
+                        ++m_decodePerf.stats().queuedVideoFrames;
+                    }
                 }
                 else
                 {
+                    // 无音频时视频队列就是唯一节奏来源，必须保留背压避免跳帧。
+                    if (!queue->push(std::move(frame), serial))
+                        return false;
                     ++m_decodePerf.stats().queuedVideoFrames;
                 }
+                m_decodePerf.maybeLog(m_activeVideoDecoderName);
             }
             else
             {
-                // 无音频时视频队列就是唯一节奏来源，必须保留背压避免跳帧。
+                // 音频：阻塞push，保证时钟不断
                 if (!queue->push(std::move(frame), serial))
                     return false;
-                ++m_decodePerf.stats().queuedVideoFrames;
             }
-            m_decodePerf.maybeLog(m_activeVideoDecoderName);
-        }
-        else
-        {
-            // 音频：阻塞push，保证时钟不断
-            if (!queue->push(std::move(frame), serial))
-                return false;
-        }
-    }
-    return true;
+            return true;
+        });
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
