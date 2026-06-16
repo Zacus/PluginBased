@@ -47,9 +47,9 @@ def main():
     cmake = read("plugins/PlayPlugin/CMakeLists.txt")
     root_cmake = read("CMakeLists.txt")
 
-    require("Describes YUV/semiplanar video formats for FFmpegSurface rendering" in format_h,
+    require("描述 FFmpegSurface 渲染所需的 YUV/半平面视频格式" in format_h,
             "VideoPixelFormat.h should explain its file purpose")
-    require("Implements FFmpeg pixel format mapping for QRhi texture uploads" in format_cpp,
+    require("实现 FFmpeg 像素格式到 QRhi 纹理上传布局的映射" in format_cpp,
             "VideoPixelFormat.cpp should explain its file purpose")
     require("#include \"render/VideoNode.h\"" in surface_cpp,
             "FFmpegSurface should include the extracted video node helper")
@@ -78,9 +78,9 @@ def main():
             "VideoPixelFormat.cpp should preserve semiplanar format mapping")
     require("QRhiTexture::RG8" in format_cpp and "QRhiTexture::RG16" in format_cpp,
             "VideoPixelFormat.cpp should preserve two-channel chroma texture formats")
-    require("Owns the QSG material state used by FFmpegSurface video nodes" in material_h,
+    require("持有 FFmpegSurface 视频节点使用的 QSG 材质状态" in material_h,
             "VideoMaterial.h should explain its file purpose")
-    require("Implements the QSG material shader and QRhi texture upload path" in material_cpp,
+    require("实现 QSG 材质 shader 和 QRhi 纹理上传路径" in material_cpp,
             "VideoMaterial.cpp should explain its file purpose")
     require("class VideoMaterial" in material_h and "struct PendingUpload" in material_h,
             "VideoMaterial.h should own the material API and upload state")
@@ -88,9 +88,9 @@ def main():
             "VideoMaterial.cpp should own shader and texture wrapper internals")
     require("updateUniformData" in material_cpp and "updateSampledImage" in material_cpp,
             "VideoMaterial.cpp should keep QSG shader update logic")
-    require("Owns the QSG geometry node used by FFmpegSurface" in node_h,
+    require("持有 FFmpegSurface 使用的 QSG 几何节点" in node_h,
             "VideoNode.h should explain its file purpose")
-    require("Implements FFmpegSurface video node texture lifecycle and frame binding" in node_cpp,
+    require("实现 FFmpegSurface 视频节点的纹理生命周期和帧绑定" in node_cpp,
             "VideoNode.cpp should explain its file purpose")
     require("class VideoNode" in node_h and "bool setFrame" in node_h,
             "VideoNode.h should own the node API")
@@ -99,9 +99,9 @@ def main():
             "VideoNode should depend on material and pixel format details")
     require("setNativeFrame" in node_cpp and "ensureTextures" in node_cpp and "releaseTextures" in node_cpp,
             "VideoNode.cpp should own native/software texture lifecycle")
-    require("Calculates the video draw rectangle for FFmpegSurface" in geometry_h,
+    require("计算 FFmpegSurface 中视频实际绘制矩形" in geometry_h,
             "VideoSurfaceGeometry.h should explain its file purpose")
-    require("Implements FFmpegSurface aspect-ratio geometry calculations" in geometry_cpp,
+    require("实现 FFmpegSurface 的宽高比几何计算" in geometry_cpp,
             "VideoSurfaceGeometry.cpp should explain its file purpose")
     require("videoDrawRect" in geometry_h and "videoDrawRect" in geometry_cpp,
             "VideoSurfaceGeometry should expose and implement videoDrawRect")

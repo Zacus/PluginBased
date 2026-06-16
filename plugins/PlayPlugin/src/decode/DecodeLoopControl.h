@@ -1,7 +1,7 @@
 #pragma once
 
-// Consumes decode-loop command state guarded by FFmpegDecoder mutexes.
-// This helper does not own state; FFmpegDecoder keeps the command fields and signal emission.
+// 消费由 FFmpegDecoder 互斥锁保护的解码循环命令状态。
+// 该辅助类不拥有状态；命令字段和信号发射仍由 FFmpegDecoder 负责。
 
 #include <QMutex>
 #include <QAtomicInt>

@@ -1,5 +1,8 @@
 #pragma once
 
+// 暴露给 QML 的插件模板生成服务。
+// 负责参数解析和生成流程编排，具体模板渲染与文件写入由辅助类完成。
+
 #include "PluginGeneratorOptions.h"
 
 #include <QObject>

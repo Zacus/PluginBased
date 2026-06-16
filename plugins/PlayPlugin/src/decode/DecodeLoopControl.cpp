@@ -1,7 +1,7 @@
 #include "decode/DecodeLoopControl.h"
 
-// Implements locked command-state consumption for FFmpegDecoder.
-// The returned value can be handled after the mutex is released.
+// 实现 FFmpegDecoder 解码循环中受锁保护的命令状态消费。
+// 返回值可在释放互斥锁后继续处理，减少锁内工作量。
 
 #include <QMutexLocker>
 

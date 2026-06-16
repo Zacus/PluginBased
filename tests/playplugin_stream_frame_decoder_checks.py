@@ -30,9 +30,9 @@ def main():
     cmake = read("plugins/PlayPlugin/CMakeLists.txt")
     root_cmake = read("CMakeLists.txt")
 
-    require("Sends packets to an FFmpeg codec and emits normalized decoded frames" in helper_h,
+    require("向 FFmpeg 编解码器发送包，并回调输出已归一化时间戳的解码帧" in helper_h,
             "StreamFrameDecoder.h should explain its file purpose")
-    require("Implements packet send, frame receive, and timestamp normalization" in helper_cpp,
+    require("实现包发送、帧接收和时间戳归一化" in helper_cpp,
             "StreamFrameDecoder.cpp should explain its file purpose")
     require("class StreamFrameDecoder" in helper_h,
             "StreamFrameDecoder should be declared")

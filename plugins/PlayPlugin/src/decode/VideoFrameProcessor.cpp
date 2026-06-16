@@ -1,7 +1,7 @@
 #include "decode/VideoFrameProcessor.h"
 
-// Implements hardware frame transfer and pixel-format normalization.
-// Keeping this in one processor leaves FFmpegDecoder focused on packet flow and queueing.
+// 实现硬件帧转 CPU 帧，以及像素格式归一化。
+// 这些逻辑集中在处理器中，让 FFmpegDecoder 专注于包流转和队列调度。
 
 #include "Logger.h"
 #include "hw/HardwareDecoderBackend.h"

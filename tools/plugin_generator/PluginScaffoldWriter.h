@@ -1,7 +1,7 @@
 #pragma once
 
-// Writes rendered plugin scaffold files to disk.
-// Rendering and validation stay in separate helpers so filesystem behavior remains focused.
+// 将渲染后的插件脚手架文件写入磁盘。
+// 渲染和校验由其他辅助类负责，本类只关注文件系统行为。
 
 #include "PluginGeneratorOptions.h"
 

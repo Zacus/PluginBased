@@ -1,7 +1,7 @@
 #pragma once
 
-// Renders generated plugin file text without touching the filesystem.
-// PluginTemplateGenerator owns validation and PluginScaffoldWriter owns disk writes.
+// 渲染插件脚手架的各类文件内容，不直接访问文件系统。
+// 参数校验由 PluginTemplateGenerator 负责，落盘由 PluginScaffoldWriter 负责。
 
 #include "PluginGeneratorOptions.h"
 

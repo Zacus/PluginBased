@@ -1,7 +1,7 @@
 #pragma once
 
-// Tracks throttled FFmpeg decoder performance counters.
-// FFmpegDecoder owns one logger on its decode thread and updates these counters while processing frames.
+// 记录带节流输出的 FFmpeg 解码性能计数。
+// FFmpegDecoder 在解码线程持有一个实例，并在处理帧时更新这些计数。
 
 #include <QElapsedTimer>
 #include <QString>

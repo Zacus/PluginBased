@@ -1,7 +1,7 @@
 #include "PluginScaffoldWriter.h"
 
-// Implements filesystem writes for generated plugin scaffolds.
-// Existing directories are rejected so user files are never overwritten.
+// 实现插件脚手架的文件系统写入。
+// 若目标目录已存在则拒绝生成，避免覆盖用户已有文件。
 
 #include <QDir>
 #include <QFile>

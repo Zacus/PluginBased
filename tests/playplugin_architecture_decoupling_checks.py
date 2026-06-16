@@ -78,9 +78,9 @@ def main():
     ):
         require(forbidden not in engine_h,
                 f"PlayerEngine should not own completion flag directly: {forbidden}")
-    require("Tracks decoder/audio/video completion state for PlayerEngine" in completion_h,
+    require("跟踪解码器、音频和视频三路完成状态" in completion_h,
             "PlaybackCompletionTracker.h should explain its file purpose")
-    require("Implements media completion state transitions for PlayerEngine" in completion_cpp,
+    require("实现 PlayerEngine 使用的媒体完成状态转换" in completion_cpp,
             "PlaybackCompletionTracker.cpp should explain its file purpose")
     require("bool shouldFinish() const" in completion_h and "bool finish()" in completion_h,
             "PlaybackCompletionTracker should expose finish decision and transition")
@@ -88,9 +88,9 @@ def main():
             "PlaybackPipeline should delegate seek coordination to PlaybackSeekCoordinator")
     require("m_seekCoordinator.seek(positionMs, generation)" in pipeline_cpp,
             "PlaybackPipeline::seek should delegate renderer/decoder/clock coordination")
-    require("Coordinates playback seek side effects owned by PlaybackPipeline" in seek_h,
+    require("协调 seek 时需要同步触发的播放管线副作用" in seek_h,
             "PlaybackSeekCoordinator.h should explain its file purpose")
-    require("Implements ordered seek coordination across decoder, renderers, queues, and clock" in seek_cpp,
+    require("按固定顺序协调解码器、渲染器、队列和时钟上的 seek 操作" in seek_cpp,
             "PlaybackSeekCoordinator.cpp should explain its file purpose")
     require("void seek(qint64 positionMs, int generation)" in seek_h and
             "void complete(int generation, int serial)" in seek_h,

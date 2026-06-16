@@ -105,7 +105,7 @@ static void signalHandler(int sig, siginfo_t* info, void* ucontext)
     LOG_CRITICAL("Signal {} received! Writing backtrace → {}", sig, path);
     Logger::instance().shutdown();
 
-    // backtrace
+    // 采集调用栈
     std::array<void*, 64> frames{};
     int count = backtrace(frames.data(), static_cast<int>(frames.size()));
     char** symbols = backtrace_symbols(frames.data(), count);

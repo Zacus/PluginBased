@@ -1,7 +1,7 @@
 #pragma once
 
-// Shared value type for parsed plugin generator options.
-// It lets renderer and writer helpers exchange generator state without depending on QObject.
+// 插件生成器解析后的共享参数值类型。
+// 渲染器和写入器通过它交换状态，避免依赖 QObject。
 
 #include <QString>
 

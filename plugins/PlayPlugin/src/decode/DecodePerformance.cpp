@@ -1,7 +1,7 @@
 #include "decode/DecodePerformance.h"
 
-// Implements throttled decoder performance logging.
-// This keeps log formatting and interval state out of FFmpegDecoder's packet/frame control flow.
+// 实现带节流的解码性能日志输出。
+// 日志格式和输出间隔状态集中在这里，避免混入 FFmpegDecoder 的包/帧控制流。
 
 #include "Logger.h"
 

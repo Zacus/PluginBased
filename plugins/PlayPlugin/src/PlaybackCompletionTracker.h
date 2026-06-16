@@ -1,7 +1,7 @@
 #pragma once
 
-// Tracks decoder/audio/video completion state for PlayerEngine.
-// This value helper keeps playback-finished rules out of the QML-facing facade.
+// 跟踪解码器、音频和视频三路完成状态，供 PlayerEngine 判断播放是否结束。
+// 该值类型把“播放完成”规则从 QML 门面类中拆出，便于单独维护。
 
 class PlaybackCompletionTracker
 {

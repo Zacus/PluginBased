@@ -1,7 +1,7 @@
 #include "PlaybackSeekCoordinator.h"
 
-// Implements ordered seek coordination across decoder, renderers, queues, and clock.
-// The call order mirrors the previous PlaybackPipeline logic to preserve playback behavior.
+// 按固定顺序协调解码器、渲染器、队列和时钟上的 seek 操作。
+// 调用顺序保持与拆分前 PlaybackPipeline 逻辑一致，确保播放行为不变。
 
 #include "AudioRenderer.h"
 #include "ClockSync.h"

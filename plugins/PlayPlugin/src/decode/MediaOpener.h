@@ -1,7 +1,7 @@
 #pragma once
 
-// Opens FFmpeg media inputs and discovers decodable streams.
-// FFmpegDecoder owns the returned resources after a successful open; MediaOpener itself has no thread affinity.
+// 打开 FFmpeg 媒体输入，并发现可解码的视频/音频流。
+// 打开成功后，返回的原生资源所有权交给 FFmpegDecoder；MediaOpener 本身没有线程亲和性。
 
 #include "FFmpegUtils.h"
 #include "hw/HardwareDecoderBackend.h"

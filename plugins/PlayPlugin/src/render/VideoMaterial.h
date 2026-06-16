@@ -1,7 +1,7 @@
 #pragma once
 
-// Owns the QSG material state used by FFmpegSurface video nodes.
-// VideoNode keeps one VideoMaterial instance while the shader implementation lives in VideoMaterial.cpp.
+// 持有 FFmpegSurface 视频节点使用的 QSG 材质状态。
+// VideoNode 保存一个 VideoMaterial 实例，具体 shader 实现在 VideoMaterial.cpp 中。
 
 #include "FFmpegUtils.h"
 #include "render/VideoPixelFormat.h"

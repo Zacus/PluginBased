@@ -1,7 +1,7 @@
 #include "render/VideoPixelFormat.h"
 
-// Implements FFmpeg pixel format mapping for QRhi texture uploads.
-// Keeping this table outside FFmpegSurface makes the format contract reusable by later render backends.
+// 实现 FFmpeg 像素格式到 QRhi 纹理上传布局的映射。
+// 映射表独立于 FFmpegSurface，后续渲染后端可以复用这份格式契约。
 
 extern "C" {
 #include <libavutil/pixfmt.h>

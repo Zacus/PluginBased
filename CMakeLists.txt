@@ -9,7 +9,7 @@ set(CMAKE_AUTORCC ON)
 find_package(Qt6 REQUIRED COMPONENTS Core Gui GuiPrivate Quick QuickControls2 Multimedia ShaderTools Test LinguistTools)
 qt_standard_project_setup()
 
-find_package(spdlog REQUIRED)   # vcpkg / conan / system
+find_package(spdlog REQUIRED)   # 可来自 vcpkg、conan 或系统安装
 
 include(CTest)
 
@@ -28,10 +28,10 @@ pkg_check_modules(SWSCALE    REQUIRED IMPORTED_TARGET libswscale)
 pkg_check_modules(SWRESAMPLE REQUIRED IMPORTED_TARGET libswresample)
 
 if(APPLE)
-    # pkgconf + static FFmpeg on macOS may inject bare framework names into
-    # INTERFACE_LINK_OPTIONS, which clang then treats as input files instead of
-    # "-framework Foo". The proper framework dependencies are still present in
-    # the imported link libraries, so strip the broken link options here.
+    # macOS 上 pkgconf + 静态 FFmpeg 可能把裸 framework 名写入
+    # INTERFACE_LINK_OPTIONS，导致 clang 把它们当作输入文件而不是
+    # "-framework Foo" 参数。正确的 framework 依赖仍保留在导入库里，
+    # 因此这里清空有问题的链接选项。
     foreach(_ffmpeg_target
             PkgConfig::AVFORMAT
             PkgConfig::AVCODEC

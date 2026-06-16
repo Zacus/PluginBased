@@ -30,9 +30,9 @@ def main():
     cmake = read("plugins/PlayPlugin/CMakeLists.txt")
     root_cmake = read("CMakeLists.txt")
 
-    require("Consumes decode-loop command state guarded by FFmpegDecoder mutexes" in control_h,
+    require("消费由 FFmpegDecoder 互斥锁保护的解码循环命令状态" in control_h,
             "DecodeLoopControl.h should explain its file purpose")
-    require("Implements locked command-state consumption for FFmpegDecoder" in control_cpp,
+    require("实现 FFmpegDecoder 解码循环中受锁保护的命令状态消费" in control_cpp,
             "DecodeLoopControl.cpp should explain its file purpose")
     require("struct PendingSeekRequest" in control_h and "class DecodeLoopControl" in control_h,
             "DecodeLoopControl should expose a structured pending seek result")

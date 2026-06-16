@@ -5,8 +5,8 @@
 /**
  * @brief 崩溃处理器
  *
- * Windows: SetUnhandledExceptionFilter + MiniDumpWriteDump
- * Linux/Mac: signal(SIGSEGV/SIGABRT/SIGFPE) + backtrace 写文件
+ * Windows：使用 SetUnhandledExceptionFilter + MiniDumpWriteDump。
+ * Linux/macOS：使用 signal(SIGSEGV/SIGABRT/SIGFPE) + backtrace 写文件。
  *
  * 调用 CrashHandler::install() 后，程序崩溃时会在 dumpDir 目录下
  * 生成带时间戳的 dump 文件并记录日志。

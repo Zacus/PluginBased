@@ -30,9 +30,9 @@ def main():
     cmake = read("plugins/PlayPlugin/CMakeLists.txt")
     root_cmake = read("CMakeLists.txt")
 
-    require("Opens FFmpeg media inputs and discovers decodable streams" in opener_h,
+    require("打开 FFmpeg 媒体输入，并发现可解码的视频/音频流" in opener_h,
             "MediaOpener.h should explain its file purpose")
-    require("Implements media open, stream selection, and codec setup" in opener_cpp,
+    require("实现媒体打开、流选择和编解码器上下文初始化" in opener_cpp,
             "MediaOpener.cpp should explain its file purpose")
     require("struct OpenedMedia" in opener_h and "struct MediaOpenResult" in opener_h,
             "MediaOpener should return a structured move-only media open result")

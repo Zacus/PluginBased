@@ -47,9 +47,9 @@ def main():
     writer_cpp = read("tools/plugin_generator/PluginScaffoldWriter.cpp")
     root_cmake = read("CMakeLists.txt")
 
-    require("Resolves the runtime plugin directory for AppController" in path_resolver_h,
+    require("解析 AppController 启动时使用的插件目录" in path_resolver_h,
             "PluginPathResolver.h should explain its file purpose")
-    require("Implements host plugin directory discovery for development and packaged layouts" in path_resolver_cpp,
+    require("实现宿主插件目录发现，覆盖开发构建和发布包两种布局" in path_resolver_cpp,
             "PluginPathResolver.cpp should explain its file purpose")
     require("PluginPathResolver::resolve" in app_controller_cpp,
             "AppController should delegate plugin path discovery")
@@ -60,9 +60,9 @@ def main():
 
     require("struct PluginGeneratorOptions" in read("tools/plugin_generator/PluginGeneratorOptions.h"),
             "PluginGeneratorOptions should expose the parsed generator value type")
-    require("Renders generated plugin file text without touching the filesystem" in renderer_h,
+    require("渲染插件脚手架的各类文件内容，不直接访问文件系统" in renderer_h,
             "PluginTemplateRenderer.h should explain its file purpose")
-    require("Implements text templates used by PluginTemplateGenerator" in renderer_cpp,
+    require("实现 PluginTemplateGenerator 使用的文本模板" in renderer_cpp,
             "PluginTemplateRenderer.cpp should explain its file purpose")
     for method in (
         "headerText",
@@ -77,9 +77,9 @@ def main():
         require(method not in generator_h,
                 f"PluginTemplateGenerator should not expose {method}")
 
-    require("Writes rendered plugin scaffold files to disk" in writer_h,
+    require("将渲染后的插件脚手架文件写入磁盘" in writer_h,
             "PluginScaffoldWriter.h should explain its file purpose")
-    require("Implements filesystem writes for generated plugin scaffolds" in writer_cpp,
+    require("实现插件脚手架的文件系统写入" in writer_cpp,
             "PluginScaffoldWriter.cpp should explain its file purpose")
     require("writePlugin" in writer_h and "copyIconAsset" in writer_cpp,
             "PluginScaffoldWriter should own scaffold writes and icon copying")

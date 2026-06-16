@@ -1,7 +1,7 @@
 #pragma once
 
-// Prepares decoded video frames before they enter the renderer queue.
-// FFmpegDecoder owns this processor on the decode thread; it owns swscale cache state and no QObjects.
+// 在解码视频帧进入渲染队列前完成预处理。
+// FFmpegDecoder 在解码线程持有该处理器；它只拥有 swscale 缓存状态，不拥有 QObject。
 
 #include "FFmpegUtils.h"
 #include "decode/DecodePerformance.h"

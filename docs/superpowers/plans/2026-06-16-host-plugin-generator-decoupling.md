@@ -161,10 +161,17 @@ cmake --build build --parallel
 ctest --test-dir build --output-on-failure
 ```
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 Commit message:
 
 ```bash
 git commit -m "[功能修改] 解耦宿主插件路径和生成器模板"
 ```
+
+Completed in commit `98abb1d`.
+
+## Follow-up: Comment Contract Sync
+
+- [x] Keep the newly added helper file purpose comments in Chinese, matching the repository's current documentation style.
+- [x] Update `tests/host_plugin_generator_decoupling_checks.py` so the architecture guard validates those Chinese purpose comments instead of stale English text.

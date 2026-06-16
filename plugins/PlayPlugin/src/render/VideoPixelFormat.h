@@ -1,7 +1,7 @@
 #pragma once
 
-// Describes YUV/semiplanar video formats for FFmpegSurface rendering.
-// The Surface and future render backends use this helper to map FFmpeg pixel formats to QRhi texture layouts.
+// 描述 FFmpegSurface 渲染所需的 YUV/半平面视频格式。
+// Surface 和后续渲染后端通过它把 FFmpeg 像素格式映射到 QRhi 纹理布局。
 
 #include <QSize>
 #include <rhi/qrhi.h>

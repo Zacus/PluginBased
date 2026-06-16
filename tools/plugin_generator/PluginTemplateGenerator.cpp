@@ -2,6 +2,9 @@
 #include "PluginScaffoldWriter.h"
 #include "PluginTemplateRenderer.h"
 
+// 负责插件生成流程编排：解析参数、选择模板文件并交给写入器落盘。
+// 具体模板内容和文件系统写入分别由 Renderer / Writer 辅助类承担。
+
 #include <QCoreApplication>
 #include <QDir>
 #include <QFileInfo>

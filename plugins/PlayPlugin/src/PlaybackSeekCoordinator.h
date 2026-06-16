@@ -1,7 +1,7 @@
 #pragma once
 
-// Coordinates playback seek side effects owned by PlaybackPipeline.
-// The coordinator stores non-owning references; PlaybackPipeline owns every referenced component.
+// 协调 seek 时需要同步触发的播放管线副作用。
+// 本协调器只保存非拥有引用，引用到的组件均由 PlaybackPipeline 持有。
 
 #include <QtGlobal>
 

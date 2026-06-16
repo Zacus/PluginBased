@@ -1,7 +1,7 @@
 #include "render/VideoMaterial.h"
 
-// Implements the QSG material shader and QRhi texture upload path.
-// FFmpegSurface and VideoNode use this as an internal rendering detail, not as a QML-facing API.
+// 实现 QSG 材质 shader 和 QRhi 纹理上传路径。
+// FFmpegSurface 和 VideoNode 将其作为内部渲染细节使用，不暴露为 QML API。
 
 #include <QByteArray>
 #include <QDebug>

@@ -12,7 +12,7 @@ qt_add_executable(PluginBasedApp
     CrashHandler.cpp
 )
 
-# ENABLE_EXPORTS → 链接时加 -rdynamic（Linux）/ -Wl,-export_dynamic（macOS）
+# ENABLE_EXPORTS 会在链接时加入 -rdynamic（Linux）/ -Wl,-export_dynamic（macOS）
 # 将主程序所有非 static 符号导出到动态符号表，
 # 使运行时 dlopen 的插件 .so 能直接解析 PluginManager 等宿主符号。
 set_target_properties(PluginBasedApp PROPERTIES
@@ -22,7 +22,7 @@ set_target_properties(PluginBasedApp PROPERTIES
 )
 
 # ── PluginBased 1.0 QML 模块（宿主基础设施层）────────────────────
-# SOURCES 放有 QML_ELEMENT/QML_SINGLETON 宏的类，让 qmltyperegistrar 生成类型注册代码。
+# SOURCES 放入带 QML_ELEMENT/QML_SINGLETON 宏的类，让 qmltyperegistrar 生成类型注册代码。
 # AppController 和 PluginManager 都是 QML_ELEMENT，放在这里编译一次即可。
 qt_add_qml_module(PluginBasedApp
     URI     "PluginBased"
@@ -57,7 +57,7 @@ target_link_libraries(PluginBasedApp PRIVATE
     Qt6::Quick
     Qt6::QuickControls2
     Qt6::Multimedia
-    PluginBasedLogger               # Logger + AppLog QML 模块
+    PluginBasedLogger               # Logger 与 AppLog QML 模块
     PluginBasedPlugin               # IAppPlugin 接口（INTERFACE）
     PluginBasedCore                 # PluginManager.h 头文件路径（INTERFACE）
     QtQuickComponents
@@ -68,7 +68,7 @@ target_link_libraries(PluginBasedApp PRIVATE
 #   PluginBased/qmldir   宿主模块 (PluginBased 1.0)
 #   PlayPlugin/qmldir    插件模块 (PlayPlugin 1.0)
 #   AppLog/qmldir        日志模块 (AppLog 1.0)
-# addImportPath 一次覆盖所有模块
+# addImportPath 一次覆盖所有模块。
 target_compile_definitions(PluginBasedApp PRIVATE
     QML_IMPORT_PATH="${CMAKE_BINARY_DIR}"
 )
@@ -88,7 +88,7 @@ endif()
 #         BUNDLE DESTINATION .
 #     )
 #     # QML 模块目录 → Contents/Resources/qml/
-#     # main.cpp 在 bundle 下搜索 Contents/Resources/qml/ 作为 import path
+#     # main.cpp 在 bundle 下搜索 Contents/Resources/qml/ 作为导入路径
 #     foreach(mod AppLog PluginBased PlayPlugin)
 #         install(DIRECTORY "${CMAKE_BINARY_DIR}/${mod}"
 #             DESTINATION "$<TARGET_BUNDLE_DIR:PluginBasedApp>/Contents/Resources/qml"

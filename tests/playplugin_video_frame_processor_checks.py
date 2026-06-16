@@ -30,9 +30,9 @@ def main():
     cmake = read("plugins/PlayPlugin/CMakeLists.txt")
     root_cmake = read("CMakeLists.txt")
 
-    require("Prepares decoded video frames before they enter the renderer queue" in processor_h,
+    require("在解码视频帧进入渲染队列前完成预处理" in processor_h,
             "VideoFrameProcessor.h should explain its file purpose")
-    require("Implements hardware frame transfer and pixel-format normalization" in processor_cpp,
+    require("实现硬件帧转 CPU 帧，以及像素格式归一化" in processor_cpp,
             "VideoFrameProcessor.cpp should explain its file purpose")
     require("class VideoFrameProcessor" in processor_h,
             "VideoFrameProcessor should be declared")

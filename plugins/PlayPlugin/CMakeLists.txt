@@ -1,7 +1,7 @@
 # ============================================================
-# PlayPlugin —— 完全自包含的播放器插件（单 target）
+# PlayPlugin —— 完全自包含的播放器插件（单一 target）
 #
-# Step 3：将原来的双 target（PlayPluginBackend + PlayPlugin）
+# 第三步：将原来的双 target（PlayPluginBackend + PlayPlugin）
 # 合并为单一 MODULE target。
 #
 # 为什么原来需要双 target：
@@ -10,7 +10,7 @@
 #   与 PlayPlugin.cpp 里 Q_PLUGIN_METADATA(IID IAppPlugin_IID) 产生的同名符号冲突，
 #   不得不拆成 PlayPluginBackend（QML 类型注册）+ PlayPlugin（宿主插件实现）。
 #
-# 单 target 可行的关键：NO_PLUGIN 参数
+# 单一 target 可行的关键：NO_PLUGIN 参数
 #   NO_PLUGIN 告知 qt_add_qml_module 不生成 QML plugin 入口文件，
 #   PlayPlugin.so 里只有 IAppPlugin 那一个 qt_plugin_instance，冲突消除。
 #   QML 类型注册代码（Q_CONSTRUCTOR_FUNCTION）仍然生成并编译进 .so，
@@ -25,7 +25,7 @@
 #   └─ qml/*                  所有 QML 文件（嵌入 qrc，qt_add_qml_module 自动处理）
 # ============================================================
 
-# ── Step 1：先声明 MODULE target ──────────────────────────────
+# ── 第一步：先声明 MODULE target ──────────────────────────────
 # MODULE 必须先于 qt_add_qml_module 创建，
 # 否则后者会尝试自己创建一个 SHARED 库。
 add_library(PlayPlugin MODULE
@@ -33,7 +33,7 @@ add_library(PlayPlugin MODULE
     PlayPlugin.cpp
 )
 
-# ── Step 2：追加 QML 模块到该 MODULE target ───────────────────
+# ── 第二步：追加 QML 模块到该 MODULE target ───────────────────
 # NO_PLUGIN：不生成独立的 QML plugin 入口文件（*Plugin.cpp）。
 #
 # 为什么必须用 NO_PLUGIN：
@@ -53,7 +53,7 @@ qt_add_qml_module(PlayPlugin
     NO_PLUGIN
     URI     PlayPlugin
     VERSION 1.0
-    # QML module 目录（含 qmldir），宿主 addImportPath(CMAKE_BINARY_DIR) 即可找到
+    # QML 模块目录（含 qmldir），宿主 addImportPath(CMAKE_BINARY_DIR) 即可找到
     OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/PlayPlugin"
 
     # QML 文件由 qt_add_qml_module 自动嵌入 qrc，前缀 /PlayPlugin/
@@ -74,7 +74,7 @@ qt_add_qml_module(PlayPlugin
         src/PlayerEngine.h     src/PlayerEngine.cpp
         src/PlaylistModel.h    src/PlaylistModel.cpp
         src/MediaInfo.h
-        # Step 2 — FFmpeg 解码器
+        # 第二步拆出的 FFmpeg 解码器相关文件
         src/FFmpegUtils.h
         src/FrameQueue.h
         src/decode/DecodePerformance.h src/decode/DecodePerformance.cpp
@@ -96,7 +96,7 @@ qt_add_qml_module(PlayPlugin
         src/render/VideoNode.h src/render/VideoNode.cpp
         src/render/VideoSurfaceGeometry.h src/render/VideoSurfaceGeometry.cpp
         src/render/VideoPixelFormat.h src/render/VideoPixelFormat.cpp
-        # Step 3 — 渲染器 + 时钟同步 + 视频输出组件
+        # 第三步拆出的渲染器、时钟同步和视频输出组件
         src/ClockSync.h
         src/AudioRenderer.h    src/AudioRenderer.cpp
         src/VideoRenderer.h    src/VideoRenderer.cpp
@@ -125,7 +125,7 @@ set_target_properties(PlayPlugin PROPERTIES
     # .so 输出到 plugins/，供 QPluginLoader 扫描
     LIBRARY_OUTPUT_DIRECTORY  "${CMAKE_BINARY_DIR}/plugins"
     RUNTIME_OUTPUT_DIRECTORY  "${CMAKE_BINARY_DIR}/plugins"
-    # QML module 的 qmldir 输出到 CMAKE_BINARY_DIR/PlayPlugin/（见 OUTPUT_DIRECTORY）
+    # QML 模块的 qmldir 输出到 CMAKE_BINARY_DIR/PlayPlugin/（见 OUTPUT_DIRECTORY）
 )
 
 target_include_directories(PlayPlugin PRIVATE
@@ -143,7 +143,7 @@ target_link_libraries(PlayPlugin PRIVATE
     Qt6::Multimedia
     PluginBasedPlugin                   # IAppPlugin 接口（INTERFACE）
     PluginBasedLogger                   # spdlog 封装（STATIC）
-    FFmpeg::all                         # avformat / avcodec / avutil / swscale / swresample
+    FFmpeg::all                         # avformat、avcodec、avutil、swscale、swresample
     # 不链接 PluginBasedCore：PluginManager 符号由主程序 -rdynamic 在运行时提供
 )
 

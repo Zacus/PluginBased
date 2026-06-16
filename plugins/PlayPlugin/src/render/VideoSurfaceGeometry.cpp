@@ -1,7 +1,7 @@
 #include "render/VideoSurfaceGeometry.h"
 
-// Implements FFmpegSurface aspect-ratio geometry calculations.
-// The helper is intentionally independent of Scene Graph nodes and frame ownership.
+// 实现 FFmpegSurface 的宽高比几何计算。
+// 该辅助逻辑刻意不依赖 Scene Graph 节点或视频帧所有权。
 
 #include <QSizeF>
 

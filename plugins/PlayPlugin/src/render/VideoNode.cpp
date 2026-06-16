@@ -1,7 +1,7 @@
 #include "render/VideoNode.h"
 
-// Implements FFmpegSurface video node texture lifecycle and frame binding.
-// The node owns QRhi textures for software upload and native platform texture sets where available.
+// 实现 FFmpegSurface 视频节点的纹理生命周期和帧绑定。
+// 该节点持有软件上传用 QRhi 纹理；平台支持时也持有原生纹理集合。
 
 #if defined(Q_OS_APPLE)
 #include "native/AppleMetalVideoTextureBridge.h"

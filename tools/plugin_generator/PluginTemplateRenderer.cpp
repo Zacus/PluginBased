@@ -1,7 +1,7 @@
 #include "PluginTemplateRenderer.h"
 
-// Implements text templates used by PluginTemplateGenerator.
-// These methods are pure string rendering and intentionally avoid filesystem access.
+// 实现 PluginTemplateGenerator 使用的文本模板。
+// 这里的方法只做字符串渲染，刻意不访问文件系统。
 
 QString PluginTemplateRenderer::cppString(const QString& value)
 {

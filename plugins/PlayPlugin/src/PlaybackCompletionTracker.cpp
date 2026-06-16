@@ -1,7 +1,7 @@
 #include "PlaybackCompletionTracker.h"
 
-// Implements media completion state transitions for PlayerEngine.
-// PlayerEngine remains responsible for public QML state and signal emission.
+// 实现 PlayerEngine 使用的媒体完成状态转换。
+// 对外 QML 状态和信号发射仍由 PlayerEngine 负责。
 
 void PlaybackCompletionTracker::resetForOpen()
 {

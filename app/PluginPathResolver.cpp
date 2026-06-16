@@ -1,7 +1,7 @@
 #include "PluginPathResolver.h"
 
-// Implements host plugin directory discovery for development and packaged layouts.
-// Candidate order intentionally mirrors the previous AppController startup logic.
+// 实现宿主插件目录发现，覆盖开发构建和发布包两种布局。
+// 候选路径顺序沿用原 AppController 启动逻辑，避免改变插件查找行为。
 
 #include "Logger.h"
 

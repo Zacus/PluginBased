@@ -30,9 +30,9 @@ def main():
     cmake = read("plugins/PlayPlugin/CMakeLists.txt")
     root_cmake = read("CMakeLists.txt")
 
-    require("Tracks throttled FFmpeg decoder performance counters" in perf_h,
+    require("记录带节流输出的 FFmpeg 解码性能计数" in perf_h,
             "DecodePerformance.h should explain its file purpose")
-    require("Implements throttled decoder performance logging" in perf_cpp,
+    require("实现带节流的解码性能日志输出" in perf_cpp,
             "DecodePerformance.cpp should explain its file purpose")
     require("struct DecodePerformanceStats" in perf_h,
             "DecodePerformance.h should own DecodePerformanceStats")

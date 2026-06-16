@@ -1,7 +1,7 @@
 #pragma once
 
-// Owns the QSG geometry node used by FFmpegSurface.
-// This keeps Scene Graph texture lifecycle and frame binding separate from the QQuickItem facade.
+// 持有 FFmpegSurface 使用的 QSG 几何节点。
+// Scene Graph 纹理生命周期和帧绑定逻辑放在这里，避免混入 QQuickItem 门面。
 
 #include "FFmpegUtils.h"
 #include "render/VideoMaterial.h"

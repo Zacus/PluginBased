@@ -29,9 +29,9 @@ def main():
     cmake = read("plugins/PlayPlugin/CMakeLists.txt")
     root_cmake = read("CMakeLists.txt")
 
-    require("Installs the FFmpeg global log callback used by PlayPlugin" in bridge_h,
+    require("安装 PlayPlugin 使用的 FFmpeg 全局日志回调" in bridge_h,
             "FFmpegLogBridge.h should explain its file purpose")
-    require("Adapts FFmpeg C log callbacks to the project logger" in bridge_cpp,
+    require("将 FFmpeg 的 C 日志回调适配到项目日志系统" in bridge_cpp,
             "FFmpegLogBridge.cpp should explain its file purpose")
     require("void installFFmpegLogBridge()" in bridge_h,
             "FFmpegLogBridge should expose installFFmpegLogBridge")

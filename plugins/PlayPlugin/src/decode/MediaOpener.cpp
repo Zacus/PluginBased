@@ -1,7 +1,7 @@
 #include "decode/MediaOpener.h"
 
-// Implements media open, stream selection, and codec setup.
-// The returned OpenedMedia object transfers all native resource ownership to FFmpegDecoder.
+// 实现媒体打开、流选择和编解码器上下文初始化。
+// 返回的 OpenedMedia 会把所有原生资源所有权移交给 FFmpegDecoder。
 
 #include "Logger.h"
 #include "hw/HardwareDecoderFactory.h"

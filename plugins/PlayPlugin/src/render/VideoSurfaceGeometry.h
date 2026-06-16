@@ -1,7 +1,7 @@
 #pragma once
 
-// Calculates the video draw rectangle for FFmpegSurface.
-// Keeping this pure helper outside the QQuickItem makes aspect-ratio behavior easier to test and reuse.
+// 计算 FFmpegSurface 中视频实际绘制矩形。
+// 将纯计算逻辑放在 QQuickItem 外部，便于测试和复用宽高比行为。
 
 #include <QRectF>
 #include <QSize>

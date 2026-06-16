@@ -1,7 +1,7 @@
 #include "decode/StreamFrameDecoder.h"
 
-// Implements packet send, frame receive, and timestamp normalization.
-// Queueing policy remains in FFmpegDecoder while raw codec iteration stays here.
+// 实现包发送、帧接收和时间戳归一化。
+// 入队策略仍留在 FFmpegDecoder，原始编解码器迭代逻辑集中在这里。
 
 #include "Logger.h"
 
