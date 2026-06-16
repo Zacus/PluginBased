@@ -212,39 +212,23 @@ void FFmpegDecoder::decodeLoop()
                 m_audioQueue->push(nullptr, m_flushSerial, true);
             emit endOfFile();
 
-            // 等待 stop、新 open，或结束后从 UI 发起的 seek。
-            bool openRequested = false;
-            while (!m_stop.loadRelaxed())
+            const EofWaitResult eofWait = m_decodeLoopControl.waitAfterEof(
+                m_stop,
+                m_seekMutex,
+                m_seekRequested,
+                m_seekTargetMs,
+                m_seekGeneration,
+                m_openMutex,
+                m_openCond,
+                m_openRequested);
+            if (eofWait.decision == EofWaitDecision::SeekRequested)
             {
-                {
-                    const PendingSeekRequest seekRequest =
-                        m_decodeLoopControl.consumeSeekRequest(
-                            m_seekMutex,
-                            m_seekRequested,
-                            m_seekTargetMs,
-                            m_seekGeneration);
-                    if (seekRequest.requested)
-                    {
-                        doSeek(seekRequest.targetMs, seekRequest.generation);
-                        emit seekCompleted(seekRequest.generation, m_flushSerial);
-                        break;
-                    }
-                }
-
-                {
-                    QMutexLocker lk(&m_openMutex);
-                    if (m_openRequested)
-                    {
-                        openRequested = true;
-                        break;
-                    }
-                    m_openCond.wait(&m_openMutex, 10);
-                }
+                doSeek(eofWait.seek.targetMs, eofWait.seek.generation);
+                emit seekCompleted(eofWait.seek.generation, m_flushSerial);
+                continue;
             }
 
-            if (m_stop.loadRelaxed() || openRequested)
-                break; // 退出本次 decodeLoop，回到 run() 的外层循环处理新文件
-            continue;
+            break; // 退出本次 decodeLoop，回到 run() 的外层循环处理新文件
         }
         if (ret < 0)
         {
