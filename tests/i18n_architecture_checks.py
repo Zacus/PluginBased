@@ -119,6 +119,21 @@ def main() -> None:
         "main should install plugin translators before QML retranslation on runtime language changes",
     )
     require(
+        "PluginManager::instance().unloadAll();" in main_cpp,
+        "main should explicitly unload plugins before QCoreApplication destruction",
+    )
+    require(
+        main_cpp.index("ret = app.exec();") < main_cpp.index("PluginManager::instance().unloadAll();")
+        < main_cpp.index("Logger::instance().shutdown();"),
+        "main should unload plugins after the event loop exits and before logger/QCoreApplication teardown",
+    )
+    require(
+        "    {\n        QQmlApplicationEngine engine;" in main_cpp
+        and main_cpp.index("    {\n        QQmlApplicationEngine engine;")
+        < main_cpp.index("PluginManager::instance().unloadAll();"),
+        "main should destroy QQmlApplicationEngine before unloading plugin libraries",
+    )
+    require(
         "PluginManager::instance().applyLanguage(AppLanguageService::instance().currentLanguage())" in controller_cpp,
         "AppController should apply plugin translators after initial plugin loading",
     )
@@ -147,6 +162,10 @@ def main() -> None:
         "QCoreApplication::installTranslator" in plugin_manager_cpp
         and "QCoreApplication::removeTranslator" in plugin_manager_cpp,
         "PluginManager should install and remove plugin translators through QCoreApplication",
+    )
+    require(
+        "m_plugins.empty() && m_pluginTranslators.empty()" in plugin_manager_cpp,
+        "PluginManager unloadAll should be idempotent after explicit shutdown",
     )
 
     translation_ts = read("translations/pluginbased_zh_CN.ts")

@@ -14,6 +14,9 @@ namespace PluginDiscovery = PluginBased::Plugins::PluginDiscovery;
 
 void PluginManager::unloadAll()
 {
+    if (m_plugins.empty() && m_pluginTranslators.empty())
+        return;
+
     removeInstalledTranslators();
 
     // 逆序 shutdown，再逆序 unload，保证依赖顺序
