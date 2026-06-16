@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Introduce `PlaybackPipeline` so `PlayerEngine` becomes a QML-facing facade instead of directly owning decoder, renderer, queues, and clock.
+**Goal:** Introduce `PlaybackPipeline` so `PlayerEngine` becomes a QML-facing facade instead of directly owning decoder, renderer, queues, and clock. Later phases also reduce `FFmpegSurface` and `FFmpegDecoder` into facades around focused internal helpers.
 
-**Architecture:** Keep public QML API stable. Add an internal QObject `PlaybackPipeline` that owns low-level playback components, forwards their signals, and provides component lifecycle commands. Keep completion state in `PlayerEngine` for this phase to minimize behavior risk.
+**Architecture:** Keep public QML API stable. Add an internal QObject `PlaybackPipeline` that owns low-level playback components, forwards their signals, and provides component lifecycle commands. Keep completion state in `PlayerEngine` for this phase to minimize behavior risk. For lower-level decoder/surface refactors, prefer small value helpers and structured results over broad inheritance or pimpl.
 
 **Tech Stack:** C++17, Qt 6 Core/Quick/Multimedia, QThread, QPointer, FFmpeg, CMake, Python architecture checks.
 
@@ -20,13 +20,25 @@
 - Create `tests/playplugin_architecture_decoupling_checks.py`: static checks for the new boundary.
 - Modify `CMakeLists.txt`: add the architecture check to CTest.
 
+Additional completed helper boundaries:
+
+- `plugins/PlayPlugin/src/render/VideoPixelFormat.h/.cpp`: video pixel format mapping.
+- `plugins/PlayPlugin/src/render/VideoMaterial.h/.cpp`: RHI material, shader, texture upload, and software YUV binding.
+- `plugins/PlayPlugin/src/render/VideoNode.h/.cpp`: scene graph node and native texture lifecycle.
+- `plugins/PlayPlugin/src/render/VideoSurfaceGeometry.h/.cpp`: aspect-preserving draw rectangle calculation.
+- `plugins/PlayPlugin/src/decode/DecodePerformance.h/.cpp`: decode performance counters and throttled logs.
+- `plugins/PlayPlugin/src/decode/VideoFrameProcessor.h/.cpp`: hardware frame transfer and video pixel normalization.
+- `plugins/PlayPlugin/src/decode/MediaOpener.h/.cpp`: input open, stream discovery, codec setup, and hardware backend selection.
+- `plugins/PlayPlugin/src/decode/StreamFrameDecoder.h/.cpp`: packet send, frame receive, and PTS normalization.
+- `plugins/PlayPlugin/src/decode/FFmpegLogBridge.h/.cpp`: FFmpeg global log callback bridge.
+
 ## Task 1: Add Architecture Guard
 
 **Files:**
 - Create: `tests/playplugin_architecture_decoupling_checks.py`
 - Modify: `CMakeLists.txt`
 
-- [ ] **Step 1: Write the failing architecture test**
+- [x] **Step 1: Write the failing architecture test**
 
 Create `tests/playplugin_architecture_decoupling_checks.py`:
 
@@ -105,7 +117,7 @@ Add this test to the top-level `BUILD_TESTING` block in `CMakeLists.txt`:
     )
 ```
 
-- [ ] **Step 2: Run the test and verify RED**
+- [x] **Step 2: Run the test and verify RED**
 
 Run:
 
@@ -122,15 +134,15 @@ Expected: FAIL with `PlaybackPipeline.h should exist`.
 - Create: `plugins/PlayPlugin/src/PlaybackPipeline.cpp`
 - Modify: `plugins/PlayPlugin/CMakeLists.txt`
 
-- [ ] **Step 1: Add PlaybackPipeline header and implementation**
+- [x] **Step 1: Add PlaybackPipeline header and implementation**
 
 Create `PlaybackPipeline` as a QObject that owns queues, clock, decoder, audio renderer, and video renderer. It must expose the commands and signals described in the design document.
 
-- [ ] **Step 2: Add files to CMake**
+- [x] **Step 2: Add files to CMake**
 
 Add `src/PlaybackPipeline.h src/PlaybackPipeline.cpp` to the `qt_add_qml_module(PlayPlugin SOURCES ...)` list near `PlayerEngine`.
 
-- [ ] **Step 3: Run the architecture test**
+- [x] **Step 3: Run the architecture test**
 
 Run:
 
@@ -146,7 +158,7 @@ Expected: still FAIL because `PlayerEngine` has not delegated yet.
 - Modify: `plugins/PlayPlugin/src/PlayerEngine.h`
 - Modify: `plugins/PlayPlugin/src/PlayerEngine.cpp`
 
-- [ ] **Step 1: Replace direct members**
+- [x] **Step 1: Replace direct members**
 
 In `PlayerEngine.h`, forward declare `PlaybackPipeline`, remove direct includes for low-level playback classes, and replace direct low-level members with:
 
@@ -154,15 +166,15 @@ In `PlayerEngine.h`, forward declare `PlaybackPipeline`, remove direct includes 
 std::unique_ptr<PlaybackPipeline> m_pipeline;
 ```
 
-- [ ] **Step 2: Wire pipeline signals**
+- [x] **Step 2: Wire pipeline signals**
 
 In the constructor, create `m_pipeline` and connect pipeline signals to existing `PlayerEngine` slots.
 
-- [ ] **Step 3: Delegate commands**
+- [x] **Step 3: Delegate commands**
 
 Replace direct decoder/renderer/queue/surface operations with equivalent `m_pipeline` calls.
 
-- [ ] **Step 4: Run the architecture test**
+- [x] **Step 4: Run the architecture test**
 
 Run:
 
@@ -177,7 +189,7 @@ Expected: PASS with no output.
 **Files:**
 - No source edits expected.
 
-- [ ] **Step 1: Run static PlayPlugin regression checks**
+- [x] **Step 1: Run static PlayPlugin regression checks**
 
 Run:
 
@@ -187,7 +199,7 @@ python3 tests/playplugin_regression_checks.py
 
 Expected: PASS with no output.
 
-- [ ] **Step 2: Run CTest if a configured build exists**
+- [x] **Step 2: Run CTest if a configured build exists**
 
 Run:
 
@@ -197,7 +209,7 @@ ctest --test-dir build --output-on-failure
 
 Expected: all configured tests pass. If `build` is not configured locally, configure/build first using the repository build instructions.
 
-- [ ] **Step 3: Build**
+- [x] **Step 3: Build**
 
 Run:
 
@@ -206,3 +218,108 @@ cmake --build build --parallel
 ```
 
 Expected: `PlayPlugin` and `PluginBasedApp` build successfully.
+
+## Task 5: Completed Surface Helper Extraction
+
+**Files:**
+- Created: `plugins/PlayPlugin/src/render/VideoPixelFormat.h/.cpp`
+- Created: `plugins/PlayPlugin/src/render/VideoMaterial.h/.cpp`
+- Created: `plugins/PlayPlugin/src/render/VideoNode.h/.cpp`
+- Created: `plugins/PlayPlugin/src/render/VideoSurfaceGeometry.h/.cpp`
+- Modified: `plugins/PlayPlugin/src/FFmpegSurface.h/.cpp`
+- Modified: `plugins/PlayPlugin/CMakeLists.txt`
+- Created/updated: `tests/playplugin_surface_decoupling_checks.py`
+
+- [x] **Step 1: Extract video pixel format mapping**
+- [x] **Step 2: Extract render material and shader upload logic**
+- [x] **Step 3: Extract scene graph node and native texture lifecycle**
+- [x] **Step 4: Extract draw rectangle geometry calculation**
+- [x] **Step 5: Update CMake and architecture checks**
+- [x] **Step 6: Build and run CTest**
+
+Commits:
+
+- `73ce38a [功能修改] 抽离视频像素格式映射`
+- `3d99c4c [功能修改] 抽离视频渲染材质逻辑`
+- `e2f007e [功能修改] 抽离视频场景节点逻辑`
+- `4d5795a [功能修改] 抽离视频显示区域计算`
+
+## Task 6: Completed FFmpegDecoder Helper Extraction
+
+**Files:**
+- Created: `plugins/PlayPlugin/src/decode/DecodePerformance.h/.cpp`
+- Created: `plugins/PlayPlugin/src/decode/VideoFrameProcessor.h/.cpp`
+- Created: `plugins/PlayPlugin/src/decode/MediaOpener.h/.cpp`
+- Created: `plugins/PlayPlugin/src/decode/StreamFrameDecoder.h/.cpp`
+- Created: `plugins/PlayPlugin/src/decode/FFmpegLogBridge.h/.cpp`
+- Modified: `plugins/PlayPlugin/src/FFmpegDecoder.h/.cpp`
+- Modified: `plugins/PlayPlugin/CMakeLists.txt`
+- Created: `tests/playplugin_decoder_decoupling_checks.py`
+- Created: `tests/playplugin_video_frame_processor_checks.py`
+- Created: `tests/playplugin_media_opener_checks.py`
+- Created: `tests/playplugin_stream_frame_decoder_checks.py`
+- Created: `tests/playplugin_ffmpeg_log_bridge_checks.py`
+
+- [x] **Step 1: Extract decode performance counters and throttled logging**
+- [x] **Step 2: Extract video frame preparation, hardware transfer, and pixel normalization**
+- [x] **Step 3: Extract media input open, stream discovery, codec setup, and hardware backend selection**
+- [x] **Step 4: Extract packet send, frame receive, and PTS normalization**
+- [x] **Step 5: Extract FFmpeg global log callback bridge**
+- [x] **Step 6: Update CMake and architecture checks**
+- [x] **Step 7: Build and run CTest**
+
+Commits:
+
+- `6a10541 [功能修改] 抽离解码性能统计逻辑`
+- `8607319 [功能修改] 抽离视频帧处理逻辑`
+- `194f152 [功能修改] 抽离媒体打开逻辑`
+- `ecfe173 [功能修改] 抽离流帧解码逻辑`
+- `f866f4f [功能修改] 抽离 FFmpeg 日志桥接`
+
+## Task 7: Proposed Next Phase - Decode Loop Command State
+
+**Goal:** Reduce the remaining complexity in `FFmpegDecoder::decodeLoop()` by isolating command and EOF waiting decisions.
+
+**Candidate files:**
+- Create: `plugins/PlayPlugin/src/decode/DecodeLoopControl.h`
+- Create: `plugins/PlayPlugin/src/decode/DecodeLoopControl.cpp`
+- Modify: `plugins/PlayPlugin/src/FFmpegDecoder.h`
+- Modify: `plugins/PlayPlugin/src/FFmpegDecoder.cpp`
+- Modify: `plugins/PlayPlugin/CMakeLists.txt`
+- Create: `tests/playplugin_decode_loop_control_checks.py`
+
+**Proposed scope:**
+
+- [ ] **Step 1: Add architecture guard**
+
+Require a helper boundary for pause/seek/EOF decision handling while keeping `FFmpegDecoder` as the signal emitter and queue owner.
+
+- [ ] **Step 2: Extract seek request consumption**
+
+Move the repeated "lock, copy seek target/generation, clear request" pattern behind a small helper API. Keep `doSeek()` and `emit seekCompleted(...)` in `FFmpegDecoder` for this step.
+
+- [ ] **Step 3: Extract EOF wait decision**
+
+Move the EOF wait loop decision into a helper that returns an explicit enum such as:
+
+```cpp
+enum class DecodeLoopDecision
+{
+    ContinueReading,
+    BreakForNewOpenOrStop,
+    SeekHandled
+};
+```
+
+- [ ] **Step 4: Verify behavior**
+
+Run:
+
+```bash
+python3 tests/playplugin_regression_checks.py
+python3 tests/playplugin_decode_loop_control_checks.py
+cmake --build build --parallel
+ctest --test-dir build --output-on-failure
+```
+
+**Risk note:** This phase touches EOF and seek behavior, so it should be kept smaller than prior mechanical helper extractions.

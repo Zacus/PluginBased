@@ -14,6 +14,7 @@ The goal is not to add design patterns everywhere. The goal is to isolate respon
 4. Reduce direct coupling between QML-facing objects and low-level decoder/renderer objects.
 5. Preserve Qt thread affinity rules for `QThread`, `QAudioSink`, `QQuickItem`, and Scene Graph resources.
 6. Add architecture checks that prevent `PlayerEngine` from regrowing orchestration responsibilities.
+7. Keep `FFmpegSurface` and `FFmpegDecoder` as thin facades around focused internal helpers.
 
 ## Non-Goals
 
@@ -21,7 +22,7 @@ The goal is not to add design patterns everywhere. The goal is to isolate respon
 2. This design does not replace Qt signals/slots with `std::jthread` or coroutines.
 3. This design does not redesign FFmpeg decoding behavior.
 4. This design does not change QML filenames, imports, or visible UI.
-5. This design does not split `FFmpegSurface` and `FFmpegDecoder` in the first implementation step.
+5. This design did not split `FFmpegSurface` and `FFmpegDecoder` in the first implementation step; later phases now cover those internal boundaries.
 
 ## Recommended Architecture
 
@@ -83,6 +84,19 @@ Responsibilities:
 
 This is a later step because it touches user-visible playback behavior more deeply than extracting ownership.
 
+### FFmpegSurface Rendering Helpers
+
+Current status: partially completed.
+
+`FFmpegSurface` has been reduced toward a `QQuickItem` facade. The following internal helpers now own renderer-specific details:
+
+- `VideoPixelFormat`: maps FFmpeg pixel formats to renderer plane layout, RHI texture format, shader format mode, and 10-bit handling.
+- `VideoMaterial`: owns shader, material state, texture wrapper, upload scheduling, and software YUV texture binding.
+- `VideoNode`: owns scene graph node behavior, native frame texture lifecycle, and native VideoToolbox texture updates.
+- `VideoSurfaceGeometry`: computes the drawn video rectangle for aspect-preserving display.
+
+Remaining responsibility in `FFmpegSurface` should stay limited to QML/scene graph integration: receiving frames, updating item state, and creating/updating the scene node. A future native/software rendering strategy split is still possible, but the immediate pressure is lower because material, node, pixel format, and geometry details are already separated.
+
 ### Future FFmpegSurface Rendering Backends
 
 Responsibilities:
@@ -94,16 +108,42 @@ Responsibilities:
 
 Recommended pattern: Strategy plus a small factory selected by frame metadata and runtime graphics API.
 
+### FFmpegDecoder Internal Helpers
+
+Current status: partially completed.
+
+`FFmpegDecoder` remains the `QThread` owner and the boundary that talks to queues and emits playback signals. The following details have been moved out:
+
+- `FFmpegLogBridge`: installs the process-global FFmpeg log callback and adapts FFmpeg C logs to the project logger.
+- `MediaOpener`: opens inputs, discovers streams, opens audio/video codec contexts, selects hardware backends, and returns a move-only `OpenedMedia` result.
+- `StreamFrameDecoder`: sends packets, receives frames, and normalizes decoded frame PTS to microseconds.
+- `VideoFrameProcessor`: decides native direct-render preservation, transfers hardware frames to CPU frames, preserves frame metadata, and normalizes unsupported video pixel formats through swscale.
+- `DecodePerformance`: owns decode performance counters, throttled performance logging, and pixel-format formatting helpers.
+
+Ownership and thread model:
+
+- `FFmpegDecoder` owns all helpers as value members.
+- `FFmpegDecoder` still owns the active FFmpeg contexts and hardware backend after `MediaOpener` transfers them through `OpenedMedia`.
+- Helpers are invoked on the decode thread and do not store `QObject` references.
+- Queue pointers remain non-owning and are provided by the playback pipeline.
+
+Remaining `FFmpegDecoder` responsibilities:
+
+- Thread lifecycle: wait for open requests, start/stop decode loop, and wake blocked waits.
+- User commands: pause, seek, stop, and VideoToolbox direct-render toggles.
+- Decode loop control: `av_read_frame`, EOF behavior, waiting after EOF for stop/new open/seek, and dispatching packets by stream.
+- Queue policy: reset/flush/abort queues, push audio frames, push or drop video frames depending on audio-clock availability.
+- Signal emission: media info, errors, position updates, EOF, and seek completion.
+
 ### Future FFmpegDecoder Split
 
 Responsibilities:
 
-- Move media open/stream discovery into a `MediaOpener`.
-- Move audio/video codec send/receive loops into stream decoder helpers.
-- Move hardware frame transfer and pixel normalization into `VideoFrameProcessor`.
-- Move performance counters into dedicated logger structs.
+- Move decode-loop command handling into a small `DecoderCommandState` or `DecodeLoopControl` helper.
+- Keep `FFmpegDecoder` as the `QThread` facade and signal emitter.
+- Consider extracting queue policy only after command/EOF handling is clearer.
 
-Recommended pattern: small RAII helpers and structured result types, not a broad inheritance hierarchy.
+Recommended pattern: small value helpers and structured results. Avoid broad inheritance hierarchies and avoid pimpl unless plugin ABI exposure or build-time isolation becomes a real constraint.
 
 ## Runtime Flow After Phase One
 
@@ -129,6 +169,13 @@ Automated checks:
 - Add a static architecture check requiring `PlaybackPipeline` files to exist.
 - Require `PlayerEngine` to own `std::unique_ptr<PlaybackPipeline>` instead of direct `FFmpegDecoder`, `AudioRenderer`, `VideoRenderer`, queues, or `ClockSync`.
 - Require `PlayPlugin` CMake to compile `PlaybackPipeline`.
+- Add static architecture checks for each internal helper boundary:
+  - `playplugin_surface_decoupling_checks.py`
+  - `playplugin_decoder_decoupling_checks.py`
+  - `playplugin_video_frame_processor_checks.py`
+  - `playplugin_media_opener_checks.py`
+  - `playplugin_stream_frame_decoder_checks.py`
+  - `playplugin_ffmpeg_log_bridge_checks.py`
 - Keep existing `playplugin_regression_checks.py` and CTest coverage green.
 
 Manual checks after build:
@@ -148,3 +195,30 @@ Manual checks after build:
 5. Static architecture checks pass.
 6. Existing PlayPlugin regression checks pass.
 7. CMake build succeeds.
+
+## Completed Implementation Slices
+
+- `2ab0564 [功能修改] 解耦播放管线协调逻辑`: introduced `PlaybackPipeline` and moved playback component ownership out of `PlayerEngine`.
+- `73ce38a [功能修改] 抽离视频像素格式映射`: introduced `VideoPixelFormat`.
+- `3d99c4c [功能修改] 抽离视频渲染材质逻辑`: introduced `VideoMaterial`.
+- `e2f007e [功能修改] 抽离视频场景节点逻辑`: introduced `VideoNode`.
+- `4d5795a [功能修改] 抽离视频显示区域计算`: introduced `VideoSurfaceGeometry`.
+- `6a10541 [功能修改] 抽离解码性能统计逻辑`: introduced `DecodePerformance`.
+- `8607319 [功能修改] 抽离视频帧处理逻辑`: introduced `VideoFrameProcessor`.
+- `194f152 [功能修改] 抽离媒体打开逻辑`: introduced `MediaOpener`.
+- `ecfe173 [功能修改] 抽离流帧解码逻辑`: introduced `StreamFrameDecoder`.
+- `f866f4f [功能修改] 抽离 FFmpeg 日志桥接`: introduced `FFmpegLogBridge`.
+
+## Recommended Next Phase
+
+The next phase should focus on `FFmpegDecoder` command and EOF state, not more mechanical helper extraction. The highest-value target is the intertwined open/seek/pause/EOF waiting behavior in `decodeLoop()`.
+
+Suggested boundary:
+
+- `DecoderCommandState` or `DecodeLoopControl` stores pending seek/open observations and exposes small methods for:
+  - waiting while paused;
+  - consuming pending seek requests;
+  - waiting after EOF for stop, new open, or seek;
+  - returning explicit decisions such as `Continue`, `BreakToOuterOpenLoop`, or `SeekHandled`.
+
+This should be introduced only with focused tests or architecture guards, because it touches user-visible seek and EOF behavior.
