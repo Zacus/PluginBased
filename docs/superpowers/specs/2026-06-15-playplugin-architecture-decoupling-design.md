@@ -208,17 +208,15 @@ Manual checks after build:
 - `194f152 [功能修改] 抽离媒体打开逻辑`: introduced `MediaOpener`.
 - `ecfe173 [功能修改] 抽离流帧解码逻辑`: introduced `StreamFrameDecoder`.
 - `f866f4f [功能修改] 抽离 FFmpeg 日志桥接`: introduced `FFmpegLogBridge`.
+- `eebc0c6 [功能修改] 抽离 EOF 后等待决策`: completed `DecodeLoopControl` seek/EOF waiting boundaries.
 
 ## Recommended Next Phase
 
-The next phase should focus on `FFmpegDecoder` command and EOF state, not more mechanical helper extraction. The highest-value target is the intertwined open/seek/pause/EOF waiting behavior in `decodeLoop()`.
+The next phase should stop broad FFmpegDecoder splitting and focus only on the remaining high-value playback orchestration boundaries. The current priority is to keep QML-facing state decisions and low-level seek side effects out of large facade classes.
 
-Suggested boundary:
+Suggested boundaries:
 
-- `DecoderCommandState` or `DecodeLoopControl` stores pending seek/open observations and exposes small methods for:
-  - waiting while paused;
-  - consuming pending seek requests;
-  - waiting after EOF for stop, new open, or seek;
-  - returning explicit decisions such as `Continue`, `BreakToOuterOpenLoop`, or `SeekHandled`.
+- `PlaybackCompletionTracker` stores decoder/audio/video completion flags and exposes explicit finish decisions for `PlayerEngine`.
+- `PlaybackSeekCoordinator` owns the ordered side effects for seek start and seek completion inside `PlaybackPipeline`.
 
-This should be introduced only with focused tests or architecture guards, because it touches user-visible seek and EOF behavior.
+Both helpers should stay non-QObject value/reference helpers. `PlayerEngine` remains responsible for public QML properties and signals, while `PlaybackPipeline` remains the owner of decoder, renderers, queues, and clock.

@@ -276,7 +276,7 @@ Commits:
 - `ecfe173 [功能修改] 抽离流帧解码逻辑`
 - `f866f4f [功能修改] 抽离 FFmpeg 日志桥接`
 
-## Task 7: Proposed Next Phase - Decode Loop Command State
+## Task 7: Completed Decode Loop Command State
 
 **Goal:** Reduce the remaining complexity in `FFmpegDecoder::decodeLoop()` by isolating command and EOF waiting decisions.
 
@@ -288,30 +288,29 @@ Commits:
 - Modify: `plugins/PlayPlugin/CMakeLists.txt`
 - Create: `tests/playplugin_decode_loop_control_checks.py`
 
-**Proposed scope:**
+**Completed scope:**
 
-- [ ] **Step 1: Add architecture guard**
+- [x] **Step 1: Add architecture guard**
 
 Require a helper boundary for pause/seek/EOF decision handling while keeping `FFmpegDecoder` as the signal emitter and queue owner.
 
-- [ ] **Step 2: Extract seek request consumption**
+- [x] **Step 2: Extract seek request consumption**
 
 Move the repeated "lock, copy seek target/generation, clear request" pattern behind a small helper API. Keep `doSeek()` and `emit seekCompleted(...)` in `FFmpegDecoder` for this step.
 
-- [ ] **Step 3: Extract EOF wait decision**
+- [x] **Step 3: Extract EOF wait decision**
 
-Move the EOF wait loop decision into a helper that returns an explicit enum such as:
+Move the EOF wait loop decision into a helper that returns an explicit enum:
 
 ```cpp
-enum class DecodeLoopDecision
+enum class EofWaitDecision
 {
-    ContinueReading,
-    BreakForNewOpenOrStop,
-    SeekHandled
+    StopOrNewOpen,
+    SeekRequested
 };
 ```
 
-- [ ] **Step 4: Verify behavior**
+- [x] **Step 4: Verify behavior**
 
 Run:
 
@@ -323,3 +322,42 @@ ctest --test-dir build --output-on-failure
 ```
 
 **Risk note:** This phase touches EOF and seek behavior, so it should be kept smaller than prior mechanical helper extractions.
+
+Commits:
+
+- `ef4af33 [功能修改] 抽离解码循环 seek 请求消费`
+- `eebc0c6 [功能修改] 抽离 EOF 后等待决策`
+
+## Task 8: Completed Playback State And Seek Coordination Boundaries
+
+**Goal:** Reduce remaining facade responsibilities in `PlayerEngine` and `PlaybackPipeline` without changing QML API or playback behavior.
+
+**Files:**
+- Created: `plugins/PlayPlugin/src/PlaybackCompletionTracker.h/.cpp`
+- Created: `plugins/PlayPlugin/src/PlaybackSeekCoordinator.h/.cpp`
+- Modified: `plugins/PlayPlugin/src/PlayerEngine.h/.cpp`
+- Modified: `plugins/PlayPlugin/src/PlaybackPipeline.h/.cpp`
+- Modified: `plugins/PlayPlugin/CMakeLists.txt`
+- Updated: `tests/playplugin_architecture_decoupling_checks.py`
+- Updated: `tests/playplugin_regression_checks.py`
+
+- [x] **Step 1: Extract media completion state**
+
+Move decoder/audio/video completion flags and finish decision rules into `PlaybackCompletionTracker`. Keep public state changes and signal emission in `PlayerEngine`.
+
+- [x] **Step 2: Extract seek coordination side effects**
+
+Move seek start and seek completion ordering into `PlaybackSeekCoordinator`. Keep component ownership in `PlaybackPipeline`.
+
+- [x] **Step 3: Verify behavior**
+
+Run:
+
+```bash
+python3 tests/playplugin_architecture_decoupling_checks.py
+python3 tests/playplugin_regression_checks.py
+cmake --build build --parallel
+ctest --test-dir build --output-on-failure
+```
+
+**Risk note:** These helpers intentionally remain small non-QObject helpers. Adding a larger state machine or pimpl should wait until there is a concrete behavior change that needs it.

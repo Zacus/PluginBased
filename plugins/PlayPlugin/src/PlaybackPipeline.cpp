@@ -8,11 +8,11 @@
 
 PlaybackPipeline::PlaybackPipeline(QObject* parent)
     : QObject(parent)
+    , m_decoder(std::make_unique<FFmpegDecoder>(&m_videoQueue, &m_audioQueue))
+    , m_audioRenderer(std::make_unique<AudioRenderer>(&m_audioQueue, &m_clock))
+    , m_videoRenderer(std::make_unique<VideoRenderer>(&m_videoQueue, &m_clock))
+    , m_seekCoordinator(*m_decoder, *m_audioRenderer, *m_videoRenderer, m_clock)
 {
-    m_decoder = std::make_unique<FFmpegDecoder>(&m_videoQueue, &m_audioQueue);
-    m_audioRenderer = std::make_unique<AudioRenderer>(&m_audioQueue, &m_clock);
-    m_videoRenderer = std::make_unique<VideoRenderer>(&m_videoQueue, &m_clock);
-
     connect(m_decoder.get(), &FFmpegDecoder::mediaInfoReady,
             this, &PlaybackPipeline::mediaInfoReady);
     connect(m_decoder.get(), &FFmpegDecoder::errorOccurred,
@@ -142,18 +142,12 @@ void PlaybackPipeline::stopComponents()
 
 void PlaybackPipeline::seek(qint64 positionMs, int generation)
 {
-    m_videoRenderer->beginSeek(generation);
-    m_audioRenderer->setAcceptedSerial(generation);
-    m_decoder->seekTo(positionMs, generation);
-    m_audioRenderer->flush();
-    m_videoRenderer->flush();
-    m_clock.invalidate();
+    m_seekCoordinator.seek(positionMs, generation);
 }
 
 void PlaybackPipeline::onDecoderSeekCompleted(int generation, int serial)
 {
-    m_audioRenderer->setAcceptedSerial(serial);
-    m_videoRenderer->completeSeek(generation, serial);
+    m_seekCoordinator.complete(generation, serial);
     emit seekCompleted(generation, serial);
 }
 

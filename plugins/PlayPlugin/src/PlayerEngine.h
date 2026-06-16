@@ -7,6 +7,7 @@
 #include <memory>
 
 #include "MediaInfo.h"
+#include "PlaybackCompletionTracker.h"
 
 class FFmpegSurface;
 class PlaybackPipeline;
@@ -112,12 +113,7 @@ private:
     qint64        m_duration   = 0;
     float         m_volume     = 1.0f;
     bool          m_muted      = false;
-    bool          m_hasAudio   = false;
-    bool          m_hasVideo   = false;
-    bool          m_decoderFinished = false;
-    bool          m_audioFinished = false;
-    bool          m_videoFinished = false;
-    bool          m_mediaFinished = false;
+    PlaybackCompletionTracker m_completion;
     int           m_seekGeneration = 0;
     QString       m_errorString;
     QUrl          m_currentUrl; // open() 时记录，onMediaInfoReady 时写入 MediaInfo

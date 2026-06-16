@@ -7,6 +7,7 @@
 #include "ClockSync.h"
 #include "FFmpegDecoder.h"
 #include "FrameQueue.h"
+#include "PlaybackSeekCoordinator.h"
 #include "VideoRenderer.h"
 
 #include <QObject>
@@ -70,6 +71,7 @@ private:
     std::unique_ptr<FFmpegDecoder> m_decoder;
     std::unique_ptr<AudioRenderer> m_audioRenderer;
     std::unique_ptr<VideoRenderer> m_videoRenderer;
+    PlaybackSeekCoordinator m_seekCoordinator;
 
     QPointer<FFmpegSurface> m_surface;
     bool m_nativeVideoRenderingEnabled = false;

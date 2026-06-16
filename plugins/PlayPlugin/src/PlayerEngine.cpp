@@ -82,12 +82,7 @@ void PlayerEngine::open(const QUrl& url)
     m_pipeline->clearSurface();
 
     m_currentUrl = url;
-    m_hasAudio = false;
-    m_hasVideo = false;
-    m_decoderFinished = false;
-    m_audioFinished = false;
-    m_videoFinished = false;
-    m_mediaFinished = false;
+    m_completion.resetForOpen();
     m_seekGeneration = 0;
 
     // 通知解码器打开文件（异步，解码器线程内执行）
@@ -129,12 +124,7 @@ void PlayerEngine::stop()
     setState(Stopped);
     m_position = 0;
     m_duration = 0;
-    m_hasAudio = false;
-    m_hasVideo = false;
-    m_decoderFinished = false;
-    m_audioFinished = false;
-    m_videoFinished = false;
-    m_mediaFinished = true;
+    m_completion.resetForStop();
     delete m_mediaInfo;
     m_mediaInfo = nullptr;
 
@@ -147,18 +137,11 @@ void PlayerEngine::stop()
 
 void PlayerEngine::seek(qint64 positionMs)
 {
-    if (m_state == Stopped && !m_mediaFinished)
+    if (m_state == Stopped && !m_completion.isMediaFinished())
         return;
     LOG_INFO("PlayerEngine: seek to {}ms", positionMs);
 
-    const bool resumeAfterSeek = m_mediaFinished;
-    if (m_mediaFinished)
-    {
-        m_decoderFinished = false;
-        m_audioFinished = !m_hasAudio;
-        m_videoFinished = !m_hasVideo;
-        m_mediaFinished = false;
-    }
+    const bool resumeAfterSeek = m_completion.resumeAfterFinishedSeek();
 
     const int seekGeneration = ++m_seekGeneration;
 
@@ -207,10 +190,10 @@ void PlayerEngine::onMediaInfoReady(qint64 durationMs, int width, int height, do
 
     // VideoRenderer 会在真正消费 AVFrame 时读取颜色范围 / 色彩空间等信息，
     // 这里不再提前做 CPU 侧的视频格式初始化。
-    m_hasAudio = sampleRate > 0 && channels > 0;
-    m_hasVideo = width > 0 && height > 0;
-    m_pipeline->startRenderersForMedia(m_hasAudio,
-                                       m_hasVideo,
+    m_completion.setStreams(sampleRate > 0 && channels > 0,
+                            width > 0 && height > 0);
+    m_pipeline->startRenderersForMedia(m_completion.hasAudio(),
+                                       m_completion.hasVideo(),
                                        sampleRate,
                                        channels,
                                        channelLayoutMask,
@@ -231,12 +214,7 @@ void PlayerEngine::onDecoderError(const QString& msg)
     setState(Stopped);
     m_position = 0;
     m_duration = 0;
-    m_hasAudio = false;
-    m_hasVideo = false;
-    m_decoderFinished = false;
-    m_audioFinished = false;
-    m_videoFinished = false;
-    m_mediaFinished = true;
+    m_completion.resetForStop();
     emit positionChanged(m_position);
     emit durationChanged(m_duration);
 }
@@ -246,17 +224,13 @@ void PlayerEngine::onEndOfFile()
     LOG_INFO("PlayerEngine: end of file");
     // 不立即 stop，等 VideoRenderer 处理完剩余帧后发 endOfVideo
     // 如果有音频，也要等 AudioRenderer 消费到 EOF，避免截断音频缓冲。
-    m_decoderFinished = true;
-    if (!m_hasAudio)
-        m_audioFinished = true;
-    if (!m_hasVideo)
-        m_videoFinished = true;
+    m_completion.markDecoderFinished();
     maybeFinishMedia();
 }
 
 void PlayerEngine::onDecoderPosition(qint64 posMs)
 {
-    if (m_hasAudio || m_hasVideo)
+    if (m_completion.hasAudio() || m_completion.hasVideo())
         return;
 
     m_position = posMs;
@@ -281,7 +255,7 @@ void PlayerEngine::onAudioPosition(qint64 posMs)
 void PlayerEngine::onEndOfAudio()
 {
     LOG_INFO("PlayerEngine: end of audio");
-    m_audioFinished = true;
+    m_completion.markAudioFinished();
     maybeFinishMedia();
 }
 
@@ -290,7 +264,7 @@ void PlayerEngine::onEndOfAudio()
 // ─────────────────────────────────────────────────────────────────────────────
 void PlayerEngine::onVideoPosition(qint64 posMs)
 {
-    if (m_hasAudio)
+    if (m_completion.hasAudio())
         return;
 
     m_position = posMs;
@@ -300,7 +274,7 @@ void PlayerEngine::onVideoPosition(qint64 posMs)
 void PlayerEngine::onEndOfVideo()
 {
     LOG_INFO("PlayerEngine: end of video");
-    m_videoFinished = true;
+    m_completion.markVideoFinished();
     maybeFinishMedia();
 }
 
@@ -324,11 +298,7 @@ void PlayerEngine::setError(const QString& msg)
 
 void PlayerEngine::maybeFinishMedia()
 {
-    if (!m_decoderFinished)
-        return;
-    if (m_hasAudio && !m_audioFinished)
-        return;
-    if (m_hasVideo && !m_videoFinished)
+    if (!m_completion.shouldFinish())
         return;
 
     finishMedia();
@@ -336,10 +306,9 @@ void PlayerEngine::maybeFinishMedia()
 
 void PlayerEngine::finishMedia()
 {
-    if (m_mediaFinished)
+    if (!m_completion.finish())
         return;
 
-    m_mediaFinished = true;
     m_pipeline->setPaused(true);
     setState(Paused);
     emit endOfMedia();

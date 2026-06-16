@@ -68,7 +68,9 @@ qt_add_qml_module(PlayPlugin
     # C++ 源文件（含 QML_ELEMENT / QML_SINGLETON 标注的类）
     SOURCES
         src/PlaybackContext.h  src/PlaybackContext.cpp
+        src/PlaybackCompletionTracker.h src/PlaybackCompletionTracker.cpp
         src/PlaybackPipeline.h src/PlaybackPipeline.cpp
+        src/PlaybackSeekCoordinator.h src/PlaybackSeekCoordinator.cpp
         src/PlayerEngine.h     src/PlayerEngine.cpp
         src/PlaylistModel.h    src/PlaylistModel.cpp
         src/MediaInfo.h
