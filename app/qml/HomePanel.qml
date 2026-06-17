@@ -203,8 +203,8 @@ Item {
                         model: AppController.pluginsReady ? PluginManager.pluginCount : 0
 
                         PluginCard {
-                            readonly property var iconBgList: ["#152a10", "#0d2040", "#2e1414",
-                                                               "#2a1a00", "#1a1040", "#0c3530"]
+                            readonly property var iconBgList: ["#18352f", "#1b323d", "#3a2e22",
+                                                               "#26363a", "#29333a", "#163a36"]
 
                             width:    pluginGrid.colWidth
                             cardId:   "plugin:" + index
