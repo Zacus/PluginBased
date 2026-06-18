@@ -3,8 +3,8 @@
 // 打开 FFmpeg 媒体输入，并发现可解码的视频/音频流。
 // 打开成功后，返回的原生资源所有权交给 FFmpegDecoder；MediaOpener 本身没有线程亲和性。
 
-#include "FFmpegUtils.h"
-#include "hw/HardwareDecoderBackend.h"
+#include "common/FFmpegUtils.h"
+#include "decode/hw/HardwareDecoderBackend.h"
 
 #include <QString>
 #include <QtGlobal>

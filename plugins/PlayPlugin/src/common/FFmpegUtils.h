@@ -1,6 +1,6 @@
 #pragma once
 
-#include "native/NativeVideoFrame.h"
+#include "video/native/NativeVideoFrame.h"
 
 #include <memory>
 #include <string>

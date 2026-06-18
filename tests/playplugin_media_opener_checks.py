@@ -23,8 +23,8 @@ def main():
     require(opener_h_path.exists(), "MediaOpener.h should exist")
     require(opener_cpp_path.exists(), "MediaOpener.cpp should exist")
 
-    decoder_h = read("plugins/PlayPlugin/src/FFmpegDecoder.h")
-    decoder_cpp = read("plugins/PlayPlugin/src/FFmpegDecoder.cpp")
+    decoder_h = read("plugins/PlayPlugin/src/decode/FFmpegDecoder.h")
+    decoder_cpp = read("plugins/PlayPlugin/src/decode/FFmpegDecoder.cpp")
     opener_h = read("plugins/PlayPlugin/src/decode/MediaOpener.h")
     opener_cpp = read("plugins/PlayPlugin/src/decode/MediaOpener.cpp")
     cmake = read("plugins/PlayPlugin/CMakeLists.txt")

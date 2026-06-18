@@ -23,7 +23,7 @@ def main():
     require(bridge_h_path.exists(), "FFmpegLogBridge.h should exist")
     require(bridge_cpp_path.exists(), "FFmpegLogBridge.cpp should exist")
 
-    decoder_cpp = read("plugins/PlayPlugin/src/FFmpegDecoder.cpp")
+    decoder_cpp = read("plugins/PlayPlugin/src/decode/FFmpegDecoder.cpp")
     bridge_h = read("plugins/PlayPlugin/src/decode/FFmpegLogBridge.h")
     bridge_cpp = read("plugins/PlayPlugin/src/decode/FFmpegLogBridge.cpp")
     cmake = read("plugins/PlayPlugin/CMakeLists.txt")

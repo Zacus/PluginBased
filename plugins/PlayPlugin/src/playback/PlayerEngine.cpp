@@ -1,7 +1,7 @@
-#include "PlayerEngine.h"
+#include "playback/PlayerEngine.h"
 #include "Logger.h"
-#include "PlaybackContext.h"
-#include "PlaybackPipeline.h"
+#include "playback/PlaybackContext.h"
+#include "playback/PlaybackPipeline.h"
 
 #include <QFileInfo>
 // ─────────────────────────────────────────────────────────────────────────────

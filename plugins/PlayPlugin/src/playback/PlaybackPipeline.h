@@ -3,12 +3,12 @@
 // PlaybackPipeline 是 PlayPlugin 内部的播放管线协调器。
 // 它集中持有解码器、音频/视频渲染器、帧队列和时钟，让 PlayerEngine 只保留 QML-facing 状态。
 
-#include "AudioRenderer.h"
-#include "ClockSync.h"
-#include "FFmpegDecoder.h"
-#include "FrameQueue.h"
-#include "PlaybackSeekCoordinator.h"
-#include "VideoRenderer.h"
+#include "audio/AudioRenderer.h"
+#include "sync/ClockSync.h"
+#include "decode/FFmpegDecoder.h"
+#include "common/FrameQueue.h"
+#include "playback/PlaybackSeekCoordinator.h"
+#include "video/VideoRenderer.h"
 
 #include <QObject>
 #include <QPointer>

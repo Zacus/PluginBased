@@ -23,8 +23,8 @@ def main():
     require(perf_h_path.exists(), "DecodePerformance.h should exist")
     require(perf_cpp_path.exists(), "DecodePerformance.cpp should exist")
 
-    decoder_h = read("plugins/PlayPlugin/src/FFmpegDecoder.h")
-    decoder_cpp = read("plugins/PlayPlugin/src/FFmpegDecoder.cpp")
+    decoder_h = read("plugins/PlayPlugin/src/decode/FFmpegDecoder.h")
+    decoder_cpp = read("plugins/PlayPlugin/src/decode/FFmpegDecoder.cpp")
     perf_h = read("plugins/PlayPlugin/src/decode/DecodePerformance.h")
     perf_cpp = read("plugins/PlayPlugin/src/decode/DecodePerformance.cpp")
     cmake = read("plugins/PlayPlugin/CMakeLists.txt")

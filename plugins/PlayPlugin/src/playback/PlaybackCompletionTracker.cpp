@@ -1,4 +1,4 @@
-#include "PlaybackCompletionTracker.h"
+#include "playback/PlaybackCompletionTracker.h"
 
 // 实现 PlayerEngine 使用的媒体完成状态转换。
 // 对外 QML 状态和信号发射仍由 PlayerEngine 负责。

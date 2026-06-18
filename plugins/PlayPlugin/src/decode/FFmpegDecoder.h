@@ -1,13 +1,13 @@
 #pragma once
 
-#include "FFmpegUtils.h"
-#include "FrameQueue.h"
+#include "common/FFmpegUtils.h"
+#include "common/FrameQueue.h"
 #include "decode/DecodePerformance.h"
 #include "decode/DecodeLoopControl.h"
 #include "decode/MediaOpener.h"
 #include "decode/StreamFrameDecoder.h"
 #include "decode/VideoFrameProcessor.h"
-#include "hw/HardwareDecoderBackend.h"
+#include "decode/hw/HardwareDecoderBackend.h"
 
 #include <QThread>
 #include <QUrl>

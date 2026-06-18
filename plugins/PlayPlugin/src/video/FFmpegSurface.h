@@ -3,14 +3,14 @@
  * @Date: 2026-04-07 15:41:46
  * @LastEditors: zs
  * @LastEditTime: 2026-05-07 16:35:19
- * @FilePath: /PluginBased/plugins/PlayPlugin/src/FFmpegSurface.h
+ * @FilePath: /PluginBased/plugins/PlayPlugin/src/video/FFmpegSurface.h
  * @Description:
  *
  * Copyright (c) 2026 by zs, All Rights Reserved.
  */
 #pragma once
 
-#include "FFmpegUtils.h"
+#include "common/FFmpegUtils.h"
 
 #include <QMutex>
 #include <QQmlEngine>

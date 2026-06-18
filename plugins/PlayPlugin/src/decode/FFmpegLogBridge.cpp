@@ -3,7 +3,7 @@
 // 将 FFmpeg 的 C 日志回调适配到项目日志系统。
 // 全局回调安装逻辑独立出来，避免进入 FFmpegDecoder 的对象生命周期。
 
-#include "FFmpegUtils.h"
+#include "common/FFmpegUtils.h"
 #include "Logger.h"
 
 #include <cstdarg>

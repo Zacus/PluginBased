@@ -4,7 +4,7 @@
 // 这些逻辑集中在处理器中，让 FFmpegDecoder 专注于包流转和队列调度。
 
 #include "Logger.h"
-#include "hw/HardwareDecoderBackend.h"
+#include "decode/hw/HardwareDecoderBackend.h"
 
 #include <QElapsedTimer>
 

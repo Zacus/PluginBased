@@ -4,7 +4,7 @@
 // 返回的 OpenedMedia 会把所有原生资源所有权移交给 FFmpegDecoder。
 
 #include "Logger.h"
-#include "hw/HardwareDecoderFactory.h"
+#include "decode/hw/HardwareDecoderFactory.h"
 
 #include <utility>
 

@@ -23,8 +23,8 @@ def main():
     require(control_h_path.exists(), "DecodeLoopControl.h should exist")
     require(control_cpp_path.exists(), "DecodeLoopControl.cpp should exist")
 
-    decoder_h = read("plugins/PlayPlugin/src/FFmpegDecoder.h")
-    decoder_cpp = read("plugins/PlayPlugin/src/FFmpegDecoder.cpp")
+    decoder_h = read("plugins/PlayPlugin/src/decode/FFmpegDecoder.h")
+    decoder_cpp = read("plugins/PlayPlugin/src/decode/FFmpegDecoder.cpp")
     control_h = read("plugins/PlayPlugin/src/decode/DecodeLoopControl.h")
     control_cpp = read("plugins/PlayPlugin/src/decode/DecodeLoopControl.cpp")
     cmake = read("plugins/PlayPlugin/CMakeLists.txt")

@@ -1,4 +1,4 @@
-#include "VideoRenderer.h"
+#include "video/VideoRenderer.h"
 #include "Logger.h"
 
 #if defined(Q_OS_APPLE)

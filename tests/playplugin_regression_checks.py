@@ -25,45 +25,45 @@ def require_absent(needle, files, message):
 
 
 def main():
-    engine_h = read("plugins/PlayPlugin/src/PlayerEngine.h")
-    engine_cpp = read("plugins/PlayPlugin/src/PlayerEngine.cpp")
-    pipeline_cpp = read("plugins/PlayPlugin/src/PlaybackPipeline.cpp")
-    seek_coordinator_cpp = read("plugins/PlayPlugin/src/PlaybackSeekCoordinator.cpp")
-    ffmpeg_utils_h = read("plugins/PlayPlugin/src/FFmpegUtils.h")
-    decoder_h = read("plugins/PlayPlugin/src/FFmpegDecoder.h")
-    decoder_cpp = read("plugins/PlayPlugin/src/FFmpegDecoder.cpp")
+    engine_h = read("plugins/PlayPlugin/src/playback/PlayerEngine.h")
+    engine_cpp = read("plugins/PlayPlugin/src/playback/PlayerEngine.cpp")
+    pipeline_cpp = read("plugins/PlayPlugin/src/playback/PlaybackPipeline.cpp")
+    seek_coordinator_cpp = read("plugins/PlayPlugin/src/playback/PlaybackSeekCoordinator.cpp")
+    ffmpeg_utils_h = read("plugins/PlayPlugin/src/common/FFmpegUtils.h")
+    decoder_h = read("plugins/PlayPlugin/src/decode/FFmpegDecoder.h")
+    decoder_cpp = read("plugins/PlayPlugin/src/decode/FFmpegDecoder.cpp")
     decode_perf_h = read("plugins/PlayPlugin/src/decode/DecodePerformance.h")
     decode_perf_cpp = read("plugins/PlayPlugin/src/decode/DecodePerformance.cpp")
     media_opener_h = read("plugins/PlayPlugin/src/decode/MediaOpener.h")
     media_opener_cpp = read("plugins/PlayPlugin/src/decode/MediaOpener.cpp")
     video_processor_h = read("plugins/PlayPlugin/src/decode/VideoFrameProcessor.h")
     video_processor_cpp = read("plugins/PlayPlugin/src/decode/VideoFrameProcessor.cpp")
-    hw_backend_h = read("plugins/PlayPlugin/src/hw/HardwareDecoderBackend.h")
-    hw_factory_h = read("plugins/PlayPlugin/src/hw/HardwareDecoderFactory.h")
-    hw_factory_cpp = read("plugins/PlayPlugin/src/hw/HardwareDecoderFactory.cpp")
-    videotoolbox_h = read("plugins/PlayPlugin/src/hw/VideoToolboxBackend.h")
-    videotoolbox_cpp = read("plugins/PlayPlugin/src/hw/VideoToolboxBackend.cpp")
-    native_frame_h = read("plugins/PlayPlugin/src/native/NativeVideoFrame.h")
-    apple_bridge_h = read("plugins/PlayPlugin/src/native/AppleMetalVideoTextureBridge.h")
-    apple_bridge_mm = read("plugins/PlayPlugin/src/native/AppleMetalVideoTextureBridge.mm")
-    d3d11va_cpp = read("plugins/PlayPlugin/src/hw/D3D11VABackend.cpp")
-    vaapi_cpp = read("plugins/PlayPlugin/src/hw/VaapiBackend.cpp")
+    hw_backend_h = read("plugins/PlayPlugin/src/decode/hw/HardwareDecoderBackend.h")
+    hw_factory_h = read("plugins/PlayPlugin/src/decode/hw/HardwareDecoderFactory.h")
+    hw_factory_cpp = read("plugins/PlayPlugin/src/decode/hw/HardwareDecoderFactory.cpp")
+    videotoolbox_h = read("plugins/PlayPlugin/src/decode/hw/VideoToolboxBackend.h")
+    videotoolbox_cpp = read("plugins/PlayPlugin/src/decode/hw/VideoToolboxBackend.cpp")
+    native_frame_h = read("plugins/PlayPlugin/src/video/native/NativeVideoFrame.h")
+    apple_bridge_h = read("plugins/PlayPlugin/src/video/native/AppleMetalVideoTextureBridge.h")
+    apple_bridge_mm = read("plugins/PlayPlugin/src/video/native/AppleMetalVideoTextureBridge.mm")
+    d3d11va_cpp = read("plugins/PlayPlugin/src/decode/hw/D3D11VABackend.cpp")
+    vaapi_cpp = read("plugins/PlayPlugin/src/decode/hw/VaapiBackend.cpp")
     cmake = read("plugins/PlayPlugin/CMakeLists.txt")
-    audio_cpp = read("plugins/PlayPlugin/src/AudioRenderer.cpp")
-    audio_h = read("plugins/PlayPlugin/src/AudioRenderer.h")
-    surface_cpp = read("plugins/PlayPlugin/src/FFmpegSurface.cpp")
-    video_material_cpp = read("plugins/PlayPlugin/src/render/VideoMaterial.cpp")
-    video_node_cpp = read("plugins/PlayPlugin/src/render/VideoNode.cpp")
-    video_pixel_format_cpp = read("plugins/PlayPlugin/src/render/VideoPixelFormat.cpp")
+    audio_cpp = read("plugins/PlayPlugin/src/audio/AudioRenderer.cpp")
+    audio_h = read("plugins/PlayPlugin/src/audio/AudioRenderer.h")
+    surface_cpp = read("plugins/PlayPlugin/src/video/FFmpegSurface.cpp")
+    video_material_cpp = read("plugins/PlayPlugin/src/video/render/VideoMaterial.cpp")
+    video_node_cpp = read("plugins/PlayPlugin/src/video/render/VideoNode.cpp")
+    video_pixel_format_cpp = read("plugins/PlayPlugin/src/video/render/VideoPixelFormat.cpp")
     shader_frag = read("plugins/PlayPlugin/shaders/yuvvideo.frag")
-    renderer_cpp = read("plugins/PlayPlugin/src/VideoRenderer.cpp")
-    renderer_h = read("plugins/PlayPlugin/src/VideoRenderer.h")
+    renderer_cpp = read("plugins/PlayPlugin/src/video/VideoRenderer.cpp")
+    renderer_h = read("plugins/PlayPlugin/src/video/VideoRenderer.h")
     control_qml = read("plugins/PlayPlugin/qml/ControlBar.qml")
     playlist_qml = read("plugins/PlayPlugin/qml/PlaylistView.qml")
     playplugin_qml = read("plugins/PlayPlugin/qml/PlayPluginView.qml")
     player_qml = read("plugins/PlayPlugin/qml/PlayerView.qml")
     playplugin_cpp = read("plugins/PlayPlugin/PlayPlugin.cpp")
-    context_h = read("plugins/PlayPlugin/src/PlaybackContext.h")
+    context_h = read("plugins/PlayPlugin/src/playback/PlaybackContext.h")
     app_plugin_h = read("plugin/IAppPlugin.h")
     plugin_cmake = read("plugin/CMakeLists.txt")
     dummy_cmake = read("plugins/DummyPlugin/CMakeLists.txt")
@@ -281,7 +281,7 @@ def main():
 
     require("finishMedia()" in engine_h, "PlayerEngine should centralize media completion")
     require("maybeFinishMedia()" in engine_h, "PlayerEngine should wait for active streams to drain")
-    require("endOfAudio" in read("plugins/PlayPlugin/src/AudioRenderer.h"),
+    require("endOfAudio" in read("plugins/PlayPlugin/src/audio/AudioRenderer.h"),
             "AudioRenderer should report audio queue EOF")
     require("PlaybackCompletionTracker m_completion" in engine_h,
             "PlayerEngine should track completed media through PlaybackCompletionTracker")
@@ -337,13 +337,13 @@ def main():
             "VideoRenderer should bound late-frame drops so slow 4K/60 videos keep updating")
     require("seekCompleted(int generation, int serial)" in decoder_h,
             "decoder should report the frame serial produced after seek")
-    require("setAcceptedSerial" in read("plugins/PlayPlugin/src/AudioRenderer.h") and
+    require("setAcceptedSerial" in read("plugins/PlayPlugin/src/audio/AudioRenderer.h") and
             "setAcceptedSerial" in renderer_h,
             "audio and video renderers should track the currently accepted frame serial")
     require("m_audioRenderer.setAcceptedSerial(serial)" in seek_coordinator_cpp and
             "m_videoRenderer.completeSeek(generation, serial)" in seek_coordinator_cpp,
             "PlaybackSeekCoordinator should apply seek serial to all frame consumers")
-    require("entry.serial != m_acceptedSerial" in read("plugins/PlayPlugin/src/AudioRenderer.cpp") and
+    require("entry.serial != m_acceptedSerial" in read("plugins/PlayPlugin/src/audio/AudioRenderer.cpp") and
             "entry.serial != m_acceptedSerial" in renderer_cpp,
             "frame consumers should discard stale frames from older seek serials")
     require("quint64 channelLayoutMask" in decoder_h and
@@ -443,7 +443,7 @@ def main():
             "hardware backend should identify frames that need transfer")
     require("virtual AVFramePtr transferToCpuFrame(const AVFrame* frame) = 0" in hw_backend_h,
             "hardware backend should transfer hardware frames to CPU frames")
-    require("src/hw/HardwareDecoderBackend.h" in cmake,
+    require("src/decode/hw/HardwareDecoderBackend.h" in cmake,
             "PlayPlugin target should include hardware backend interface")
     require("createHardwareDecoderBackend" in hw_factory_h and
             "std::unique_ptr<HardwareDecoderBackend>" in hw_factory_h,
@@ -460,7 +460,7 @@ def main():
             "VAAPI backend should be explicitly unavailable in phase 1")
     require("videotoolbox" in videotoolbox_cpp,
             "VideoToolbox backend should expose a stable backend name")
-    require('#include "hw/HardwareDecoderFactory.h"' in media_opener_cpp,
+    require('#include "decode/hw/HardwareDecoderFactory.h"' in media_opener_cpp,
             "MediaOpener should include the hardware backend factory")
     require("std::unique_ptr<HardwareDecoderBackend> m_hardwareDecoder" in decoder_h,
             "FFmpegDecoder should own the selected hardware backend")

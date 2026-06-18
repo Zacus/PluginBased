@@ -3,11 +3,11 @@
 // 持有 FFmpegSurface 使用的 QSG 几何节点。
 // Scene Graph 纹理生命周期和帧绑定逻辑放在这里，避免混入 QQuickItem 门面。
 
-#include "FFmpegUtils.h"
-#include "render/VideoMaterial.h"
+#include "common/FFmpegUtils.h"
+#include "video/render/VideoMaterial.h"
 
 #if defined(Q_OS_APPLE)
-#include "native/AppleMetalVideoTextureBridge.h"
+#include "video/native/AppleMetalVideoTextureBridge.h"
 #endif
 
 #include <QSGGeometryNode>

@@ -3,7 +3,7 @@
  * @Date: 2026-04-07 15:39:45
  * @LastEditors: zs
  * @LastEditTime: 2026-04-27 00:02:15
- * @FilePath: /PluginBased/plugins/PlayPlugin/src/ClockSync.h
+ * @FilePath: /PluginBased/plugins/PlayPlugin/src/sync/ClockSync.h
  * @Description: 
  * 
  * Copyright (c) 2026 by zs, All Rights Reserved. 

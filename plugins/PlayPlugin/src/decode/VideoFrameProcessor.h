@@ -3,7 +3,7 @@
 // 在解码视频帧进入渲染队列前完成预处理。
 // FFmpegDecoder 在解码线程持有该处理器；它只拥有 swscale 缓存状态，不拥有 QObject。
 
-#include "FFmpegUtils.h"
+#include "common/FFmpegUtils.h"
 #include "decode/DecodePerformance.h"
 
 class HardwareDecoderBackend;

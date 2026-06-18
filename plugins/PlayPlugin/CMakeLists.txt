@@ -67,40 +67,40 @@ qt_add_qml_module(PlayPlugin
 
     # C++ 源文件（含 QML_ELEMENT / QML_SINGLETON 标注的类）
     SOURCES
-        src/PlaybackContext.h  src/PlaybackContext.cpp
-        src/PlaybackCompletionTracker.h src/PlaybackCompletionTracker.cpp
-        src/PlaybackPipeline.h src/PlaybackPipeline.cpp
-        src/PlaybackSeekCoordinator.h src/PlaybackSeekCoordinator.cpp
-        src/PlayerEngine.h     src/PlayerEngine.cpp
-        src/PlaylistModel.h    src/PlaylistModel.cpp
-        src/MediaInfo.h
+        src/playback/PlaybackContext.h  src/playback/PlaybackContext.cpp
+        src/playback/PlaybackCompletionTracker.h src/playback/PlaybackCompletionTracker.cpp
+        src/playback/PlaybackPipeline.h src/playback/PlaybackPipeline.cpp
+        src/playback/PlaybackSeekCoordinator.h src/playback/PlaybackSeekCoordinator.cpp
+        src/playback/PlayerEngine.h     src/playback/PlayerEngine.cpp
+        src/model/PlaylistModel.h    src/model/PlaylistModel.cpp
+        src/model/MediaInfo.h
         # 第二步拆出的 FFmpeg 解码器相关文件
-        src/FFmpegUtils.h
-        src/FrameQueue.h
+        src/common/FFmpegUtils.h
+        src/common/FrameQueue.h
         src/decode/DecodePerformance.h src/decode/DecodePerformance.cpp
         src/decode/DecodeLoopControl.h src/decode/DecodeLoopControl.cpp
         src/decode/FFmpegLogBridge.h src/decode/FFmpegLogBridge.cpp
         src/decode/MediaOpener.h src/decode/MediaOpener.cpp
         src/decode/StreamFrameDecoder.h src/decode/StreamFrameDecoder.cpp
         src/decode/VideoFrameProcessor.h src/decode/VideoFrameProcessor.cpp
-        src/FFmpegDecoder.h    src/FFmpegDecoder.cpp
-        src/hw/HardwareDecoderBackend.h
-        src/hw/HardwareDecoderFactory.h src/hw/HardwareDecoderFactory.cpp
-        src/hw/VideoToolboxBackend.h    src/hw/VideoToolboxBackend.cpp
-        src/hw/D3D11VABackend.h         src/hw/D3D11VABackend.cpp
-        src/hw/VaapiBackend.h           src/hw/VaapiBackend.cpp
-        src/native/NativeVideoFrame.h
-        src/native/AppleMetalVideoTextureBridge.h
-        src/native/AppleMetalVideoTextureBridge.mm
-        src/render/VideoMaterial.h src/render/VideoMaterial.cpp
-        src/render/VideoNode.h src/render/VideoNode.cpp
-        src/render/VideoSurfaceGeometry.h src/render/VideoSurfaceGeometry.cpp
-        src/render/VideoPixelFormat.h src/render/VideoPixelFormat.cpp
+        src/decode/FFmpegDecoder.h    src/decode/FFmpegDecoder.cpp
+        src/decode/hw/HardwareDecoderBackend.h
+        src/decode/hw/HardwareDecoderFactory.h src/decode/hw/HardwareDecoderFactory.cpp
+        src/decode/hw/VideoToolboxBackend.h    src/decode/hw/VideoToolboxBackend.cpp
+        src/decode/hw/D3D11VABackend.h         src/decode/hw/D3D11VABackend.cpp
+        src/decode/hw/VaapiBackend.h           src/decode/hw/VaapiBackend.cpp
+        src/video/native/NativeVideoFrame.h
+        src/video/native/AppleMetalVideoTextureBridge.h
+        src/video/native/AppleMetalVideoTextureBridge.mm
+        src/video/render/VideoMaterial.h src/video/render/VideoMaterial.cpp
+        src/video/render/VideoNode.h src/video/render/VideoNode.cpp
+        src/video/render/VideoSurfaceGeometry.h src/video/render/VideoSurfaceGeometry.cpp
+        src/video/render/VideoPixelFormat.h src/video/render/VideoPixelFormat.cpp
         # 第三步拆出的渲染器、时钟同步和视频输出组件
-        src/ClockSync.h
-        src/AudioRenderer.h    src/AudioRenderer.cpp
-        src/VideoRenderer.h    src/VideoRenderer.cpp
-        src/FFmpegSurface.h    src/FFmpegSurface.cpp
+        src/sync/ClockSync.h
+        src/audio/AudioRenderer.h    src/audio/AudioRenderer.cpp
+        src/video/VideoRenderer.h    src/video/VideoRenderer.cpp
+        src/video/FFmpegSurface.h    src/video/FFmpegSurface.cpp
 )
 
 qt_add_translations(PlayPlugin
@@ -129,7 +129,10 @@ set_target_properties(PlayPlugin PROPERTIES
 )
 
 target_include_directories(PlayPlugin PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/src     # PlaybackContext / PlayerEngine / PlaylistModel / MediaInfo
+    ${CMAKE_CURRENT_SOURCE_DIR}/src     # PlayPlugin grouped source include root
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/playback
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/model
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/video
     ${CMAKE_SOURCE_DIR}/plugin          # IAppPlugin.h
     ${CMAKE_SOURCE_DIR}/logger          # Logger.h
     ${CMAKE_SOURCE_DIR}/core            # PluginManager.h（头文件，符号运行时解析）

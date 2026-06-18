@@ -18,12 +18,66 @@ def require(condition, message):
 
 
 def main():
-    pipeline_h_path = ROOT / "plugins/PlayPlugin/src/PlaybackPipeline.h"
-    pipeline_cpp_path = ROOT / "plugins/PlayPlugin/src/PlaybackPipeline.cpp"
-    completion_h_path = ROOT / "plugins/PlayPlugin/src/PlaybackCompletionTracker.h"
-    completion_cpp_path = ROOT / "plugins/PlayPlugin/src/PlaybackCompletionTracker.cpp"
-    seek_h_path = ROOT / "plugins/PlayPlugin/src/PlaybackSeekCoordinator.h"
-    seek_cpp_path = ROOT / "plugins/PlayPlugin/src/PlaybackSeekCoordinator.cpp"
+    expected_layout = (
+        "playback/PlaybackContext.h",
+        "playback/PlaybackContext.cpp",
+        "playback/PlaybackCompletionTracker.h",
+        "playback/PlaybackCompletionTracker.cpp",
+        "playback/PlaybackPipeline.h",
+        "playback/PlaybackPipeline.cpp",
+        "playback/PlaybackSeekCoordinator.h",
+        "playback/PlaybackSeekCoordinator.cpp",
+        "playback/PlayerEngine.h",
+        "playback/PlayerEngine.cpp",
+        "model/PlaylistModel.h",
+        "model/PlaylistModel.cpp",
+        "model/MediaInfo.h",
+        "decode/FFmpegDecoder.h",
+        "decode/FFmpegDecoder.cpp",
+        "decode/hw/HardwareDecoderBackend.h",
+        "audio/AudioRenderer.h",
+        "audio/AudioRenderer.cpp",
+        "video/VideoRenderer.h",
+        "video/VideoRenderer.cpp",
+        "video/FFmpegSurface.h",
+        "video/FFmpegSurface.cpp",
+        "video/render/VideoMaterial.h",
+        "video/render/VideoMaterial.cpp",
+        "video/native/NativeVideoFrame.h",
+        "sync/ClockSync.h",
+        "common/FFmpegUtils.h",
+        "common/FrameQueue.h",
+    )
+    for relative_path in expected_layout:
+        require((ROOT / "plugins/PlayPlugin/src" / relative_path).exists(),
+                f"PlayPlugin source should live under src/{relative_path}")
+
+    old_root_files = (
+        "PlaybackContext.h",
+        "PlaybackCompletionTracker.h",
+        "PlaybackPipeline.h",
+        "PlaybackSeekCoordinator.h",
+        "PlayerEngine.h",
+        "PlaylistModel.h",
+        "MediaInfo.h",
+        "FFmpegDecoder.h",
+        "AudioRenderer.h",
+        "VideoRenderer.h",
+        "FFmpegSurface.h",
+        "ClockSync.h",
+        "FFmpegUtils.h",
+        "FrameQueue.h",
+    )
+    for filename in old_root_files:
+        require(not (ROOT / "plugins/PlayPlugin/src" / filename).exists(),
+                f"PlayPlugin source root should not keep categorized file: {filename}")
+
+    pipeline_h_path = ROOT / "plugins/PlayPlugin/src/playback/PlaybackPipeline.h"
+    pipeline_cpp_path = ROOT / "plugins/PlayPlugin/src/playback/PlaybackPipeline.cpp"
+    completion_h_path = ROOT / "plugins/PlayPlugin/src/playback/PlaybackCompletionTracker.h"
+    completion_cpp_path = ROOT / "plugins/PlayPlugin/src/playback/PlaybackCompletionTracker.cpp"
+    seek_h_path = ROOT / "plugins/PlayPlugin/src/playback/PlaybackSeekCoordinator.h"
+    seek_cpp_path = ROOT / "plugins/PlayPlugin/src/playback/PlaybackSeekCoordinator.cpp"
     require(pipeline_h_path.exists(), "PlaybackPipeline.h should exist")
     require(pipeline_cpp_path.exists(), "PlaybackPipeline.cpp should exist")
     require(completion_h_path.exists(), "PlaybackCompletionTracker.h should exist")
@@ -31,14 +85,14 @@ def main():
     require(seek_h_path.exists(), "PlaybackSeekCoordinator.h should exist")
     require(seek_cpp_path.exists(), "PlaybackSeekCoordinator.cpp should exist")
 
-    engine_h = read("plugins/PlayPlugin/src/PlayerEngine.h")
-    engine_cpp = read("plugins/PlayPlugin/src/PlayerEngine.cpp")
-    pipeline_h = read("plugins/PlayPlugin/src/PlaybackPipeline.h")
-    pipeline_cpp = read("plugins/PlayPlugin/src/PlaybackPipeline.cpp")
-    completion_h = read("plugins/PlayPlugin/src/PlaybackCompletionTracker.h")
-    completion_cpp = read("plugins/PlayPlugin/src/PlaybackCompletionTracker.cpp")
-    seek_h = read("plugins/PlayPlugin/src/PlaybackSeekCoordinator.h")
-    seek_cpp = read("plugins/PlayPlugin/src/PlaybackSeekCoordinator.cpp")
+    engine_h = read("plugins/PlayPlugin/src/playback/PlayerEngine.h")
+    engine_cpp = read("plugins/PlayPlugin/src/playback/PlayerEngine.cpp")
+    pipeline_h = read("plugins/PlayPlugin/src/playback/PlaybackPipeline.h")
+    pipeline_cpp = read("plugins/PlayPlugin/src/playback/PlaybackPipeline.cpp")
+    completion_h = read("plugins/PlayPlugin/src/playback/PlaybackCompletionTracker.h")
+    completion_cpp = read("plugins/PlayPlugin/src/playback/PlaybackCompletionTracker.cpp")
+    seek_h = read("plugins/PlayPlugin/src/playback/PlaybackSeekCoordinator.h")
+    seek_cpp = read("plugins/PlayPlugin/src/playback/PlaybackSeekCoordinator.cpp")
     cmake = read("plugins/PlayPlugin/CMakeLists.txt")
     root_cmake = read("CMakeLists.txt")
 

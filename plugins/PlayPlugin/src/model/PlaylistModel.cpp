@@ -1,4 +1,4 @@
-#include "PlaylistModel.h"
+#include "model/PlaylistModel.h"
 #include "Logger.h"
 
 #include <QFileInfo>

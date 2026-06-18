@@ -1,4 +1,4 @@
-#include "render/VideoPixelFormat.h"
+#include "video/render/VideoPixelFormat.h"
 
 // 实现 FFmpeg 像素格式到 QRhi 纹理上传布局的映射。
 // 映射表独立于 FFmpegSurface，后续渲染后端可以复用这份格式契约。

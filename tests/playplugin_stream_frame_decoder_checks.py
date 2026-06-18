@@ -23,8 +23,8 @@ def main():
     require(helper_h_path.exists(), "StreamFrameDecoder.h should exist")
     require(helper_cpp_path.exists(), "StreamFrameDecoder.cpp should exist")
 
-    decoder_h = read("plugins/PlayPlugin/src/FFmpegDecoder.h")
-    decoder_cpp = read("plugins/PlayPlugin/src/FFmpegDecoder.cpp")
+    decoder_h = read("plugins/PlayPlugin/src/decode/FFmpegDecoder.h")
+    decoder_cpp = read("plugins/PlayPlugin/src/decode/FFmpegDecoder.cpp")
     helper_h = read("plugins/PlayPlugin/src/decode/StreamFrameDecoder.h")
     helper_cpp = read("plugins/PlayPlugin/src/decode/StreamFrameDecoder.cpp")
     cmake = read("plugins/PlayPlugin/CMakeLists.txt")

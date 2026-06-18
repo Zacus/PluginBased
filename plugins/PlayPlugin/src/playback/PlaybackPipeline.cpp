@@ -1,9 +1,9 @@
-#include "PlaybackPipeline.h"
+#include "playback/PlaybackPipeline.h"
 
 // 本文件实现播放管线的组件生命周期、信号转发、seek 协调和 Surface 绑定。
 // 这些逻辑从 PlayerEngine 抽出后，可以单独演进而不扩大 QML API 类的职责。
 
-#include "FFmpegSurface.h"
+#include "video/FFmpegSurface.h"
 #include "Logger.h"
 
 PlaybackPipeline::PlaybackPipeline(QObject* parent)

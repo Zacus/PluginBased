@@ -1,4 +1,4 @@
-#include "PlaybackContext.h"
+#include "playback/PlaybackContext.h"
 
 // PlaybackContext 的实现全部在头文件内联。
 // 此 .cpp 文件存在是为了让 CMake 的 AUTOMOC 能为 QML_ELEMENT / QML_SINGLETON

@@ -23,8 +23,8 @@ def main():
     require(processor_h_path.exists(), "VideoFrameProcessor.h should exist")
     require(processor_cpp_path.exists(), "VideoFrameProcessor.cpp should exist")
 
-    decoder_h = read("plugins/PlayPlugin/src/FFmpegDecoder.h")
-    decoder_cpp = read("plugins/PlayPlugin/src/FFmpegDecoder.cpp")
+    decoder_h = read("plugins/PlayPlugin/src/decode/FFmpegDecoder.h")
+    decoder_cpp = read("plugins/PlayPlugin/src/decode/FFmpegDecoder.cpp")
     processor_h = read("plugins/PlayPlugin/src/decode/VideoFrameProcessor.h")
     processor_cpp = read("plugins/PlayPlugin/src/decode/VideoFrameProcessor.cpp")
     cmake = read("plugins/PlayPlugin/CMakeLists.txt")

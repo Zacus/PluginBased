@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../FFmpegUtils.h"
+#include "common/FFmpegUtils.h"
 
 #include <QString>
 

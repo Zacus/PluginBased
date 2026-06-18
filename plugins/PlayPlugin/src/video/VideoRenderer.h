@@ -1,8 +1,8 @@
 #pragma once
 
-#include "FrameQueue.h"
-#include "ClockSync.h"
-#include "FFmpegUtils.h"
+#include "common/FrameQueue.h"
+#include "sync/ClockSync.h"
+#include "common/FFmpegUtils.h"
 
 #include <QObject>
 #include <QElapsedTimer>

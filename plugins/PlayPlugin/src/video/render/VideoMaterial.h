@@ -3,11 +3,11 @@
 // 持有 FFmpegSurface 视频节点使用的 QSG 材质状态。
 // VideoNode 保存一个 VideoMaterial 实例，具体 shader 实现在 VideoMaterial.cpp 中。
 
-#include "FFmpegUtils.h"
-#include "render/VideoPixelFormat.h"
+#include "common/FFmpegUtils.h"
+#include "video/render/VideoPixelFormat.h"
 
 #if defined(Q_OS_APPLE)
-#include "native/AppleMetalVideoTextureBridge.h"
+#include "video/native/AppleMetalVideoTextureBridge.h"
 #endif
 
 #include <QSGMaterial>

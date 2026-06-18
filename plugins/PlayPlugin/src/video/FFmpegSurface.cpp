@@ -1,6 +1,6 @@
-#include "FFmpegSurface.h"
-#include "render/VideoNode.h"
-#include "render/VideoSurfaceGeometry.h"
+#include "video/FFmpegSurface.h"
+#include "video/render/VideoNode.h"
+#include "video/render/VideoSurfaceGeometry.h"
 
 #include <QQuickWindow>
 #include <QSGRendererInterface>

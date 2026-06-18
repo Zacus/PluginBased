@@ -1,6 +1,6 @@
 #include "PlayPlugin.h"
-#include "PlaybackContext.h"
-#include "PlayerEngine.h"
+#include "playback/PlaybackContext.h"
+#include "playback/PlayerEngine.h"
 #include "Logger.h"
 
 // FFmpeg — C 库，必须用 extern "C" 包裹

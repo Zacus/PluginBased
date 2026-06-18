@@ -6,11 +6,13 @@
 #include <QQmlEngine>
 #include <memory>
 
-#include "MediaInfo.h"
-#include "PlaybackCompletionTracker.h"
+#include "model/MediaInfo.h"
+#include "playback/PlaybackCompletionTracker.h"
 
 class FFmpegSurface;
 class PlaybackPipeline;
+
+Q_MOC_INCLUDE("video/FFmpegSurface.h")
 
 /**
  * @brief PlayerEngine — PlayPlugin 的核心播放引擎
