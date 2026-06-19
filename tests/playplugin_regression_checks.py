@@ -58,6 +58,7 @@ def main():
     shader_frag = read("plugins/PlayPlugin/shaders/yuvvideo.frag")
     renderer_cpp = read("plugins/PlayPlugin/src/video/VideoRenderer.cpp")
     renderer_h = read("plugins/PlayPlugin/src/video/VideoRenderer.h")
+    clock_sync_h = read("plugins/PlayPlugin/src/sync/ClockSync.h")
     control_qml = read("plugins/PlayPlugin/qml/ControlBar.qml")
     playlist_qml = read("plugins/PlayPlugin/qml/PlaylistView.qml")
     playplugin_qml = read("plugins/PlayPlugin/qml/PlayPluginView.qml")
@@ -326,6 +327,20 @@ def main():
             "playback performance logging should not run per frame")
     require("setAudioClockEnabled" in renderer_h and "m_audioClockEnabled" in renderer_h,
             "VideoRenderer should explicitly support video-only clocking")
+    require("audioClockFast() const" in clock_sync_h and
+            "m_audioClockSnapshotSequence" in clock_sync_h and
+            "m_audioClockSnapshotBaseUs" in clock_sync_h and
+            "m_audioClockSnapshotAnchorNs" in clock_sync_h,
+            "ClockSync should expose a lock-free compensated audio clock snapshot")
+    decide_body = clock_sync_h[
+        clock_sync_h.find("Action decide(qint64 framePtsUs) const"):
+        clock_sync_h.find("private:", clock_sync_h.find("Action decide(qint64 framePtsUs) const"))
+    ]
+    require("audioClockFast()" in decide_body and "audioClock()" not in decide_body,
+            "ClockSync::decide should use the lock-free fast audio clock path")
+    require("std::chrono::steady_clock::now()" in clock_sync_h and
+            "publishAudioClockSnapshot" in clock_sync_h,
+            "ClockSync fast path should preserve wall-clock compensation without taking the mutex")
     require("m_videoClock.restart()" in renderer_cpp and "m_videoClockBaseUs" in renderer_cpp,
             "video-only playback should establish a local clock from the first rendered frame")
     require("m_videoRenderer->setAudioClockEnabled(hasAudio)" in pipeline_cpp,
