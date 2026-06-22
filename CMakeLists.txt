@@ -279,12 +279,13 @@ if(BUILD_TESTING)
         COMMAND $<TARGET_FILE:PluginDiscoveryTest>
         WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
     )
+    set(PLAYPLUGIN_TEST_PLUGIN_ROOT "${CMAKE_SOURCE_DIR}/plugins")
     add_executable(PlayPluginVideoFrameSchedulerTest
         tests/tst_playplugin_video_frame_scheduler.cpp
-        plugins/PlayPlugin/src/video/VideoFrameScheduler.cpp
+        "${PLAYPLUGIN_TEST_PLUGIN_ROOT}/PlayPlugin/src/video/VideoFrameScheduler.cpp"
     )
     target_include_directories(PlayPluginVideoFrameSchedulerTest PRIVATE
-        "${CMAKE_SOURCE_DIR}/plugins/PlayPlugin/src"
+        "${PLAYPLUGIN_TEST_PLUGIN_ROOT}/PlayPlugin/src"
     )
     target_link_libraries(PlayPluginVideoFrameSchedulerTest PRIVATE
         Qt6::Core
