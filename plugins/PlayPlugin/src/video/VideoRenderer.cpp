@@ -1,6 +1,8 @@
 #include "video/VideoRenderer.h"
 #include "Logger.h"
 
+#include <QPointer>
+
 #if defined(Q_OS_APPLE)
 #include <CoreVideo/CoreVideo.h>
 #endif
@@ -51,10 +53,28 @@ VideoRenderer::VideoRenderer(VideoFrameQueue* queue,
     m_timer.setSingleShot(true);
     m_timer.setTimerType(Qt::PreciseTimer);
     connect(&m_timer, &QTimer::timeout, this, &VideoRenderer::onTimer);
+
+    if (m_queue)
+    {
+        QPointer<VideoRenderer> self(this);
+        m_queue->setWakeCallback([self]()
+        {
+            if (!self)
+                return;
+
+            QMetaObject::invokeMethod(self, [self]()
+            {
+                if (self)
+                    self->notifyFrameAvailable();
+            }, Qt::QueuedConnection);
+        });
+    }
 }
 
 VideoRenderer::~VideoRenderer()
 {
+    if (m_queue)
+        m_queue->setWakeCallback({});
     stop();
 }
 
@@ -220,6 +240,14 @@ int VideoRenderer::waitIntervalMs(qint64 waitUs) const
     const qint64 waitMs = (waitUs + 999) / 1000;
     return static_cast<int>(
         qBound<qint64>(1, waitMs, static_cast<qint64>(MaxScheduledWaitMs)));
+}
+
+void VideoRenderer::notifyFrameAvailable()
+{
+    if (m_hasHeld)
+        return;
+
+    scheduleImmediateCheck();
 }
 
 void VideoRenderer::scheduleNextCheck(int intervalMs)

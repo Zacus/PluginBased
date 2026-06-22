@@ -96,6 +96,7 @@ private:
     VideoFrameScheduler::Decision decideFrame(qint64 framePtsUs);
     qint64 currentVideoClockUs() const;
     int waitIntervalMs(qint64 waitUs) const;
+    void notifyFrameAvailable();
     void scheduleNextCheck(int intervalMs);
     void scheduleImmediateCheck();
     void resetRenderPerformanceStats();

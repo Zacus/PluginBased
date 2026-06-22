@@ -5,6 +5,7 @@
 #include <QMutex>
 #include <QWaitCondition>
 #include <deque>
+#include <functional>
 
 /**
  * @brief 线程安全帧队列
@@ -30,6 +31,8 @@ public:
         bool    eof    = false; // 文件结束标记帧
     };
 
+    using WakeCallback = std::function<void()>;
+
     explicit FrameQueue(int maxSize = 16)
         : m_maxSize(maxSize)
     {}
@@ -42,23 +45,33 @@ public:
      */
     bool push(T frame, int serial = 0, bool eof = false)
     {
-        QMutexLocker lk(&m_mutex);
-        while (static_cast<int>(m_queue.size()) >= m_maxSize && !m_abort)
-            m_notFull.wait(&m_mutex);
-        if (m_abort) return false;
+        WakeCallback wakeCallback;
+        {
+            QMutexLocker lk(&m_mutex);
+            while (static_cast<int>(m_queue.size()) >= m_maxSize && !m_abort)
+                m_notFull.wait(&m_mutex);
+            if (m_abort) return false;
 
-        m_queue.push_back({ std::move(frame), serial, eof });
-        m_notEmpty.wakeOne();
+            m_queue.push_back({ std::move(frame), serial, eof });
+            m_notEmpty.wakeOne();
+            wakeCallback = m_wakeCallback;
+        }
+        notifyWakeCallback(wakeCallback);
         return true;
     }
 
     bool tryPush(T frame, int serial = 0, bool eof = false)
     {
-        QMutexLocker lk(&m_mutex);
-        if (static_cast<int>(m_queue.size()) >= m_maxSize)
-            return false; // 满了直接返回，不阻塞
-        m_queue.push_back({ std::move(frame), serial, eof });
-        m_notEmpty.wakeOne();
+        WakeCallback wakeCallback;
+        {
+            QMutexLocker lk(&m_mutex);
+            if (static_cast<int>(m_queue.size()) >= m_maxSize)
+                return false; // 满了直接返回，不阻塞
+            m_queue.push_back({ std::move(frame), serial, eof });
+            m_notEmpty.wakeOne();
+            wakeCallback = m_wakeCallback;
+        }
+        notifyWakeCallback(wakeCallback);
         return true;
     }
 
@@ -130,11 +143,24 @@ public:
     bool empty()        const { QMutexLocker lk(&m_mutex); return m_queue.empty(); }
     int  flushSerial()  const { QMutexLocker lk(&m_mutex); return m_flushSerial; }
 
+    void setWakeCallback(WakeCallback callback)
+    {
+        QMutexLocker lk(&m_mutex);
+        m_wakeCallback = std::move(callback);
+    }
+
 private:
+    void notifyWakeCallback(const WakeCallback& wakeCallback)
+    {
+        if (wakeCallback)
+            wakeCallback();
+    }
+
     mutable QMutex  m_mutex;
     QWaitCondition  m_notEmpty;
     QWaitCondition  m_notFull;
     std::deque<Entry> m_queue;
+    WakeCallback m_wakeCallback;
     int  m_maxSize    = 16;
     int  m_flushSerial = 0;
     bool m_abort      = false;

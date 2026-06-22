@@ -17,6 +17,7 @@ def require(condition: bool, message: str) -> None:
 def main() -> None:
     renderer_h = read("plugins/PlayPlugin/src/video/VideoRenderer.h")
     renderer_cpp = read("plugins/PlayPlugin/src/video/VideoRenderer.cpp")
+    frame_queue_h = read("plugins/PlayPlugin/src/common/FrameQueue.h")
     root_cmake = read("CMakeLists.txt")
 
     require("m_timer.setInterval(8)" not in renderer_cpp,
@@ -31,6 +32,20 @@ def main() -> None:
             "VideoRenderer should centralize dynamic timer scheduling")
     require("waitIntervalMs(decision.waitUs)" in renderer_cpp,
             "Wait frames should schedule from the calculated frame wait time")
+    require("setWakeCallback" in frame_queue_h,
+            "FrameQueue should expose a non-blocking wake callback for GUI consumers")
+    require("notifyWakeCallback" in frame_queue_h,
+            "FrameQueue should notify callbacks after successful push operations")
+    require("setWakeCallback" in renderer_cpp,
+            "VideoRenderer should subscribe to video queue wakeups")
+    require("QPointer<VideoRenderer>" in renderer_cpp,
+            "VideoRenderer queue wake callback should guard queued delivery with QPointer")
+    require("notifyFrameAvailable" in renderer_h and "notifyFrameAvailable" in renderer_cpp,
+            "VideoRenderer should handle queue wakeups through a dedicated method")
+    require("m_queue->setWakeCallback({})" in renderer_cpp,
+            "VideoRenderer should clear the queue wake callback during destruction")
+    require("if (m_hasHeld)" in renderer_cpp,
+            "VideoRenderer should not let queue wakeups preempt a held frame")
     require("add_test(NAME playplugin_video_renderer_scheduler_checks" in root_cmake,
             "CTest should run the video renderer scheduler check")
 
