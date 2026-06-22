@@ -98,6 +98,7 @@ qt_add_qml_module(PlayPlugin
         src/video/render/VideoPixelFormat.h src/video/render/VideoPixelFormat.cpp
         # 第三步拆出的渲染器、时钟同步和视频输出组件
         src/sync/ClockSync.h
+        src/video/VideoFrameScheduler.h src/video/VideoFrameScheduler.cpp
         src/audio/AudioRenderer.h    src/audio/AudioRenderer.cpp
         src/video/VideoRenderer.h    src/video/VideoRenderer.cpp
         src/video/FFmpegSurface.h    src/video/FFmpegSurface.cpp

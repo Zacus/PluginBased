@@ -275,6 +275,21 @@ if(BUILD_TESTING)
         COMMAND $<TARGET_FILE:PluginDiscoveryTest>
         WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
     )
+    add_executable(PlayPluginVideoFrameSchedulerTest
+        tests/tst_playplugin_video_frame_scheduler.cpp
+        plugins/PlayPlugin/src/video/VideoFrameScheduler.cpp
+    )
+    target_include_directories(PlayPluginVideoFrameSchedulerTest PRIVATE
+        "${CMAKE_SOURCE_DIR}/plugins/PlayPlugin/src"
+    )
+    target_link_libraries(PlayPluginVideoFrameSchedulerTest PRIVATE
+        Qt6::Core
+        Qt6::Test
+    )
+    add_test(NAME playplugin_video_frame_scheduler
+        COMMAND $<TARGET_FILE:PlayPluginVideoFrameSchedulerTest>
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+    )
     add_test(NAME app_theme_service_checks
         COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tests/app_theme_service_checks.py"
         WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
