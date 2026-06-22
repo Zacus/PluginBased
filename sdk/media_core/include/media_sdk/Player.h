@@ -1,0 +1,43 @@
+#pragma once
+
+#include "media_sdk/MediaEvents.h"
+#include "media_sdk/PlayerConfig.h"
+#include "media_sdk/Result.h"
+
+#include <chrono>
+#include <filesystem>
+#include <memory>
+
+namespace media_sdk {
+
+class IEventSink
+{
+public:
+    virtual ~IEventSink() = default;
+    virtual void onEvent(const PlayerEvent& event) = 0;
+};
+
+class Player
+{
+public:
+    explicit Player(PlayerConfig config, IEventSink& events);
+    ~Player();
+
+    Player(const Player&) = delete;
+    Player& operator=(const Player&) = delete;
+
+    Player(Player&&) noexcept;
+    Player& operator=(Player&&) noexcept;
+
+    Result<void> open(const std::filesystem::path& path);
+    void play();
+    void pause();
+    void stop();
+    Result<void> seek(std::chrono::milliseconds position);
+
+private:
+    class Impl;
+    std::unique_ptr<Impl> m_impl;
+};
+
+} // namespace media_sdk
