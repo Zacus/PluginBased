@@ -42,6 +42,10 @@ def main() -> None:
             "VideoRenderer queue wake callback should guard queued delivery with QPointer")
     require("notifyFrameAvailable" in renderer_h and "notifyFrameAvailable" in renderer_cpp,
             "VideoRenderer should handle queue wakeups through a dedicated method")
+    require("processNextFrame" in renderer_h and "processNextFrame" in renderer_cpp,
+            "VideoRenderer should keep frame processing in a reusable processNextFrame method")
+    require("void VideoRenderer::onTimer()\n{\n    processNextFrame();\n}" in renderer_cpp,
+            "VideoRenderer timer slot should only delegate to processNextFrame")
     require("m_queue->setWakeCallback({})" in renderer_cpp,
             "VideoRenderer should clear the queue wake callback during destruction")
     require("if (m_hasHeld)" in renderer_cpp,

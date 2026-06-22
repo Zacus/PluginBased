@@ -97,6 +97,7 @@ private:
     qint64 currentVideoClockUs() const;
     int waitIntervalMs(qint64 waitUs) const;
     void notifyFrameAvailable();
+    void processNextFrame();
     void scheduleNextCheck(int intervalMs);
     void scheduleImmediateCheck();
     void resetRenderPerformanceStats();

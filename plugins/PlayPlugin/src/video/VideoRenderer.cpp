@@ -315,6 +315,11 @@ void VideoRenderer::maybeLogRenderPerformance()
 // ─────────────────────────────────────────────────────────────────────────────
 void VideoRenderer::onTimer()
 {
+    processNextFrame();
+}
+
+void VideoRenderer::processNextFrame()
+{
     if (m_paused)
         return;
 
