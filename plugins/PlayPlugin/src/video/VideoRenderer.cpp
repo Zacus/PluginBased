@@ -89,7 +89,7 @@ void VideoRenderer::start()
 void VideoRenderer::stop()
 {
     m_running = false;
-    m_timer.stop();
+    cancelScheduledCheck();
     LOG_DEBUG("VideoRenderer: stopped");
 }
 
@@ -114,7 +114,7 @@ void VideoRenderer::setPaused(bool paused)
 
     m_paused = paused;
     if (m_paused)
-        m_timer.stop();
+        cancelScheduledCheck();
     else
         scheduleImmediateCheck();
 }
@@ -150,7 +150,7 @@ void VideoRenderer::flush()
     m_consecutiveDroppedFrames = 0;
     resetRenderPerformanceStats();
     resetVideoClock();
-    m_timer.stop();
+    cancelScheduledCheck();
 }
 
 void VideoRenderer::reset()
@@ -166,7 +166,7 @@ void VideoRenderer::reset()
     m_pendingSeekGeneration = 0;
     m_seekPending = false;
     m_running = false;
-    m_timer.stop();
+    cancelScheduledCheck();
 }
 
 void VideoRenderer::beginSeek(int generation)
@@ -179,7 +179,7 @@ void VideoRenderer::beginSeek(int generation)
     setAcceptedSerial(generation);
     m_pendingSeekGeneration = generation;
     m_seekPending = true;
-    m_timer.stop();
+    cancelScheduledCheck();
 }
 
 void VideoRenderer::completeSeek(int generation, int serial)
@@ -261,6 +261,11 @@ void VideoRenderer::scheduleNextCheck(int intervalMs)
 void VideoRenderer::scheduleImmediateCheck()
 {
     scheduleNextCheck(0);
+}
+
+void VideoRenderer::cancelScheduledCheck()
+{
+    m_timer.stop();
 }
 
 void VideoRenderer::resetRenderPerformanceStats()

@@ -100,6 +100,7 @@ private:
     void processNextFrame();
     void scheduleNextCheck(int intervalMs);
     void scheduleImmediateCheck();
+    void cancelScheduledCheck();
     void resetRenderPerformanceStats();
     void maybeLogRenderPerformance();
 };

@@ -30,6 +30,10 @@ def main() -> None:
             "VideoRenderer should depend on the frame scheduler calculation unit")
     require("scheduleNextCheck" in renderer_h and "scheduleNextCheck" in renderer_cpp,
             "VideoRenderer should centralize dynamic timer scheduling")
+    require("cancelScheduledCheck" in renderer_h and "cancelScheduledCheck" in renderer_cpp,
+            "VideoRenderer should centralize dynamic timer cancellation")
+    require(renderer_cpp.count("cancelScheduledCheck();") >= 5,
+            "stop, pause, flush, reset, and seek should cancel pending frame checks")
     require("waitIntervalMs(decision.waitUs)" in renderer_cpp,
             "Wait frames should schedule from the calculated frame wait time")
     require("setWakeCallback" in frame_queue_h,
