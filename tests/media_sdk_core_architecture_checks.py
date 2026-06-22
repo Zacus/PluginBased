@@ -32,6 +32,10 @@ def main() -> None:
             "media_sdk_core should require C++20")
     require("AUTOMOC OFF" in sdk_cmake and "AUTOUIC OFF" in sdk_cmake and "AUTORCC OFF" in sdk_cmake,
             "media_sdk_core should disable Qt automoc/autouic/autorcc")
+    require("ClockSync.cpp" in sdk_cmake and "FrameScheduler.cpp" in sdk_cmake,
+            "media_sdk_core should compile the phase 2 primitive sources")
+    require("MediaSdkCorePrimitivesTest" in sdk_cmake and "media_sdk_core_primitives" in sdk_cmake,
+            "media_sdk_core should register primitive C++ tests")
 
     expected_headers = [
         "PlayerConfig.h",
