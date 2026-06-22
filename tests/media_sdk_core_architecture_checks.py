@@ -18,6 +18,8 @@ def require(condition: bool, message: str) -> None:
 
 def main() -> None:
     root_cmake = read(ROOT / "CMakeLists.txt")
+    design_doc = read(ROOT / "docs" / "superpowers" / "specs" /
+                      "2026-06-22-media-sdk-bplus-design.md")
     require((SDK_ROOT / "CMakeLists.txt").exists(),
             "sdk/media_core/CMakeLists.txt should exist")
     sdk_cmake = read(SDK_ROOT / "CMakeLists.txt")
@@ -58,12 +60,29 @@ def main() -> None:
         "QRhi",
         "QSG",
         "QAudio",
+        "EventBus",
+        "Observable",
+        "template<class Derived>",
+        "template<typename Derived>",
     ]
     for source in list(SDK_ROOT.rglob("*.h")) + list(SDK_ROOT.rglob("*.cpp")):
         text = read(source)
         for token in forbidden_tokens:
             require(token not in text,
                     f"{source.relative_to(ROOT)} must stay Qt-free; found {token}")
+
+    required_design_terms = [
+        "PIMPL",
+        "single `IEventSink`",
+        "不引入泛型 Observable",
+        "不使用 CRTP",
+        "command submission",
+        "std::jthread",
+        "std::stop_token",
+    ]
+    for term in required_design_terms:
+        require(term in design_doc,
+                f"media SDK design should document the constraint: {term}")
 
 
 if __name__ == "__main__":

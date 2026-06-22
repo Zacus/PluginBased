@@ -57,6 +57,27 @@ PlayPlugin QML/UI
 - 对外错误使用结构化 `MediaError` / `Result<T>`，不要只返回 bool 加日志。
 - SDK 头文件不暴露 Qt 类型；尽量少暴露 FFmpeg 类型。需要硬件零拷贝时，通过 `NativeHandle` 描述符表达。
 
+### 模式选择约束
+
+B+ 阶段使用少量明确的模式，不引入泛型框架：
+
+- `Player` 使用 PIMPL façade，隐藏 worker、queue、FFmpeg 和状态机细节。
+- 事件出口使用 single `IEventSink`。core 不管理多订阅者列表，Qt adapter 负责把事件分发到 Qt signal 或其他 UI listener。
+- 硬解 backend 和后续 presenter/audio backend 使用 Strategy + Factory。
+- 播放状态使用显式值类型状态机，例如 `PlaybackStateMachine` 返回 transition result，不使用复杂 State 子类层级。
+- 不引入泛型 Observable、全局 EventBus 或跨模块消息总线。
+- 不使用 CRTP 作为 `Player`、sink、presenter、worker 等主接口设计。CRTP 只允许在内部小工具中经单独评审后使用。
+
+### 异步 API 约束
+
+SDK core 内部必须异步推进耗时操作：
+
+- `open()` 和 `seek()` 是 command submission API；`Result<void>` 只表示命令被接受，不表示媒体已经打开或 seek 已完成。
+- 媒体打开完成、seek 完成、播放状态、错误、EOF、音视频帧都通过 `IEventSink::onEvent()` 返回。
+- worker 使用 `std::jthread` 和 `std::stop_token`，析构必须 request stop 并确定 join。
+- `stop()` 应快速请求停止；`Player` 析构负责确定释放资源并等待后台线程结束。
+- core 默认从 worker/control thread 触发 event，Qt adapter 必须 marshal 到 GUI thread 后再更新 QML-facing 状态。
+
 ## 目标架构
 
 ### 1. media_sdk_core
