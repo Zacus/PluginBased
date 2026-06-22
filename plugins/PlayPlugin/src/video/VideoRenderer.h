@@ -3,6 +3,7 @@
 #include "common/FrameQueue.h"
 #include "sync/ClockSync.h"
 #include "common/FFmpegUtils.h"
+#include "video/VideoFrameScheduler.h"
 
 #include <QObject>
 #include <QElapsedTimer>
@@ -11,12 +12,12 @@
 /**
  * @brief VideoRenderer — 视频帧渲染器（主线程）
  *
- * 用 QTimer（默认 8ms，约 120fps 上限）驱动，运行在主线程。
+ * 用动态 single-shot QTimer 驱动，运行在主线程。
  * 从 VideoFrameQueue 取帧，与音频时钟同步后，把选中的 AVFrame
  * 直接转交给 FFmpegSurface，由 Scene Graph / shader 完成 YUV 上屏。
  *
  * 同步策略（以音频时钟为主）：
- *   - 帧 PTS 比音频时钟早 > 40ms → 不取帧，等下次 timer 触发
+ *   - 帧 PTS 早于主时钟 → 暂存并按 PTS 计算下一次 single-shot 唤醒
  *   - 帧 PTS 比音频时钟晚 > 100ms → 丢帧，取下一帧
  *   - 否则渲染
  *
@@ -71,6 +72,7 @@ private:
     ClockSync*       m_clock = nullptr;
 
     QTimer  m_timer;
+    bool    m_running = false;
 
     // 上次 Wait 时暂存的帧（下次 timer 优先消费）
     VideoFrameQueue::Entry m_heldEntry;
@@ -91,7 +93,11 @@ private:
     bool m_seekPending = false;
 
     void resetVideoClock();
-    ClockSync::Action decideVideoOnly(qint64 framePtsUs);
+    VideoFrameScheduler::Decision decideFrame(qint64 framePtsUs);
+    qint64 currentVideoClockUs() const;
+    int waitIntervalMs(qint64 waitUs) const;
+    void scheduleNextCheck(int intervalMs);
+    void scheduleImmediateCheck();
     void resetRenderPerformanceStats();
     void maybeLogRenderPerformance();
 };

@@ -8,6 +8,8 @@
 namespace {
 constexpr int PerformanceLogIntervalMs = 2000;
 constexpr int MaxConsecutiveDropsBeforeRender = 8;
+constexpr int QueueEmptyRetryMs = 16;
+constexpr int MaxScheduledWaitMs = 40;
 
 NativeVideoFrame nativeVideoFrameFromFrame(const AVFrame* frame)
 {
@@ -46,7 +48,8 @@ VideoRenderer::VideoRenderer(VideoFrameQueue* queue,
     , m_queue(queue)
     , m_clock(clock)
 {
-    m_timer.setInterval(8); // ~120fps 上限，实际受音频时钟同步限制
+    m_timer.setSingleShot(true);
+    m_timer.setTimerType(Qt::PreciseTimer);
     connect(&m_timer, &QTimer::timeout, this, &VideoRenderer::onTimer);
 }
 
@@ -57,13 +60,15 @@ VideoRenderer::~VideoRenderer()
 
 void VideoRenderer::start()
 {
+    m_running = true;
     resetRenderPerformanceStats();
-    m_timer.start();
+    scheduleImmediateCheck();
     LOG_DEBUG("VideoRenderer: started");
 }
 
 void VideoRenderer::stop()
 {
+    m_running = false;
     m_timer.stop();
     LOG_DEBUG("VideoRenderer: stopped");
 }
@@ -88,6 +93,10 @@ void VideoRenderer::setPaused(bool paused)
     }
 
     m_paused = paused;
+    if (m_paused)
+        m_timer.stop();
+    else
+        scheduleImmediateCheck();
 }
 
 void VideoRenderer::setAudioClockEnabled(bool enabled)
@@ -97,6 +106,7 @@ void VideoRenderer::setAudioClockEnabled(bool enabled)
 
     m_audioClockEnabled = enabled;
     resetVideoClock();
+    scheduleImmediateCheck();
 }
 
 void VideoRenderer::setAcceptedSerial(int serial)
@@ -106,6 +116,7 @@ void VideoRenderer::setAcceptedSerial(int serial)
     {
         m_hasHeld = false;
         m_heldEntry = {};
+        scheduleImmediateCheck();
     }
 }
 
@@ -119,6 +130,7 @@ void VideoRenderer::flush()
     m_consecutiveDroppedFrames = 0;
     resetRenderPerformanceStats();
     resetVideoClock();
+    m_timer.stop();
 }
 
 void VideoRenderer::reset()
@@ -133,6 +145,8 @@ void VideoRenderer::reset()
     resetVideoClock();
     m_pendingSeekGeneration = 0;
     m_seekPending = false;
+    m_running = false;
+    m_timer.stop();
 }
 
 void VideoRenderer::beginSeek(int generation)
@@ -145,6 +159,7 @@ void VideoRenderer::beginSeek(int generation)
     setAcceptedSerial(generation);
     m_pendingSeekGeneration = generation;
     m_seekPending = true;
+    m_timer.stop();
 }
 
 void VideoRenderer::completeSeek(int generation, int serial)
@@ -154,6 +169,7 @@ void VideoRenderer::completeSeek(int generation, int serial)
 
     setAcceptedSerial(serial);
     m_seekPending = false;
+    scheduleImmediateCheck();
 }
 
 void VideoRenderer::resetVideoClock()
@@ -163,22 +179,60 @@ void VideoRenderer::resetVideoClock()
     m_videoClockPausedUs = AV_NOPTS_VALUE;
 }
 
-ClockSync::Action VideoRenderer::decideVideoOnly(qint64 framePtsUs)
+qint64 VideoRenderer::currentVideoClockUs() const
 {
+    if (m_videoClockBaseUs == AV_NOPTS_VALUE)
+        return AV_NOPTS_VALUE;
+    if (m_videoClockPausedUs != AV_NOPTS_VALUE)
+        return m_videoClockPausedUs;
+    return m_videoClockBaseUs + m_videoClock.nsecsElapsed() / 1000;
+}
+
+VideoFrameScheduler::Decision VideoRenderer::decideFrame(qint64 framePtsUs)
+{
+    if (m_audioClockEnabled)
+    {
+        const qint64 clockUs = m_clock
+            ? m_clock->audioClockFast()
+            : ClockSync::INVALID_CLOCK;
+        return VideoFrameScheduler::decide(framePtsUs,
+                                           clockUs,
+                                           clockUs != ClockSync::INVALID_CLOCK);
+    }
+
     if (m_videoClockBaseUs == AV_NOPTS_VALUE)
     {
         m_videoClockBaseUs = framePtsUs;
         m_videoClock.restart();
-        return ClockSync::Action::Render;
+        return {};
     }
 
-    const qint64 clockUs = m_videoClockBaseUs + m_videoClock.nsecsElapsed() / 1000;
-    const qint64 diff = framePtsUs - clockUs;
-    if (diff > ClockSync::EARLY_THRESHOLD_US)
-        return ClockSync::Action::Wait;
-    if (diff < -ClockSync::LATE_THRESHOLD_US)
-        return ClockSync::Action::Drop;
-    return ClockSync::Action::Render;
+    return VideoFrameScheduler::decide(framePtsUs,
+                                       currentVideoClockUs(),
+                                       true);
+}
+
+int VideoRenderer::waitIntervalMs(qint64 waitUs) const
+{
+    if (waitUs <= 0)
+        return 0;
+
+    const qint64 waitMs = (waitUs + 999) / 1000;
+    return static_cast<int>(
+        qBound<qint64>(1, waitMs, static_cast<qint64>(MaxScheduledWaitMs)));
+}
+
+void VideoRenderer::scheduleNextCheck(int intervalMs)
+{
+    if (!m_running || m_paused || m_seekPending)
+        return;
+
+    m_timer.start(qMax(0, intervalMs));
+}
+
+void VideoRenderer::scheduleImmediateCheck()
+{
+    scheduleNextCheck(0);
 }
 
 void VideoRenderer::resetRenderPerformanceStats()
@@ -251,6 +305,7 @@ void VideoRenderer::onTimer()
             if (!m_queue->tryPop(entry)) {
                 ++m_renderPerf.queueEmptyPolls;
                 maybeLogRenderPerformance();
+                scheduleNextCheck(QueueEmptyRetryMs);
                 return; // 队列空，下次再来
             }
         }
@@ -278,20 +333,20 @@ void VideoRenderer::onTimer()
         qint64 framePtsUs = entry.frame->pts;
         if (framePtsUs == AV_NOPTS_VALUE) framePtsUs = 0;
 
-        const ClockSync::Action action = m_audioClockEnabled
-            ? m_clock->decide(framePtsUs)
-            : decideVideoOnly(framePtsUs);
+        const VideoFrameScheduler::Decision decision = decideFrame(framePtsUs);
+        const VideoFrameScheduler::Action action = decision.action;
 
-        if (action == ClockSync::Action::Wait) {
-            // 帧还没到时间：暂存起来，8ms 后再判断，不丢弃
+        if (action == VideoFrameScheduler::Action::Wait) {
+            // 帧还没到时间：暂存起来，到接近目标显示时间再判断，不丢弃
             m_heldEntry = std::move(entry);
             m_hasHeld   = true;
             ++m_renderPerf.waitFrames;
             maybeLogRenderPerformance();
+            scheduleNextCheck(waitIntervalMs(decision.waitUs));
             return;
         }
 
-        if (action == ClockSync::Action::Drop &&
+        if (action == VideoFrameScheduler::Action::Drop &&
             m_hasRenderedFrame &&
             m_consecutiveDroppedFrames < MaxConsecutiveDropsBeforeRender) {
             ++m_consecutiveDroppedFrames;
@@ -299,7 +354,7 @@ void VideoRenderer::onTimer()
             continue; // 丢帧，取下一帧
         }
 
-        if (action == ClockSync::Action::Drop)
+        if (action == VideoFrameScheduler::Action::Drop)
             ++m_renderPerf.forcedRenderFrames;
 
         const NativeVideoFrame native = nativeVideoFrameFromFrame(entry.frame.get());
@@ -318,6 +373,9 @@ void VideoRenderer::onTimer()
         m_consecutiveDroppedFrames = 0;
         ++m_renderPerf.renderedFrames;
         maybeLogRenderPerformance();
+        scheduleImmediateCheck();
         return; // 每次定时器只渲染一帧
     }
+
+    scheduleImmediateCheck();
 }
