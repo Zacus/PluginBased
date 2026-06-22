@@ -18,10 +18,17 @@ def main() -> None:
     renderer_h = read("plugins/PlayPlugin/src/video/VideoRenderer.h")
     renderer_cpp = read("plugins/PlayPlugin/src/video/VideoRenderer.cpp")
     frame_queue_h = read("plugins/PlayPlugin/src/common/FrameQueue.h")
+    flow_doc = read("plugins/PlayPlugin/PlayPluginExecutionFlow.md")
     root_cmake = read("CMakeLists.txt")
 
     require("m_timer.setInterval(8)" not in renderer_cpp,
             "VideoRenderer must not use a fixed 8ms polling interval")
+    require("queueEmptyPolls" not in renderer_h + renderer_cpp,
+            "VideoRenderer performance stats should not describe empty wakeups as polling")
+    require("queueEmptyWakeups" in renderer_h + renderer_cpp,
+            "VideoRenderer should count empty scheduler wakeups explicitly")
+    require("empty_wake=" in renderer_cpp,
+            "VideoRenderer performance log should label empty scheduler wakeups")
     require("m_timer.setSingleShot(true)" in renderer_cpp,
             "VideoRenderer timer should be single-shot")
     require("m_timer.setTimerType(Qt::PreciseTimer)" in renderer_cpp,
@@ -54,6 +61,10 @@ def main() -> None:
             "VideoRenderer should clear the queue wake callback during destruction")
     require("if (m_hasHeld)" in renderer_cpp,
             "VideoRenderer should not let queue wakeups preempt a held frame")
+    require("8 ms `QTimer`" not in flow_doc and "120 fps 上限" not in flow_doc,
+            "PlayPlugin execution flow should not document the old fixed 8ms timer")
+    require("新帧唤醒" in flow_doc and "PTS" in flow_doc and "single-shot" in flow_doc,
+            "PlayPlugin execution flow should document frame-time scheduling")
     require("add_test(NAME playplugin_video_renderer_scheduler_checks" in root_cmake,
             "CTest should run the video renderer scheduler check")
 

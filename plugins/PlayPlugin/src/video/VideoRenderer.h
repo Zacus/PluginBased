@@ -63,7 +63,7 @@ private:
         qint64 renderedFrames = 0;
         qint64 droppedFrames = 0;
         qint64 waitFrames = 0;
-        qint64 queueEmptyPolls = 0;
+        qint64 queueEmptyWakeups = 0;
         qint64 staleFrames = 0;
         qint64 forcedRenderFrames = 0;
     };

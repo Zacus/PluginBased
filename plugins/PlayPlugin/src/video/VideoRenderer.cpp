@@ -287,7 +287,7 @@ void VideoRenderer::maybeLogRenderPerformance()
         m_renderPerf.renderedFrames +
         m_renderPerf.droppedFrames +
         m_renderPerf.waitFrames +
-        m_renderPerf.queueEmptyPolls +
+        m_renderPerf.queueEmptyWakeups +
         m_renderPerf.staleFrames;
     if (totalEvents <= 0)
     {
@@ -300,13 +300,13 @@ void VideoRenderer::maybeLogRenderPerformance()
            static_cast<double>(elapsedMs))
         : 0.0;
 
-    LOG_INFO("PlayPerf: renderer rendered={} fps={:.1f} drop={} wait={} empty={} "
+    LOG_INFO("PlayPerf: renderer rendered={} fps={:.1f} drop={} wait={} empty_wake={} "
              "stale={} forced={} audio_clock={}",
              m_renderPerf.renderedFrames,
              renderFps,
              m_renderPerf.droppedFrames,
              m_renderPerf.waitFrames,
-             m_renderPerf.queueEmptyPolls,
+             m_renderPerf.queueEmptyWakeups,
              m_renderPerf.staleFrames,
              m_renderPerf.forcedRenderFrames,
              m_audioClockEnabled);
@@ -341,7 +341,7 @@ void VideoRenderer::processNextFrame()
             m_hasHeld = false;
         } else {
             if (!m_queue->tryPop(entry)) {
-                ++m_renderPerf.queueEmptyPolls;
+                ++m_renderPerf.queueEmptyWakeups;
                 maybeLogRenderPerformance();
                 scheduleNextCheck(QueueEmptyRetryMs);
                 return; // 队列空，下次再来
