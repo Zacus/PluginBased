@@ -9,10 +9,10 @@
 ## 目标
 
 1. 新增纯 C++20 `media_sdk_core`，不依赖 Qt、QML、QRhi、QSG、QAudioSink 或 QObject。
-2. 把 demux、decode、seek、pause/stop、frame queue、clock、A/V sync、视频帧调度收敛到 SDK core。
+2. 把 demux、decode、seek、pause/stop、frame contract 和事件输出收敛到 SDK core。
 3. 用 SDK 自有类型描述 media info、audio frame、video frame、错误、事件和播放命令。
 4. 当前 Qt PlayPlugin 保持用户可见行为和 QML API 稳定，通过 adapter 调用 SDK。
-5. Qt RHI 渲染保留在 Qt adapter 层，core 只输出可渲染 frame contract。
+5. Qt RHI 渲染、播放时钟、音视频同步、等待和丢帧策略保留在 presenter/renderer 层，core 只输出带 PTS 的 frame contract。
 6. 保留后续演进到 C 阶段的空间：`IAudioSink`、`IVideoPresenter`、OpenGL/Qt RHI presenter 可以在 core 稳定后接入。
 7. 使用 C++20，遵循 SOLID、RAII、依赖倒置、接口隔离、单向依赖和可测试性原则。
 
@@ -78,6 +78,21 @@ SDK core 内部必须异步推进耗时操作：
 - `stop()` 应快速请求停止；`Player` 析构负责确定释放资源并等待后台线程结束。
 - core 默认从 worker/control thread 触发 event，Qt adapter 必须 marshal 到 GUI thread 后再更新 QML-facing 状态。
 
+### 播放链路硬性约束
+
+下面约束优先级高于阶段性实现便利性。后续修复和演进必须先满足这些契约，再讨论具体类拆分。
+
+1. **SDK 职责边界**：SDK core 只负责 demux、decode、seek、pause/stop 状态推进、格式归一化、frame contract 和事件输出。core 不做播放节奏控制，不决定 render/wait/drop，不依赖 Qt，也不拥有 Qt RHI/OpenGL presenter。
+2. **播放节奏边界**：音频时钟、视频等待、视频丢帧、实际呈现时机属于 presenter/renderer 层。Qt RHI 当前由 `VideoRenderer`/`FFmpegSurface` 承担；后续 OpenGL presenter 也必须遵守同一 presenter 侧策略。
+3. **事件代际契约**：所有会跨线程或跨队列延迟处理的事件必须携带 `sessionId` 和/或 `generation`。open、seek、stop 之后，旧 session/generation 的 frame、position、EOF、seek 完成事件必须被丢弃，不能重新标记为新播放的数据。
+4. **seek 完成契约**：`seek()` 返回只表示命令被接受。`SeekCompletedEvent` 必须由 worker 在线程内完成 FFmpeg seek、decoder flush、内部状态重置之后发出，不能在 command submission 成功后立即伪造。
+5. **EOF/drain 契约**：EOF 是 drain marker，不是普通空帧，也不是 timer retry 的控制消息。EOF 必须和同一 generation 的数据帧走同一条顺序通道，并且只能排在所有已接受帧之后。
+6. **背压契约**：音频帧正常播放时不能静默丢弃。视频帧只允许由 presenter/renderer 根据主时钟和 lateness 策略丢弃，adapter 不能因为队列满无条件丢普通视频帧。数据背压可以阻塞 SDK/data bridge，但不能阻塞 GUI 线程。
+7. **暂停契约**：pause 冻结消费、音频时钟和呈现推进，不应让 adapter 或 SDK 丢弃已解码事件。恢复播放必须从同一 generation 的未消费数据继续推进。
+8. **线程契约**：Qt GUI 线程只做 QObject/QML 状态、信号转发和轻量调度。可能阻塞的入队、等待、反压、decode drain 必须在 SDK worker 或专用 data bridge 线程中完成。
+9. **生命周期契约**：stop/open/seek 必须能取消阻塞等待，唤醒所有队列，并保证后台线程不会回调已销毁对象。跨线程 lambda 必须绑定有效 receiver 或使用可失效的 observer。
+10. **可观测性契约**：播放链路必须能记录 decoded、accepted、dropped、queue wait、EOF accepted、EOF consumed 等计数，以证明 EOF 没有越过已接受帧。
+
 ## 目标架构
 
 ### 1. media_sdk_core
@@ -114,8 +129,6 @@ Core 负责：
 - 打开媒体、探测流、创建 decoder。
 - 解码音视频 frame。
 - 管理 seek/pause/resume/stop。
-- 管理 audio/video frame queue。
-- 维护主时钟和 video frame scheduling。
 - 输出 media info、state、error、audio frame、video frame、EOF 等事件。
 
 Core 不负责：
@@ -124,6 +137,7 @@ Core 不负责：
 - QML 属性。
 - QAudioSink。
 - QRhi/QSG/OpenGL 纹理创建。
+- 播放时钟、音视频同步、render/wait/drop 决策。
 - UI thread marshal。
 
 ### 2. SDK 公共 API
@@ -276,7 +290,7 @@ B+ 推荐第一步采用前者，因为当前 `QAudioSink` 线程亲和性强，
 
 ### 6. Video 边界
 
-B+ 阶段 core 负责视频帧是否应该 render/wait/drop，并发出 ready-to-present 的 `VideoFrame`。Qt adapter 接收后交给现有 surface。
+B+ 阶段 core 只负责输出带 PTS、像素格式、色彩信息和 native handle 描述的 `VideoFrame`。视频帧是否应该 render、wait 或 drop 由 presenter/renderer 根据主时钟决定。当前 Qt 路径由 `VideoRenderer` 和 `FFmpegSurface` 承担；后续 OpenGL presenter 也应实现同一层级的呈现策略。
 
 后续 C 阶段再引入：
 
@@ -297,15 +311,15 @@ public:
 | --- | --- | --- |
 | `common/FFmpegUtils.h` | `sdk/media_core/src/ffmpeg/` | 基本迁移，去除 Qt helper。 |
 | `common/FrameQueue.h` | `sdk/media_core/src/FrameQueue.h` | 改为 C++20 mutex/condition_variable/callback。 |
-| `sync/ClockSync.h` | `sdk/media_core/src/ClockSync.*` | 改为 chrono/atomic/std mutex。 |
-| `video/VideoFrameScheduler.*` | `sdk/media_core/src/FrameScheduler.*` | 基本迁移，去掉 `QtGlobal`。 |
+| `sync/ClockSync.h` | presenter/renderer 层保留 | B+ 不把播放主时钟收进 core；后续 C 阶段由 presenter/audio sink 契约统一。 |
+| `video/VideoFrameScheduler.*` | presenter/renderer 层保留 | render/wait/drop 属于呈现策略，不能进入 core decode worker。 |
 | `decode/MediaOpener.*` | `sdk/media_core/src/Demuxer.*` | `QString` 改 `std::filesystem::path` / `std::string`。 |
 | `decode/StreamFrameDecoder.*` | `sdk/media_core/src/StreamDecoder.*` | 基本迁移。 |
 | `decode/VideoFrameProcessor.*` | `sdk/media_core/src/VideoFrameProcessor.*` | 去掉 `QElapsedTimer`，输出 SDK frame metadata。 |
 | `decode/DecodePerformance.*` | `sdk/media_core/src/Diagnostics.*` | `QString` 改 `std::string`，日志由接口注入。 |
 | `decode/FFmpegDecoder.*` | `sdk/media_core/src/DecodeWorker.*` | `QThread/signals` 改 `std::jthread` 和 event sink。 |
 | `audio/AudioRenderer.*` | Qt adapter 暂留 | B+ 不把 QAudioSink 放入 core。 |
-| `video/VideoRenderer.*` | 部分进入 core | 调度逻辑进 core，Qt timer/surface 交付留 adapter。 |
+| `video/VideoRenderer.*` | Qt adapter/presenter 暂留 | 调度逻辑保留在呈现层；core 只输出带 PTS 的帧。 |
 | `video/FFmpegSurface.*` / `video/render/*` | Qt adapter 暂留 | B+ 不迁移。 |
 | `PlaybackPipeline.*` | Qt adapter + SDK facade | 逐步瘦身为 Qt adapter orchestration。 |
 | `PlayerEngine.*` | Qt QML facade | QML API 不变，内部改用 Qt adapter。 |
@@ -315,9 +329,9 @@ public:
 Core 内部建议：
 
 - `Player` 拥有 `PlaybackController`。
-- `PlaybackController` 拥有 `DecodeWorker`、queues、clock、scheduler 和 command state。
+- `PlaybackController` 拥有 `DecodeWorker`、命令状态和 SDK 内部资源。
 - `DecodeWorker` 使用 `std::jthread`，析构时 request stop 并 join。
-- 队列支持 `abort()`，stop/seek/open 必须确定唤醒所有阻塞等待。
+- 数据桥或队列支持 `abort()` / cancellation，stop/seek/open 必须确定唤醒所有阻塞等待。
 - Event sink 只在 worker/control thread 调用，不假设 GUI thread。
 - Qt adapter 持有 `media_sdk::Player`，析构顺序为：停止 SDK player、断开 Qt-facing surface/audio sink、释放 player。
 
@@ -369,7 +383,9 @@ struct MediaError {
 2. Core integration tests：
    - 打开小样本媒体，验证 media info。
    - 解码若干 audio/video frame。
-   - seek 后 frame serial/generation 不回退。
+   - seek 完成事件必须在 worker 完成实际 seek 和 decoder flush 后发出。
+   - seek/open 后旧 session/generation 的 frame、position、EOF 不会进入新播放。
+   - EOF 必须在同一 generation 已接受帧之后被消费。
    - stop 时 worker 和 queue 确定退出。
 
 3. Architecture checks：
@@ -387,6 +403,8 @@ struct MediaError {
 5. 现有 CTest 继续通过。
 6. 新增 SDK core unit/integration/architecture tests 通过。
 7. 停止、析构、seek、EOF、打开新文件路径没有线程泄漏或旧帧回放。
+8. adapter 不在 GUI 线程做阻塞入队，也不因队列满静默丢音频帧或普通视频帧。
+9. EOF 不依赖 Qt timer retry，不会越过同一 generation 已接受的数据帧。
 
 ## 任务拆分
 
@@ -402,19 +420,20 @@ struct MediaError {
 
 ### 阶段 2：迁移纯计算和基础并发组件
 
-1. 迁移 `VideoFrameScheduler` 为 `FrameScheduler`，用 `std::chrono`。
-2. 迁移 `ClockSync`，替换 `QElapsedTimer/QMutex/QAtomicInteger`。
-3. 迁移 `FrameQueue`，替换 `QMutex/QWaitCondition`。
-4. 为 scheduler、clock、queue 写 C++ unit tests。
+1. 迁移必要的 Qt-free 基础并发组件，替换 `QMutex/QWaitCondition`。
+2. 定义 data bridge / queue 的 cancellation、backpressure 和 drain 语义。
+3. 为 queue、drain、abort、wakeup 写 C++ unit tests。
+4. `VideoFrameScheduler` 和 `ClockSync` 暂留 presenter/renderer 层，不进入 core decode worker。
 
-交付：播放内核基础组件可独立测试，不依赖 FFmpeg 或 Qt。
+交付：数据通道基础组件可独立测试，不依赖 FFmpeg 或 Qt，并明确 EOF/drain 语义。
 
 ### 阶段 3：定义 frame/media/event contract
 
 1. 定义 `MediaInfo`、`AudioFrame`、`VideoFrame`、`PlaneView`、`NativeHandle`。
 2. 定义 `PlayerEvent`：media info、position、video frame、audio frame、EOF、state、error。
-3. 明确 `VideoFrame` shared storage 生命周期。
-4. 添加 frame metadata tests，覆盖 CPU frame 和 native handle 描述。
+3. 为 event 定义 `sessionId` / `generation`，覆盖 open、seek、stop 后旧事件丢弃规则。
+4. 明确 `VideoFrame` shared storage 生命周期。
+5. 添加 frame metadata 和 event generation tests，覆盖 CPU frame、native handle 描述和旧事件过滤。
 
 交付：SDK 对外数据契约稳定，Qt adapter 可以开始映射。
 
@@ -442,10 +461,9 @@ struct MediaError {
 
 1. 用 `std::jthread` 替换 `FFmpegDecoder : QThread` 的核心逻辑。
 2. 抽 command state：open、pause、seek、stop。
-3. 抽 queue policy：有音频时视频队列满可丢帧，无音频时保留 backpressure。
-4. 集成 clock 和 frame scheduler。
-5. 通过 `IEventSink` 输出事件。
-6. 添加 seek/stop/EOF integration tests。
+3. 实现真实 `SeekCompletedEvent`：只在 worker 完成 seek、decoder flush 和状态重置后发出。
+4. 通过 `IEventSink` 输出带 generation 的事件。
+5. 添加 seek/stop/EOF integration tests，覆盖旧事件过滤和 EOF drain 顺序。
 
 交付：SDK core 可独立完成播放内核状态推进。
 
@@ -454,9 +472,10 @@ struct MediaError {
 1. 新建 `QtPlaybackAdapter`，内部持有 `media_sdk::Player`。
 2. `PlayerEngine` 保持 QML API，不直接操作 SDK worker。
 3. Qt adapter 把 SDK event marshal 到 GUI thread。
-4. 视频 event 转成现有 `FFmpegSurface` 可消费的 frame wrapper。
-5. 音频先保留现有 `QAudioSink` 路径，或通过 adapter 消费 SDK audio frame。
-6. 更新 `PlaybackPipeline`，逐步移除直接持有 `FFmpegDecoder` 的职责。
+4. 数据帧和 EOF 走非 GUI 的 bounded data bridge，具备可取消背压和 drain 语义。
+5. 视频 event 转成现有 `FFmpegSurface` 可消费的 frame wrapper。
+6. 音频先保留现有 `QAudioSink` 路径，或通过 adapter 消费 SDK audio frame。
+7. 更新 `PlaybackPipeline`，逐步移除直接持有 `FFmpegDecoder` 的职责。
 
 交付：当前 Qt 播放器由 SDK core 驱动，用户可见行为不变。
 

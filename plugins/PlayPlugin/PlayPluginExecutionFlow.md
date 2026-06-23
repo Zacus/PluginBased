@@ -16,7 +16,8 @@
 
 - 宿主只依赖 `IAppPlugin`，不感知播放实现。
 - QML 侧 API 保持为 `PlayerEngine`、`PlaylistModel`、`FFmpegSurface`。
-- 编解码、demux、frame contract、时钟推进和播放 worker 位于 `sdk/media_core`。
+- 编解码、demux、frame contract 和播放 worker 位于 `sdk/media_core`。
+- 播放时钟、音视频同步、render/wait/drop 和具体呈现策略位于 Qt presenter/renderer 层。
 - PlayPlugin 通过 `QtPlaybackAdapter` 把 SDK event 转成 Qt 信号和现有帧队列输入。
 - Qt RHI、`QAudioSink` 和 QML 生命周期不进入 SDK core。
 
@@ -31,12 +32,12 @@
 | `PlaybackPipeline` | Qt 播放管线，拥有队列、时钟、adapter、音频渲染器和视频渲染器。 |
 | `QtPlaybackAdapter` | 持有 `media_sdk::Player`，实现 `IEventSink`，把 SDK event marshal 到 Qt 线程。 |
 | `media_sdk::Player` | SDK 播放入口，向 `PlaybackController` 提交 open/play/pause/seek/stop 命令。 |
-| `DecodeWorker` | SDK 内部 `std::jthread` worker，执行打开媒体、读包、解码、seek、EOF 和 frame scheduling。 |
+| `DecodeWorker` | SDK 内部 `std::jthread` worker，执行打开媒体、读包、解码、seek、EOF 和事件输出。 |
 | `AudioRenderer` | Qt 音频线程，消费 `AudioFrameQueue`，创建和驱动 `QAudioSink`，维护音频主时钟。 |
 | `VideoRenderer` | GUI 线程视频调度器，消费 `VideoFrameQueue`，按音频时钟或本地时钟决定 render/wait/drop。 |
 | `FFmpegSurface` | QML 视频输出项，接收待显示帧并在 Scene Graph 中创建/更新 `VideoNode`。 |
 | `VideoNode` / `VideoMaterial` | 持有 QSG 节点、QRhi 纹理、shader 参数和纹理上传逻辑。 |
-| `FrameQueue` | Adapter 与渲染线程之间的阻塞队列，支持 backpressure、flush、abort 和 serial。 |
+| `FrameQueue` | Adapter/data bridge 与渲染线程之间的有界队列，支持 backpressure、flush、abort、serial 和 EOF drain。 |
 | `ClockSync` | Qt 侧音频主时钟和视频同步决策。 |
 | `PlaybackCompletionTracker` | 跟踪 SDK EOF、音频和视频三路完成状态，决定媒体是否真正结束。 |
 
@@ -58,7 +59,7 @@
 | 线程 | 对象/逻辑 |
 | --- | --- |
 | GUI 主线程 | QML、`PlayerEngine`、`PlaybackPipeline`、`QtPlaybackAdapter::handleEvent()`、`VideoRenderer` 调度器、`FFmpegSurface::onFrameReady()`。 |
-| SDK worker 线程 | `DecodeWorker`，包含 demux、packet/frame decode、seek、EOF、frame scheduling 和 `IEventSink` event 输出。 |
+| SDK worker 线程 | `DecodeWorker`，包含 demux、packet/frame decode、seek、EOF 和 `IEventSink` event 输出。 |
 | 音频线程 | `AudioRenderer::run()`、`QAudioSink` 创建/销毁、重采样、音频写入、音频时钟更新。 |
 | Qt Scene Graph 渲染线程 | `FFmpegSurface::updatePaintNode()`、`VideoNode`/`VideoMaterial` 的纹理绑定和渲染资源更新。 |
 
@@ -66,7 +67,12 @@
 
 - SDK core 禁止 Qt 类型、Qt 线程模型和 Qt RHI 依赖。
 - `IEventSink` 是 SDK 到外部的唯一事件出口，B+ 不引入 Observable 或 CRTP。
-- `QtPlaybackAdapter::onEvent()` 只复制 SDK event，并通过 queued invocation 回到 Qt 对象线程。
+- SDK core 不做播放节奏控制，不决定 render/wait/drop；这些策略属于 `AudioRenderer`、`VideoRenderer` 或后续 presenter。
+- SDK event 必须携带 session/generation，Qt 侧只能消费当前 generation 的事件。
+- control event 可以通过 queued invocation 回到 Qt 对象线程；音视频数据帧和 EOF 必须走非 GUI 的有界 data bridge，不能在 GUI 线程做阻塞入队。
+- EOF 是 drain marker，必须排在同一 generation 已接受帧之后，不能依赖 Qt timer retry。
+- 音频帧不能静默丢弃；视频帧只能由 presenter/renderer 基于主时钟和 lateness 策略丢弃。
+- pause 只冻结消费、时钟和呈现推进，不应让 adapter 丢弃已解码事件。
 - `QAudioSink` 必须在线程内创建、使用和销毁，主线程不能直接调用它。
 - `QQuickItem::update()` 必须回到 GUI 线程调度，实际节点更新由 Scene Graph 调用。
 - `FFmpegSurface` 用 mutex 在 GUI 线程和渲染线程之间移交 `m_pendingFrame`。
@@ -135,28 +141,29 @@ SDK worker 的主循环负责：
 
 1. 消费 command submission：open、play、pause、seek、stop。
 2. 暂停时阻塞等待新命令，避免忙等。
-3. seek 时执行 FFmpeg seek、flush codec buffers、递增 serial，并发出 `seekCompleted`。
+3. seek 时执行 FFmpeg seek、flush codec buffers、递增 generation，并在 worker 完成后发出 `SeekCompletedEvent`。
 4. 读取 packet 并分发到音频或视频 codec。
 5. 解码后的音频帧包装为 SDK `AudioFrameEvent`。
 6. 解码后的视频帧经过 SDK `VideoFrameProcessor`，生成 `VideoFrameEvent`。
-7. EOF 时向存在的音频/视频流发出完成事件，Qt 侧再向对应队列推入 EOF 标记。
+7. EOF 时发出当前 generation 的 drain marker，Qt data bridge 只能在同一 generation 已接受帧之后交付 EOF。
 
 队列策略：
 
-- 有音频时，视频以音频时钟为主；视频队列满可丢帧，避免视频堆积拖慢音频。
-- 无音频时，视频就是唯一节奏来源；视频队列保留 backpressure，避免无节制跳帧。
-- 音频用阻塞入队，保证音频时钟连续。
+- 音频数据通道保留背压，正常播放时不能因队列满静默丢帧。
+- 视频数据通道不在 adapter 层无条件丢帧；需要追赶时由 `VideoRenderer` 按主时钟和 lateness 策略丢帧。
+- 数据通道的阻塞、等待和取消不能发生在 GUI 线程。
 
 ## 7. Qt Adapter 转换流程
 
 `QtPlaybackAdapter` 的边界职责：
 
 - SDK event 从 worker 线程进入 `onEvent()`。
-- `onEvent()` 复制 `media_sdk::PlayerEvent`，使用 `QMetaObject::invokeMethod(..., Qt::QueuedConnection)` 投递到 Qt 线程。
+- control event 使用 `QMetaObject::invokeMethod(..., Qt::QueuedConnection)` 投递到 Qt 线程。
+- audio/video frame event 和 EOF 进入非 GUI 的 data bridge，由 data bridge 负责可取消背压、generation 过滤和 drain 顺序。
 - `MediaInfoEvent` 转为 `mediaInfoReady(...)` Qt 信号。
-- `AudioFrameEvent` 转为 `AVFramePtr`，写入 `AudioFrameQueue`。
-- `VideoFrameEvent` 转为 `AVFramePtr`，写入 `VideoFrameQueue`。
-- `EndOfFileEvent` 先按媒体流存在性向队列推入 EOF，再发出 `endOfFile()`。
+- `AudioFrameEvent` 转为 `AVFramePtr`，按当前 generation 写入 `AudioFrameQueue`。
+- `VideoFrameEvent` 转为 `AVFramePtr`，按当前 generation 写入 `VideoFrameQueue`。
+- `EndOfFileEvent` 作为 drain marker 进入同一条数据通道，再发出 `endOfFile()`。
 - `ErrorEvent` 转为 `errorOccurred(QString)`。
 
 B+ 仍复用 Qt 侧 `AVFramePtr` 和 `FrameQueue`，这是 adapter 层的兼容边界，不代表 SDK core 暴露 Qt 或 QML 类型。
@@ -216,7 +223,7 @@ VideoToolbox 原生路径仍属于 Qt 呈现层；如果原生纹理创建失败
 6. `AudioRenderer::flush()` 清空音频队列、重置 sink 和 clock。
 7. `VideoRenderer::flush()` 清空视频 renderer 内部 held frame 和时钟。
 8. `ClockSync::invalidate()` 使主时钟失效。
-9. SDK seek 完成后 adapter 发出 `seekCompleted(generation, serial)`。
+9. SDK worker 完成实际 seek、decoder flush 和状态重置后，adapter 发出 `seekCompleted(generation, serial)`。
 10. `PlaybackPipeline::onDecoderSeekCompleted()` 设置音视频接受 serial，并完成视频 seek。
 
 ## 12. 停止与销毁流程
@@ -234,4 +241,12 @@ VideoToolbox 原生路径仍属于 Qt 呈现层；如果原生纹理创建失败
 - SDK core 使用 `std::jthread` / `std::stop_token`，不使用 `QThread`。
 - SDK core 不依赖 QObject、signals/slots、QString、QUrl、QRhi、QSG、QAudio。
 - Qt adapter 是唯一知道两边类型的桥接层。
+- SDK core 只输出 frame/event，不做视频预调度，不决定 render/wait/drop。
+- 所有跨线程延迟处理的 event 必须带 session/generation，旧 generation 的事件必须被过滤。
+- `seekCompleted` 只能表示 worker 已完成 seek，不能表示 command submission 成功。
+- EOF 必须是 drain marker，不能用 timer retry 或普通空帧替代。
+- adapter 不能因队列满静默丢音频帧；普通视频帧也不能在 adapter 层无条件丢弃。
+- pause 不丢数据，只暂停消费、时钟和呈现推进。
+- 数据通道背压不能阻塞 GUI 线程，stop/open/seek 必须能取消阻塞等待。
+- 跨线程回调不能访问已销毁对象；后台线程退出和 QObject 生命周期必须有明确顺序。
 - 后续 C 阶段可以在 core 边界稳定后再抽 `IAudioSink`、`IVideoPresenter`、OpenGL/Qt RHI presenter。
