@@ -46,6 +46,20 @@ def main() -> None:
             "PlaybackDataBridge should use blocking queue push off the GUI thread")
     require("m_audioQueue->finish(" in bridge_cpp and "m_videoQueue->finish(" in bridge_cpp,
             "PlaybackDataBridge should use formal FrameQueue finish APIs for EOF")
+    required_bridge_stats = (
+        "PlaybackDataBridgeStats",
+        "audioAccepted",
+        "videoAccepted",
+        "audioRejectedStale",
+        "videoRejectedStale",
+        "eofAccepted",
+        "queueAbortFailures",
+    )
+    for token in required_bridge_stats:
+        require(token in bridge_h + bridge_cpp,
+                f"PlaybackDataBridge should expose diagnostic counter: {token}")
+    require("PlayDataBridge: session=" in bridge_cpp,
+            "PlaybackDataBridge should log one summary line for EOF/stop diagnostics")
     require("VideoFrameQueue" in adapter_h and "AudioFrameQueue" in adapter_h,
             "QtPlaybackAdapter should bridge SDK frames into existing PlayPlugin queues")
     require("if (m_paused)" not in adapter_cpp,

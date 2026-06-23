@@ -356,6 +356,7 @@ void VideoRenderer::processNextFrame()
 
         // EOF 帧
         if (entry.eof) {
+            LOG_INFO("VideoRenderer: end of video serial={}", entry.serial);
             maybeLogRenderPerformance();
             emit endOfVideo();
             return;

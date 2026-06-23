@@ -194,6 +194,7 @@ void AudioRenderer::run()
         if (entry.eof)
         {
             // 音频流结束，等待下一个文件
+            LOG_INFO("AudioRenderer: end of audio serial={}", entry.serial);
             m_clock->invalidate();
             emit endOfAudio();
             continue;
