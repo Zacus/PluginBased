@@ -3,6 +3,7 @@
 #include "Logger.h"
 
 #include <QMetaObject>
+#include <QTimer>
 
 #include <algorithm>
 #include <chrono>
@@ -85,6 +86,7 @@ void QtPlaybackAdapter::openFile(const QUrl& url)
     m_hasAudio = false;
     m_hasVideo = false;
     m_paused = false;
+    clearPendingEof();
     if (m_videoQueue)
     {
         m_videoQueue->resetAbort();
@@ -111,6 +113,8 @@ void QtPlaybackAdapter::setPaused(bool paused)
     if (!m_player)
         return;
     paused ? m_player->pause() : m_player->play();
+    if (!m_paused)
+        tryPushPendingEof();
 }
 
 void QtPlaybackAdapter::seekTo(qint64 positionMs, int generation)
@@ -118,6 +122,7 @@ void QtPlaybackAdapter::seekTo(qint64 positionMs, int generation)
     if (!m_player)
         return;
 
+    clearPendingEof();
     m_pendingSeekGeneration = generation;
     m_currentSerial = generation;
     if (m_videoQueue)
@@ -136,6 +141,7 @@ void QtPlaybackAdapter::seekTo(qint64 positionMs, int generation)
 
 void QtPlaybackAdapter::stopDecoding()
 {
+    clearPendingEof();
     if (m_player)
         m_player->stop();
 }
@@ -183,16 +189,9 @@ void QtPlaybackAdapter::handleEvent(const media_sdk::PlayerEvent& event)
 
     if (std::holds_alternative<media_sdk::EndOfFileEvent>(event.payload))
     {
-        if (m_videoQueue && m_hasVideo)
-        {
-            m_videoQueue->flush();
-            m_videoQueue->tryPush(nullptr, m_currentSerial, true);
-        }
-        if (m_audioQueue && m_hasAudio)
-        {
-            m_audioQueue->flush();
-            m_audioQueue->tryPush(nullptr, m_currentSerial, true);
-        }
+        m_pendingVideoEof = m_hasVideo;
+        m_pendingAudioEof = m_hasAudio;
+        tryPushPendingEof();
         emit endOfFile();
         return;
     }
@@ -234,6 +233,39 @@ void QtPlaybackAdapter::resetPlayer()
     if (m_player)
         m_player->stop();
     m_player = std::make_unique<media_sdk::Player>(m_config, *this);
+}
+
+void QtPlaybackAdapter::clearPendingEof()
+{
+    m_pendingAudioEof = false;
+    m_pendingVideoEof = false;
+    m_eofRetryScheduled = false;
+}
+
+void QtPlaybackAdapter::tryPushPendingEof()
+{
+    if (m_pendingVideoEof && m_videoQueue &&
+        m_videoQueue->tryPush(nullptr, m_currentSerial, true))
+        m_pendingVideoEof = false;
+
+    if (m_pendingAudioEof && m_audioQueue &&
+        m_audioQueue->tryPush(nullptr, m_currentSerial, true))
+        m_pendingAudioEof = false;
+
+    if ((m_pendingVideoEof || m_pendingAudioEof) && !m_paused)
+        scheduleEofRetry();
+}
+
+void QtPlaybackAdapter::scheduleEofRetry()
+{
+    if (m_eofRetryScheduled)
+        return;
+
+    m_eofRetryScheduled = true;
+    QTimer::singleShot(10, this, [this]() {
+        m_eofRetryScheduled = false;
+        tryPushPendingEof();
+    });
 }
 
 AVFramePtr QtPlaybackAdapter::makeAudioFrame(const media_sdk::AudioFrame& frame) const

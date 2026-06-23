@@ -41,6 +41,11 @@ def main() -> None:
     require("tryPush" in adapter_cpp and "m_audioQueue->push(" not in adapter_cpp and
             "m_videoQueue->push(" not in adapter_cpp,
             "QtPlaybackAdapter should never block the Qt thread on frame queue push")
+    eof_block = adapter_cpp[adapter_cpp.find("EndOfFileEvent"):
+                            adapter_cpp.find("PositionChangedEvent")]
+    require("m_pendingVideoEof" in adapter_h and "m_pendingAudioEof" in adapter_h and
+            "tryPushPendingEof" in adapter_cpp and ".flush()" not in eof_block,
+            "QtPlaybackAdapter should queue EOF after buffered frames without flushing playback queues")
     require("AudioFrameEvent" in adapter_cpp and "VideoFrameEvent" in adapter_cpp,
             "QtPlaybackAdapter should handle SDK audio and video frame events")
     require("int videoRowBytes(media_sdk::PixelFormat format, int width)" in adapter_cpp and
