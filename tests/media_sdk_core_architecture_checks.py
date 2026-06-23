@@ -42,11 +42,15 @@ def main() -> None:
             "media_sdk_core should register frame contract C++ tests")
     require("MediaSdkCoreFfmpegIntegrationTest" in sdk_cmake and "media_sdk_core_ffmpeg_integration" in sdk_cmake,
             "media_sdk_core should register FFmpeg integration tests")
+    require("MediaSdkCoreVideoFrameProcessorTest" in sdk_cmake and "media_sdk_core_video_frame_processor" in sdk_cmake,
+            "media_sdk_core should register video frame processor tests")
     require("FFmpeg::all" in sdk_cmake,
             "media_sdk_core should link FFmpeg for internal demux/decode support")
     require("FFmpegUtils.h" in sdk_cmake and "Demuxer.cpp" in sdk_cmake and
             "StreamDecoder.cpp" in sdk_cmake and "DecodePerformance.cpp" in sdk_cmake,
             "media_sdk_core should compile phase 4 FFmpeg internal sources")
+    require("VideoFrameProcessor.cpp" in sdk_cmake and "HardwareDecoderBackend.h" in sdk_cmake,
+            "media_sdk_core should compile phase 5 video processing internals")
 
     expected_headers = [
         "PlayerConfig.h",
@@ -84,6 +88,25 @@ def main() -> None:
     for source in phase4_sources:
         require(source.exists(),
                 f"missing phase 4 SDK internal source: {source.relative_to(ROOT)}")
+
+    phase5_sources = [
+        SDK_ROOT / "src" / "HardwareDecoderBackend.h",
+        SDK_ROOT / "src" / "VideoFrameProcessor.h",
+        SDK_ROOT / "src" / "VideoFrameProcessor.cpp",
+    ]
+    for source in phase5_sources:
+        require(source.exists(),
+                f"missing phase 5 SDK internal source: {source.relative_to(ROOT)}")
+
+    hardware_backend_header = read(SDK_ROOT / "src" / "HardwareDecoderBackend.h")
+    require("std::string_view name() const" in hardware_backend_header,
+            "SDK hardware decoder backend names should use std::string_view, not QString")
+
+    video_processor_cpp = read(SDK_ROOT / "src" / "VideoFrameProcessor.cpp")
+    for token in ["AV_PIX_FMT_YUV420P", "AV_PIX_FMT_NV12", "AV_PIX_FMT_VIDEOTOOLBOX",
+                  "ColorRange::Full", "ColorSpace::Bt709", "NativeHandleKind::VideoToolboxPixelBuffer"]:
+        require(token in video_processor_cpp,
+                f"VideoFrameProcessor should map video frame metadata token: {token}")
 
     forbidden_tokens = [
         "#include <Q",

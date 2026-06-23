@@ -4,8 +4,10 @@ add_library(media_sdk_core STATIC
     src/Demuxer.cpp
     src/FFmpegUtils.h
     src/FrameScheduler.cpp
+    src/HardwareDecoderBackend.h
     src/Player.cpp
     src/StreamDecoder.cpp
+    src/VideoFrameProcessor.cpp
 )
 
 add_library(media_sdk::core ALIAS media_sdk_core)
@@ -82,5 +84,24 @@ if(BUILD_TESTING)
     target_link_libraries(MediaSdkCoreFfmpegIntegrationTest PRIVATE media_sdk_core FFmpeg::all)
     add_test(NAME media_sdk_core_ffmpeg_integration
         COMMAND $<TARGET_FILE:MediaSdkCoreFfmpegIntegrationTest>
+    )
+
+    add_executable(MediaSdkCoreVideoFrameProcessorTest
+        tests/tst_media_core_video_frame_processor.cpp
+    )
+    target_compile_features(MediaSdkCoreVideoFrameProcessorTest PRIVATE cxx_std_20)
+    set_target_properties(MediaSdkCoreVideoFrameProcessorTest PROPERTIES
+        CXX_EXTENSIONS OFF
+        AUTOMOC OFF
+        AUTOUIC OFF
+        AUTORCC OFF
+    )
+    target_include_directories(MediaSdkCoreVideoFrameProcessorTest PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/include"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src"
+    )
+    target_link_libraries(MediaSdkCoreVideoFrameProcessorTest PRIVATE media_sdk_core FFmpeg::all)
+    add_test(NAME media_sdk_core_video_frame_processor
+        COMMAND $<TARGET_FILE:MediaSdkCoreVideoFrameProcessorTest>
     )
 endif()
