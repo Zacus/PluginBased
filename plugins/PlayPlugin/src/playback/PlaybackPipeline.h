@@ -5,9 +5,8 @@
 
 #include "audio/AudioRenderer.h"
 #include "sync/ClockSync.h"
-#include "decode/FFmpegDecoder.h"
 #include "common/FrameQueue.h"
-#include "playback/PlaybackSeekCoordinator.h"
+#include "playback/QtPlaybackAdapter.h"
 #include "video/VideoRenderer.h"
 
 #include <QObject>
@@ -68,10 +67,9 @@ private:
     AudioFrameQueue m_audioQueue { 64 };
     ClockSync m_clock;
 
-    std::unique_ptr<FFmpegDecoder> m_decoder;
+    std::unique_ptr<QtPlaybackAdapter> m_adapter;
     std::unique_ptr<AudioRenderer> m_audioRenderer;
     std::unique_ptr<VideoRenderer> m_videoRenderer;
-    PlaybackSeekCoordinator m_seekCoordinator;
 
     QPointer<FFmpegSurface> m_surface;
     bool m_nativeVideoRenderingEnabled = false;

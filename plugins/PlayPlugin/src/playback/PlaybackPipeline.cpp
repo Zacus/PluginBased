@@ -8,20 +8,19 @@
 
 PlaybackPipeline::PlaybackPipeline(QObject* parent)
     : QObject(parent)
-    , m_decoder(std::make_unique<FFmpegDecoder>(&m_videoQueue, &m_audioQueue))
+    , m_adapter(std::make_unique<QtPlaybackAdapter>(&m_videoQueue, &m_audioQueue))
     , m_audioRenderer(std::make_unique<AudioRenderer>(&m_audioQueue, &m_clock))
     , m_videoRenderer(std::make_unique<VideoRenderer>(&m_videoQueue, &m_clock))
-    , m_seekCoordinator(*m_decoder, *m_audioRenderer, *m_videoRenderer, m_clock)
 {
-    connect(m_decoder.get(), &FFmpegDecoder::mediaInfoReady,
+    connect(m_adapter.get(), &QtPlaybackAdapter::mediaInfoReady,
             this, &PlaybackPipeline::mediaInfoReady);
-    connect(m_decoder.get(), &FFmpegDecoder::errorOccurred,
+    connect(m_adapter.get(), &QtPlaybackAdapter::errorOccurred,
             this, &PlaybackPipeline::errorOccurred);
-    connect(m_decoder.get(), &FFmpegDecoder::endOfFile,
+    connect(m_adapter.get(), &QtPlaybackAdapter::endOfFile,
             this, &PlaybackPipeline::endOfFile);
-    connect(m_decoder.get(), &FFmpegDecoder::positionChanged,
+    connect(m_adapter.get(), &QtPlaybackAdapter::positionChanged,
             this, &PlaybackPipeline::decoderPositionChanged);
-    connect(m_decoder.get(), &FFmpegDecoder::seekCompleted,
+    connect(m_adapter.get(), &QtPlaybackAdapter::seekCompleted,
             this, &PlaybackPipeline::onDecoderSeekCompleted);
 
     connect(m_audioRenderer.get(), &AudioRenderer::positionChanged,
@@ -80,7 +79,7 @@ void PlaybackPipeline::openFile(const QUrl& url)
     m_clock.invalidate();
 
     updateNativeVideoRenderingEnabled();
-    m_decoder->openFile(url);
+    m_adapter->openFile(url);
 }
 
 void PlaybackPipeline::startRenderersForMedia(bool hasAudio,
@@ -108,7 +107,7 @@ void PlaybackPipeline::startRenderersForMedia(bool hasAudio,
 
 void PlaybackPipeline::setPaused(bool paused)
 {
-    m_decoder->setPaused(paused);
+    m_adapter->setPaused(paused);
     m_audioRenderer->setPaused(paused);
     m_videoRenderer->setPaused(paused);
 }
@@ -125,8 +124,7 @@ void PlaybackPipeline::setMuted(bool muted)
 
 void PlaybackPipeline::stopComponents()
 {
-    m_decoder->stopDecoding();
-    m_decoder->wait();
+    m_adapter->stopDecoding();
 
     m_audioRenderer->stopRenderer();
     m_audioRenderer->wait();
@@ -142,12 +140,18 @@ void PlaybackPipeline::stopComponents()
 
 void PlaybackPipeline::seek(qint64 positionMs, int generation)
 {
-    m_seekCoordinator.seek(positionMs, generation);
+    m_videoRenderer->beginSeek(generation);
+    m_audioRenderer->setAcceptedSerial(generation);
+    m_adapter->seekTo(positionMs, generation);
+    m_audioRenderer->flush();
+    m_videoRenderer->flush();
+    m_clock.invalidate();
 }
 
 void PlaybackPipeline::onDecoderSeekCompleted(int generation, int serial)
 {
-    m_seekCoordinator.complete(generation, serial);
+    m_audioRenderer->setAcceptedSerial(serial);
+    m_videoRenderer->completeSeek(generation, serial);
     emit seekCompleted(generation, serial);
 }
 
@@ -157,7 +161,7 @@ void PlaybackPipeline::onNativeRenderingFailed()
         return;
 
     m_nativeVideoRenderingEnabled = false;
-    m_decoder->setVideoToolboxDirectRenderingEnabled(false);
+    m_adapter->setVideoToolboxDirectRenderingEnabled(false);
     LOG_WARN("PlaybackPipeline: disabled VideoToolbox native rendering after Surface failure");
     emit nativeRenderingFailed();
 }
@@ -169,7 +173,7 @@ void PlaybackPipeline::updateNativeVideoRenderingEnabled()
         return;
 
     m_nativeVideoRenderingEnabled = enabled;
-    m_decoder->setVideoToolboxDirectRenderingEnabled(enabled);
+    m_adapter->setVideoToolboxDirectRenderingEnabled(enabled);
     LOG_INFO("PlaybackPipeline: VideoToolbox native rendering {}",
              enabled ? "enabled" : "disabled");
 }

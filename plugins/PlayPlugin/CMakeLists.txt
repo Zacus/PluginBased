@@ -69,6 +69,7 @@ qt_add_qml_module(PlayPlugin
     SOURCES
         src/playback/PlaybackContext.h  src/playback/PlaybackContext.cpp
         src/playback/PlaybackCompletionTracker.h src/playback/PlaybackCompletionTracker.cpp
+        src/playback/QtPlaybackAdapter.h src/playback/QtPlaybackAdapter.cpp
         src/playback/PlaybackPipeline.h src/playback/PlaybackPipeline.cpp
         src/playback/PlaybackSeekCoordinator.h src/playback/PlaybackSeekCoordinator.cpp
         src/playback/PlayerEngine.h     src/playback/PlayerEngine.cpp
@@ -145,6 +146,7 @@ target_link_libraries(PlayPlugin PRIVATE
     Qt6::GuiPrivate
     Qt6::Quick
     Qt6::Multimedia
+    media_sdk_core
     PluginBasedPlugin                   # IAppPlugin 接口（INTERFACE）
     PluginBasedLogger                   # spdlog 封装（STATIC）
     FFmpeg::all                         # avformat、avcodec、avutil、swscale、swresample

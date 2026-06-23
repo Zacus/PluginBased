@@ -110,8 +110,10 @@ def main():
         require(forbidden not in engine_h,
                 f"PlayerEngine should not directly own low-level playback member: {forbidden}")
 
-    require("FFmpegDecoder" in pipeline_h and "AudioRenderer" in pipeline_h and "VideoRenderer" in pipeline_h,
-            "PlaybackPipeline should own decoder and renderers")
+    require("QtPlaybackAdapter" in pipeline_h and "AudioRenderer" in pipeline_h and "VideoRenderer" in pipeline_h,
+            "PlaybackPipeline should own the SDK Qt adapter and renderers")
+    require("std::unique_ptr<FFmpegDecoder>" not in pipeline_h,
+            "PlaybackPipeline should no longer directly own FFmpegDecoder after SDK adapter integration")
     require("void stopComponents()" in pipeline_h,
             "PlaybackPipeline should expose deterministic component shutdown")
     require("void seek(qint64 positionMs, int generation)" in pipeline_h,
@@ -138,29 +140,17 @@ def main():
             "PlaybackCompletionTracker.cpp should explain its file purpose")
     require("bool shouldFinish() const" in completion_h and "bool finish()" in completion_h,
             "PlaybackCompletionTracker should expose finish decision and transition")
-    require("PlaybackSeekCoordinator m_seekCoordinator" in pipeline_h,
-            "PlaybackPipeline should delegate seek coordination to PlaybackSeekCoordinator")
-    require("m_seekCoordinator.seek(positionMs, generation)" in pipeline_cpp,
-            "PlaybackPipeline::seek should delegate renderer/decoder/clock coordination")
-    require("协调 seek 时需要同步触发的播放管线副作用" in seek_h,
-            "PlaybackSeekCoordinator.h should explain its file purpose")
-    require("按固定顺序协调解码器、渲染器、队列和时钟上的 seek 操作" in seek_cpp,
-            "PlaybackSeekCoordinator.cpp should explain its file purpose")
-    require("void seek(qint64 positionMs, int generation)" in seek_h and
-            "void complete(int generation, int serial)" in seek_h,
-            "PlaybackSeekCoordinator should expose seek start and completion coordination")
-    for forbidden in (
-        "m_videoRenderer->beginSeek(generation)",
-        "m_audioRenderer->setAcceptedSerial(generation)",
-        "m_decoder->seekTo(positionMs, generation)",
-        "m_audioRenderer->flush()",
-        "m_videoRenderer->flush()",
-    ):
-        require(forbidden not in pipeline_cpp,
-                f"PlaybackPipeline should not directly perform seek side effect: {forbidden}")
+    require("m_adapter->seekTo(positionMs, generation)" in pipeline_cpp,
+            "PlaybackPipeline::seek should submit seek through QtPlaybackAdapter")
+    require("m_videoRenderer->beginSeek(generation)" in pipeline_cpp and
+            "m_audioRenderer->flush()" in pipeline_cpp and
+            "m_videoRenderer->flush()" in pipeline_cpp,
+            "PlaybackPipeline should coordinate renderer and queue seek side effects")
+    require("m_decoder->seekTo(positionMs, generation)" not in pipeline_cpp,
+            "PlaybackPipeline should not call FFmpegDecoder seek after SDK adapter integration")
     require("PlaybackPipeline.h" in cmake and "PlaybackPipeline.cpp" in cmake and
             "PlaybackCompletionTracker.h" in cmake and "PlaybackCompletionTracker.cpp" in cmake and
-            "PlaybackSeekCoordinator.h" in cmake and "PlaybackSeekCoordinator.cpp" in cmake,
+            "QtPlaybackAdapter.h" in cmake and "QtPlaybackAdapter.cpp" in cmake,
             "PlayPlugin CMake should compile playback boundary helpers")
     require("playplugin_architecture_decoupling_checks" in root_cmake,
             "CTest should run the architecture decoupling check")
