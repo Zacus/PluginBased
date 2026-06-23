@@ -11,6 +11,7 @@
 #include <QObject>
 #include <QUrl>
 
+#include <deque>
 #include <memory>
 
 class QtPlaybackAdapter final : public QObject, public media_sdk::IEventSink
@@ -59,7 +60,7 @@ private:
     media_sdk::PlayerConfig m_config;
     std::unique_ptr<media_sdk::Player> m_player;
     int m_currentSerial = 0;
-    int m_pendingSeekGeneration = 0;
+    std::deque<int> m_pendingSeekRequests;
     bool m_hasAudio = false;
     bool m_hasVideo = false;
     bool m_paused = false;

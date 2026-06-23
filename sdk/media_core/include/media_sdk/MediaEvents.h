@@ -41,6 +41,10 @@ struct PositionChangedEvent {
     std::chrono::milliseconds position { 0 };
 };
 
+struct SeekCompletedEvent {
+    std::chrono::milliseconds position { 0 };
+};
+
 struct AudioFrameEvent {
     AudioFrame frame;
 };
@@ -65,6 +69,7 @@ using PlayerEventPayload = std::variant<
     MediaInfoEvent,
     StateChangedEvent,
     PositionChangedEvent,
+    SeekCompletedEvent,
     AudioFrameEvent,
     VideoFrameEvent,
     ErrorEvent,

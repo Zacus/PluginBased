@@ -267,6 +267,7 @@ void DecodeWorker::handleSeek(std::chrono::milliseconds position)
     m_clock.invalidate();
     ++m_generation;
 
+    emitEvent(makeEvent(SeekCompletedEvent { position }));
     emitEvent(makeEvent(PositionChangedEvent { position }));
 }
 

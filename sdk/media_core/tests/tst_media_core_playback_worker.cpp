@@ -132,6 +132,14 @@ bool hasPositionAtOrAfter(const media_sdk::PlayerEvent& event,
     return false;
 }
 
+bool hasSeekCompletedAtOrAfter(const media_sdk::PlayerEvent& event,
+                               std::chrono::milliseconds position)
+{
+    if (const auto* payload = std::get_if<media_sdk::SeekCompletedEvent>(&event.payload))
+        return payload->position >= position;
+    return false;
+}
+
 const media_sdk::PlayerEvent* firstEventMatching(
     const std::vector<media_sdk::PlayerEvent>& events,
     bool (*predicate)(const media_sdk::PlayerEvent&))
@@ -188,8 +196,16 @@ void testSeekEmitsPositionAndContinuesPlayback()
     assert(player.open(samplePath).ok());
     assert(sink.waitFor(hasMediaInfo));
     player.play();
+    const auto beforeSeekEvents = sink.snapshot();
+    const auto* mediaInfoBeforeSeek = firstEventMatching(beforeSeekEvents, hasMediaInfo);
+    assert(mediaInfoBeforeSeek);
+    const std::uint64_t openGeneration = mediaInfoBeforeSeek->metadata.generation;
+
     assert(player.seek(100ms).ok());
 
+    assert(sink.waitFor([](const media_sdk::PlayerEvent& event) {
+        return hasSeekCompletedAtOrAfter(event, 100ms);
+    }));
     assert(sink.waitFor([](const media_sdk::PlayerEvent& event) {
         return hasPositionAtOrAfter(event, 100ms);
     }));
@@ -208,6 +224,13 @@ void testSeekEmitsPositionAndContinuesPlayback()
     assert(positionAfterSeek != events.end());
     assert(positionAfterSeek->metadata.sessionId == mediaInfo->metadata.sessionId);
     assert(positionAfterSeek->metadata.generation > mediaInfo->metadata.generation);
+
+    const auto seekCompleted = std::ranges::find_if(events, [](const media_sdk::PlayerEvent& event) {
+        return hasSeekCompletedAtOrAfter(event, 100ms);
+    });
+    assert(seekCompleted != events.end());
+    assert(seekCompleted->metadata.sessionId == mediaInfo->metadata.sessionId);
+    assert(seekCompleted->metadata.generation > openGeneration);
 
     player.stop();
     std::filesystem::remove(samplePath);

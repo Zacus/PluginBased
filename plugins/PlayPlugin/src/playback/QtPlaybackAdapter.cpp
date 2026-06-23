@@ -82,7 +82,7 @@ void QtPlaybackAdapter::openFile(const QUrl& url)
 {
     resetPlayer();
     m_currentSerial = 0;
-    m_pendingSeekGeneration = 0;
+    m_pendingSeekRequests.clear();
     m_hasAudio = false;
     m_hasVideo = false;
     m_paused = false;
@@ -123,8 +123,6 @@ void QtPlaybackAdapter::seekTo(qint64 positionMs, int generation)
         return;
 
     clearPendingEof();
-    m_pendingSeekGeneration = generation;
-    m_currentSerial = generation;
     if (m_videoQueue)
         m_videoQueue->flush();
     if (m_audioQueue)
@@ -136,12 +134,13 @@ void QtPlaybackAdapter::seekTo(qint64 positionMs, int generation)
         emit errorOccurred(QString::fromStdString(result.error().message));
         return;
     }
-    emit seekCompleted(m_pendingSeekGeneration, m_currentSerial);
+    m_pendingSeekRequests.push_back(generation);
 }
 
 void QtPlaybackAdapter::stopDecoding()
 {
     clearPendingEof();
+    m_pendingSeekRequests.clear();
     if (m_player)
         m_player->stop();
 }
@@ -184,6 +183,21 @@ void QtPlaybackAdapter::handleEvent(const media_sdk::PlayerEvent& event)
     if (const auto* payload = std::get_if<media_sdk::ErrorEvent>(&event.payload))
     {
         emit errorOccurred(QString::fromStdString(payload->error.message));
+        return;
+    }
+
+    if (std::holds_alternative<media_sdk::SeekCompletedEvent>(event.payload))
+    {
+        if (m_pendingSeekRequests.empty())
+        {
+            LOG_DEBUG("QtPlaybackAdapter: ignored stale seek completion");
+            return;
+        }
+
+        const int qtGeneration = m_pendingSeekRequests.front();
+        m_pendingSeekRequests.pop_front();
+        m_currentSerial = static_cast<int>(event.metadata.generation);
+        emit seekCompleted(qtGeneration, m_currentSerial);
         return;
     }
 
