@@ -40,6 +40,13 @@ def main() -> None:
             "media_sdk_core should register primitive C++ tests")
     require("MediaSdkCoreFrameContractTest" in sdk_cmake and "media_sdk_core_frame_contract" in sdk_cmake,
             "media_sdk_core should register frame contract C++ tests")
+    require("MediaSdkCoreFfmpegIntegrationTest" in sdk_cmake and "media_sdk_core_ffmpeg_integration" in sdk_cmake,
+            "media_sdk_core should register FFmpeg integration tests")
+    require("FFmpeg::all" in sdk_cmake,
+            "media_sdk_core should link FFmpeg for internal demux/decode support")
+    require("FFmpegUtils.h" in sdk_cmake and "Demuxer.cpp" in sdk_cmake and
+            "StreamDecoder.cpp" in sdk_cmake and "DecodePerformance.cpp" in sdk_cmake,
+            "media_sdk_core should compile phase 4 FFmpeg internal sources")
 
     expected_headers = [
         "PlayerConfig.h",
@@ -64,6 +71,19 @@ def main() -> None:
                   "VideoFrameEvent", "EndOfFileEvent"]:
         require(token in media_events_header,
                 f"MediaEvents.h should expose the phase 3 event token: {token}")
+
+    phase4_sources = [
+        SDK_ROOT / "src" / "FFmpegUtils.h",
+        SDK_ROOT / "src" / "Demuxer.h",
+        SDK_ROOT / "src" / "Demuxer.cpp",
+        SDK_ROOT / "src" / "StreamDecoder.h",
+        SDK_ROOT / "src" / "StreamDecoder.cpp",
+        SDK_ROOT / "src" / "DecodePerformance.h",
+        SDK_ROOT / "src" / "DecodePerformance.cpp",
+    ]
+    for source in phase4_sources:
+        require(source.exists(),
+                f"missing phase 4 SDK internal source: {source.relative_to(ROOT)}")
 
     forbidden_tokens = [
         "#include <Q",

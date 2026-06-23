@@ -1,7 +1,11 @@
 add_library(media_sdk_core STATIC
     src/ClockSync.cpp
+    src/DecodePerformance.cpp
+    src/Demuxer.cpp
+    src/FFmpegUtils.h
     src/FrameScheduler.cpp
     src/Player.cpp
+    src/StreamDecoder.cpp
 )
 
 add_library(media_sdk::core ALIAS media_sdk_core)
@@ -17,6 +21,10 @@ set_target_properties(media_sdk_core PROPERTIES
 target_include_directories(media_sdk_core PUBLIC
     "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
     "$<INSTALL_INTERFACE:include>"
+)
+
+target_link_libraries(media_sdk_core PRIVATE
+    FFmpeg::all
 )
 
 if(BUILD_TESTING)
@@ -55,5 +63,24 @@ if(BUILD_TESTING)
     target_link_libraries(MediaSdkCoreFrameContractTest PRIVATE media_sdk_core)
     add_test(NAME media_sdk_core_frame_contract
         COMMAND $<TARGET_FILE:MediaSdkCoreFrameContractTest>
+    )
+
+    add_executable(MediaSdkCoreFfmpegIntegrationTest
+        tests/tst_media_core_ffmpeg_integration.cpp
+    )
+    target_compile_features(MediaSdkCoreFfmpegIntegrationTest PRIVATE cxx_std_20)
+    set_target_properties(MediaSdkCoreFfmpegIntegrationTest PROPERTIES
+        CXX_EXTENSIONS OFF
+        AUTOMOC OFF
+        AUTOUIC OFF
+        AUTORCC OFF
+    )
+    target_include_directories(MediaSdkCoreFfmpegIntegrationTest PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/include"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src"
+    )
+    target_link_libraries(MediaSdkCoreFfmpegIntegrationTest PRIVATE media_sdk_core FFmpeg::all)
+    add_test(NAME media_sdk_core_ffmpeg_integration
+        COMMAND $<TARGET_FILE:MediaSdkCoreFfmpegIntegrationTest>
     )
 endif()
