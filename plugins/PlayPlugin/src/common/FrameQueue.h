@@ -75,6 +75,22 @@ public:
         return true;
     }
 
+    /**
+     * @brief 标记当前 serial 的生产端已到达流尾。
+     *
+     * EOF 是 drain marker，必须排在同一 serial 已接受帧之后。正常路径使用
+     * 阻塞 push()，让生产端遵守队列背压，而不是在队列满时绕过顺序语义。
+     */
+    bool finish(int serial = 0)
+    {
+        return push(T {}, serial, true);
+    }
+
+    bool tryFinish(int serial = 0)
+    {
+        return tryPush(T {}, serial, true);
+    }
+
     // ── 消费者接口（渲染线程调用）────────────────────────────────────────────
 
     /**

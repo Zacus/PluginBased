@@ -21,6 +21,7 @@ def main() -> None:
     root_cmake = read("CMakeLists.txt")
     plugin_cmake = read("plugins/PlayPlugin/CMakeLists.txt")
     flow_doc = read("plugins/PlayPlugin/PlayPluginExecutionFlow.md")
+    frame_queue = read("plugins/PlayPlugin/src/common/FrameQueue.h")
 
     decode_dir = ROOT / "plugins" / "PlayPlugin" / "src" / "decode"
     require(not decode_dir.exists(),
@@ -88,6 +89,15 @@ def main() -> None:
     for token in required_current_flow:
         require(token in flow_doc,
                 f"Execution flow should document the B+ playback path token: {token}")
+
+    require("bool finish(int serial = 0)" in frame_queue,
+            "FrameQueue should expose a formal blocking EOF/drain API")
+    require("bool tryFinish(int serial = 0)" in frame_queue,
+            "FrameQueue should expose a non-blocking EOF/drain API for explicit retry policies")
+    require("return push(T {}, serial, true);" in frame_queue,
+            "FrameQueue::finish should use blocking push so EOF preserves accepted-frame order")
+    require("return tryPush(T {}, serial, true);" in frame_queue,
+            "FrameQueue::tryFinish should make non-blocking EOF retry policies explicit")
 
 
 if __name__ == "__main__":
