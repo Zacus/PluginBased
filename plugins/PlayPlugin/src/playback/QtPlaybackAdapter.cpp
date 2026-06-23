@@ -66,6 +66,7 @@ QtPlaybackAdapter::QtPlaybackAdapter(VideoFrameQueue* videoQueue,
     : QObject(parent)
     , m_videoQueue(videoQueue)
     , m_audioQueue(audioQueue)
+    , m_dataBridge(videoQueue, audioQueue)
 {
     m_config.preferNativeVideoFrames = false;
     resetPlayer();
@@ -83,6 +84,7 @@ void QtPlaybackAdapter::openFile(const QUrl& url)
     resetPlayer();
     m_currentSerial = 0;
     m_pendingSeekRequests.clear();
+    m_dataBridge.cancel();
     m_hasAudio = false;
     m_hasVideo = false;
     m_paused = false;
@@ -110,11 +112,10 @@ void QtPlaybackAdapter::openFile(const QUrl& url)
 void QtPlaybackAdapter::setPaused(bool paused)
 {
     m_paused = paused;
+    Q_UNUSED(m_paused);
     if (!m_player)
         return;
     paused ? m_player->pause() : m_player->play();
-    if (!m_paused)
-        tryPushPendingEof();
 }
 
 void QtPlaybackAdapter::seekTo(qint64 positionMs, int generation)
@@ -141,6 +142,7 @@ void QtPlaybackAdapter::stopDecoding()
 {
     clearPendingEof();
     m_pendingSeekRequests.clear();
+    m_dataBridge.cancel();
     if (m_player)
         m_player->stop();
 }
@@ -153,12 +155,65 @@ void QtPlaybackAdapter::setVideoToolboxDirectRenderingEnabled(bool enabled)
 
 void QtPlaybackAdapter::onEvent(const media_sdk::PlayerEvent& event)
 {
+    if (handleDataEvent(event))
+        return;
+
     auto eventCopy = std::make_shared<media_sdk::PlayerEvent>(event);
     QMetaObject::invokeMethod(this,
                               [this, eventCopy]() {
                                   handleEvent(*eventCopy);
                               },
                               Qt::QueuedConnection);
+}
+
+bool QtPlaybackAdapter::handleDataEvent(const media_sdk::PlayerEvent& event)
+{
+    if (const auto* payload = std::get_if<media_sdk::MediaInfoEvent>(&event.payload))
+    {
+        const auto& info = payload->info;
+        m_dataBridge.reset({
+            .hasAudio = info.sampleRate > 0 && info.channels > 0,
+            .hasVideo = info.width > 0 && info.height > 0,
+            .sessionId = event.metadata.sessionId,
+            .generation = event.metadata.generation,
+        });
+        return false;
+    }
+
+    if (std::holds_alternative<media_sdk::SeekCompletedEvent>(event.payload))
+    {
+        m_dataBridge.setGeneration(event.metadata.sessionId, event.metadata.generation);
+        return false;
+    }
+
+    if (const auto* payload = std::get_if<media_sdk::AudioFrameEvent>(&event.payload))
+    {
+        auto frame = makeAudioFrame(payload->frame);
+        if (frame && !m_dataBridge.pushAudio(std::move(frame),
+                                             event.metadata.sessionId,
+                                             event.metadata.generation))
+            LOG_DEBUG("QtPlaybackAdapter: rejected audio frame for stale or cancelled generation");
+        return true;
+    }
+
+    if (const auto* payload = std::get_if<media_sdk::VideoFrameEvent>(&event.payload))
+    {
+        auto frame = makeVideoFrame(payload->frame);
+        if (frame && !m_dataBridge.pushVideo(std::move(frame),
+                                             event.metadata.sessionId,
+                                             event.metadata.generation))
+            LOG_DEBUG("QtPlaybackAdapter: rejected video frame for stale or cancelled generation");
+        return true;
+    }
+
+    if (std::holds_alternative<media_sdk::EndOfFileEvent>(event.payload))
+    {
+        if (!m_dataBridge.finish(event.metadata.sessionId, event.metadata.generation))
+            LOG_DEBUG("QtPlaybackAdapter: rejected EOF for stale or cancelled generation");
+        return false;
+    }
+
+    return false;
 }
 
 void QtPlaybackAdapter::handleEvent(const media_sdk::PlayerEvent& event)
@@ -203,9 +258,6 @@ void QtPlaybackAdapter::handleEvent(const media_sdk::PlayerEvent& event)
 
     if (std::holds_alternative<media_sdk::EndOfFileEvent>(event.payload))
     {
-        m_pendingVideoEof = m_hasVideo;
-        m_pendingAudioEof = m_hasAudio;
-        tryPushPendingEof();
         emit endOfFile();
         return;
     }
@@ -216,30 +268,6 @@ void QtPlaybackAdapter::handleEvent(const media_sdk::PlayerEvent& event)
         return;
     }
 
-    if (const auto* payload = std::get_if<media_sdk::AudioFrameEvent>(&event.payload))
-    {
-        if (m_paused)
-            return;
-        if (m_audioQueue)
-        {
-            auto frame = makeAudioFrame(payload->frame);
-            if (frame && !m_audioQueue->tryPush(std::move(frame), m_currentSerial))
-                LOG_DEBUG("QtPlaybackAdapter: dropped audio frame because queue is full");
-        }
-        return;
-    }
-
-    if (const auto* payload = std::get_if<media_sdk::VideoFrameEvent>(&event.payload))
-    {
-        if (m_paused)
-            return;
-        if (m_videoQueue)
-        {
-            auto frame = makeVideoFrame(payload->frame);
-            if (frame && !m_videoQueue->tryPush(std::move(frame), m_currentSerial))
-                LOG_DEBUG("QtPlaybackAdapter: dropped video frame because queue is full");
-        }
-    }
 }
 
 void QtPlaybackAdapter::resetPlayer()

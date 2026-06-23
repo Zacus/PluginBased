@@ -69,6 +69,7 @@ qt_add_qml_module(PlayPlugin
     SOURCES
         src/playback/PlaybackContext.h  src/playback/PlaybackContext.cpp
         src/playback/PlaybackCompletionTracker.h src/playback/PlaybackCompletionTracker.cpp
+        src/playback/PlaybackDataBridge.h src/playback/PlaybackDataBridge.cpp
         src/playback/QtPlaybackAdapter.h src/playback/QtPlaybackAdapter.cpp
         src/playback/PlaybackPipeline.h src/playback/PlaybackPipeline.cpp
         src/playback/PlayerEngine.h     src/playback/PlayerEngine.cpp

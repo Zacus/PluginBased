@@ -1,12 +1,12 @@
 #pragma once
 
 // QtPlaybackAdapter bridges media_sdk::Player events back into the existing
-// PlayPlugin queue/rendering pipeline. It is GUI-thread owned; SDK worker
-// callbacks are marshalled through queued Qt invocations before touching Qt
-// signals or PlayPlugin queues.
+// PlayPlugin queue/rendering pipeline. Control events are marshalled to the
+// Qt object thread; data events use PlaybackDataBridge off the GUI thread.
 
 #include "common/FrameQueue.h"
 #include "media_sdk/Player.h"
+#include "playback/PlaybackDataBridge.h"
 
 #include <QObject>
 #include <QUrl>
@@ -44,6 +44,7 @@ signals:
 private:
     void onEvent(const media_sdk::PlayerEvent& event) override;
 
+    bool handleDataEvent(const media_sdk::PlayerEvent& event);
     void handleEvent(const media_sdk::PlayerEvent& event);
     void resetPlayer();
     void clearPendingEof();
@@ -57,6 +58,7 @@ private:
 
     VideoFrameQueue* m_videoQueue = nullptr;
     AudioFrameQueue* m_audioQueue = nullptr;
+    PlaybackDataBridge m_dataBridge;
     media_sdk::PlayerConfig m_config;
     std::unique_ptr<media_sdk::Player> m_player;
     int m_currentSerial = 0;

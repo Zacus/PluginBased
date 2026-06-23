@@ -22,6 +22,8 @@ def main() -> None:
 
     adapter_h = read("plugins/PlayPlugin/src/playback/QtPlaybackAdapter.h")
     adapter_cpp = read("plugins/PlayPlugin/src/playback/QtPlaybackAdapter.cpp")
+    bridge_h = read("plugins/PlayPlugin/src/playback/PlaybackDataBridge.h")
+    bridge_cpp = read("plugins/PlayPlugin/src/playback/PlaybackDataBridge.cpp")
     pipeline_h = read("plugins/PlayPlugin/src/playback/PlaybackPipeline.h")
     pipeline_cpp = read("plugins/PlayPlugin/src/playback/PlaybackPipeline.cpp")
     cmake = read("plugins/PlayPlugin/CMakeLists.txt")
@@ -34,18 +36,32 @@ def main() -> None:
             "QtPlaybackAdapter should own media_sdk::Player")
     require("QMetaObject::invokeMethod" in adapter_cpp and "Qt::QueuedConnection" in adapter_cpp,
             "QtPlaybackAdapter should marshal SDK events to the Qt object thread")
+    require("PlaybackDataBridge" in adapter_h and "m_dataBridge" in adapter_cpp,
+            "QtPlaybackAdapter should route data events through PlaybackDataBridge")
+    require("QObject" not in bridge_h and "Q_OBJECT" not in bridge_h,
+            "PlaybackDataBridge should not be a QObject or GUI-thread object")
+    require("pushAudio(" in bridge_h and "pushVideo(" in bridge_h and "finish(" in bridge_h,
+            "PlaybackDataBridge should expose audio/video/drain data-path methods")
+    require("m_audioQueue->push(" in bridge_cpp and "m_videoQueue->push(" in bridge_cpp,
+            "PlaybackDataBridge should use blocking queue push off the GUI thread")
+    require("m_audioQueue->finish(" in bridge_cpp and "m_videoQueue->finish(" in bridge_cpp,
+            "PlaybackDataBridge should use formal FrameQueue finish APIs for EOF")
     require("VideoFrameQueue" in adapter_h and "AudioFrameQueue" in adapter_h,
             "QtPlaybackAdapter should bridge SDK frames into existing PlayPlugin queues")
-    require("bool m_paused" in adapter_h and "if (m_paused)" in adapter_cpp,
-            "QtPlaybackAdapter should drop delayed frame events while playback is paused")
-    require("tryPush" in adapter_cpp and "m_audioQueue->push(" not in adapter_cpp and
-            "m_videoQueue->push(" not in adapter_cpp,
-            "QtPlaybackAdapter should never block the Qt thread on frame queue push")
+    require("if (m_paused)" not in adapter_cpp,
+            "QtPlaybackAdapter should not drop decoded data events while playback is paused")
+    handle_start = adapter_cpp.find("void QtPlaybackAdapter::handleEvent")
+    make_audio_start = adapter_cpp.find("AVFramePtr QtPlaybackAdapter::makeAudioFrame")
+    handle_event_body = adapter_cpp[handle_start:make_audio_start]
+    require("AudioFrameEvent" not in handle_event_body and "VideoFrameEvent" not in handle_event_body,
+            "QtPlaybackAdapter::handleEvent should not enqueue audio/video frames on the GUI thread")
+    require("dropped audio frame because queue is full" not in adapter_cpp and
+            "dropped video frame because queue is full" not in adapter_cpp,
+            "QtPlaybackAdapter should not silently drop data frames when queues are full")
     eof_block = adapter_cpp[adapter_cpp.find("EndOfFileEvent"):
                             adapter_cpp.find("PositionChangedEvent")]
-    require("m_pendingVideoEof" in adapter_h and "m_pendingAudioEof" in adapter_h and
-            "tryPushPendingEof" in adapter_cpp and ".flush()" not in eof_block,
-            "QtPlaybackAdapter should queue EOF after buffered frames without flushing playback queues")
+    require("m_dataBridge.finish" in adapter_cpp and ".flush()" not in eof_block,
+            "QtPlaybackAdapter should route EOF through the data bridge without flushing queues")
     require("AudioFrameEvent" in adapter_cpp and "VideoFrameEvent" in adapter_cpp,
             "QtPlaybackAdapter should handle SDK audio and video frame events")
     require("int videoRowBytes(media_sdk::PixelFormat format, int width)" in adapter_cpp and
@@ -56,6 +72,9 @@ def main() -> None:
     require("mediaInfoReady" in adapter_h and "endOfFile" in adapter_h and "seekCompleted" in adapter_h,
             "QtPlaybackAdapter should expose decoder-compatible Qt signals")
 
+    require("src/playback/PlaybackDataBridge.h" in cmake and
+            "src/playback/PlaybackDataBridge.cpp" in cmake,
+            "PlayPlugin CMake should compile PlaybackDataBridge")
     require("src/playback/QtPlaybackAdapter.h" in cmake and
             "src/playback/QtPlaybackAdapter.cpp" in cmake,
             "PlayPlugin CMake should compile QtPlaybackAdapter")
