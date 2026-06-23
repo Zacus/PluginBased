@@ -139,7 +139,6 @@ void DecodeWorker::handleCommand(Command command, WorkerStopToken stopToken)
         break;
     case CommandType::Pause:
         m_playing = false;
-        m_clock.setPaused(true);
         emitState(PlayerState::Paused);
         break;
     case CommandType::Stop:
@@ -170,8 +169,6 @@ void DecodeWorker::handleOpen(const std::filesystem::path& path)
     m_generation = 0;
     m_hasMedia = true;
     m_playing = false;
-    m_clock.invalidate();
-    m_clock.setPaused(true);
 
     emitEvent(makeEvent(MediaInfoEvent { m_media.info }));
     emitState(PlayerState::Paused);
@@ -182,7 +179,6 @@ void DecodeWorker::decodeUntilBlocked(WorkerStopToken stopToken)
     if (!m_hasMedia)
         return;
 
-    m_clock.setPaused(false);
     auto packet = makePacket();
 
     while (!stopToken.stop_requested() && m_hasMedia && m_playing)
@@ -264,7 +260,6 @@ void DecodeWorker::handleSeek(std::chrono::milliseconds position)
         avcodec_flush_buffers(m_media.videoCodecContext.get());
     if (m_media.audioCodecContext)
         avcodec_flush_buffers(m_media.audioCodecContext.get());
-    m_clock.invalidate();
     ++m_generation;
 
     emitEvent(makeEvent(SeekCompletedEvent { position }));
@@ -277,7 +272,6 @@ void DecodeWorker::closeMedia()
         return;
 
     m_videoFrameProcessor.reset();
-    m_clock.invalidate();
     m_media = {};
     m_hasMedia = false;
     m_playing = false;
@@ -311,7 +305,6 @@ Result<void> DecodeWorker::decodePacket(AVCodecContext* codecContext,
             }
 
             AudioFrame audioFrame = makeAudioFrame(std::move(frame));
-            m_clock.setAudioClock(audioFrame.pts());
             emitEvent(makeEvent(PositionChangedEvent {
                 std::chrono::duration_cast<std::chrono::milliseconds>(audioFrame.pts()) }));
             emitEvent(makeEvent(AudioFrameEvent { std::move(audioFrame) }));
@@ -342,7 +335,6 @@ void DecodeWorker::flushDecoders()
             m_media.formatContext->streams[m_media.audioStreamIndex]->time_base,
             [this](AVFramePtr frame) {
                 AudioFrame audioFrame = makeAudioFrame(std::move(frame));
-                m_clock.setAudioClock(audioFrame.pts());
                 emitEvent(makeEvent(AudioFrameEvent { std::move(audioFrame) }));
                 return true;
             });

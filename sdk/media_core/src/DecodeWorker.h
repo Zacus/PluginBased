@@ -1,6 +1,5 @@
 #pragma once
 
-#include "ClockSync.h"
 #include "Demuxer.h"
 #include "StreamDecoder.h"
 #include "VideoFrameProcessor.h"
@@ -155,7 +154,6 @@ private:
     StreamDecoder m_streamDecoder;
     VideoFrameProcessor m_videoFrameProcessor;
     DecodePerformanceStats m_decodeStats;
-    ClockSync m_clock;
     OpenedMedia m_media;
     std::uint64_t m_sessionId = 0;
     std::uint64_t m_generation = 0;

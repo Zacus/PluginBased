@@ -1,60 +1,8 @@
-#include "ClockSync.h"
 #include "FrameQueue.h"
-#include "FrameScheduler.h"
 
 #include <cassert>
-#include <chrono>
-#include <optional>
-#include <thread>
-
-using namespace std::chrono_literals;
 
 namespace {
-
-void testFrameScheduler()
-{
-    const auto invalid = media_sdk::FrameScheduler::decide(1'000'000us,
-                                                           std::nullopt);
-    assert(invalid.action == media_sdk::FrameScheduleAction::Render);
-    assert(invalid.wait == 0us);
-
-    const auto early = media_sdk::FrameScheduler::decide(1'050'000us,
-                                                         1'000'000us);
-    assert(early.action == media_sdk::FrameScheduleAction::Wait);
-    assert(early.diff == 50'000us);
-    assert(early.wait == 48'000us);
-
-    const auto insideLead = media_sdk::FrameScheduler::decide(1'001'500us,
-                                                              1'000'000us);
-    assert(insideLead.action == media_sdk::FrameScheduleAction::Render);
-
-    const auto late = media_sdk::FrameScheduler::decide(900'000us,
-                                                        1'001'000us);
-    assert(late.action == media_sdk::FrameScheduleAction::Drop);
-}
-
-void testClockSync()
-{
-    media_sdk::ClockSync clock;
-    assert(!clock.currentTime().has_value());
-
-    clock.setAudioClock(10'000us);
-    const auto first = clock.currentTime();
-    assert(first.has_value());
-    assert(*first >= 10'000us);
-
-    clock.setPaused(true);
-    const auto paused = clock.currentTime();
-    std::this_thread::sleep_for(2ms);
-    assert(clock.currentTime() == paused);
-
-    clock.setPaused(false);
-    std::this_thread::sleep_for(2ms);
-    assert(clock.currentTime() > paused);
-
-    clock.invalidate();
-    assert(!clock.currentTime().has_value());
-}
 
 void testFrameQueue()
 {
@@ -95,8 +43,6 @@ void testFrameQueue()
 
 int main()
 {
-    testFrameScheduler();
-    testClockSync();
     testFrameQueue();
     return 0;
 }

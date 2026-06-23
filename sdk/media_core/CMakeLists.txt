@@ -1,9 +1,7 @@
 add_library(media_sdk_core STATIC
-    src/ClockSync.cpp
     src/DecodePerformance.cpp
     src/Demuxer.cpp
     src/FFmpegUtils.h
-    src/FrameScheduler.cpp
     src/HardwareDecoderBackend.h
     src/Player.cpp
     src/PlaybackController.cpp

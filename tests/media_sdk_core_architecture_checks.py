@@ -34,8 +34,8 @@ def main() -> None:
             "media_sdk_core should require C++20")
     require("AUTOMOC OFF" in sdk_cmake and "AUTOUIC OFF" in sdk_cmake and "AUTORCC OFF" in sdk_cmake,
             "media_sdk_core should disable Qt automoc/autouic/autorcc")
-    require("ClockSync.cpp" in sdk_cmake and "FrameScheduler.cpp" in sdk_cmake,
-            "media_sdk_core should compile the phase 2 primitive sources")
+    require("ClockSync.cpp" not in sdk_cmake and "FrameScheduler.cpp" not in sdk_cmake,
+            "media_sdk_core should not compile presenter playback clock/scheduler primitives")
     require("MediaSdkCorePrimitivesTest" in sdk_cmake and "media_sdk_core_primitives" in sdk_cmake,
             "media_sdk_core should register primitive C++ tests")
     require("MediaSdkCoreFrameContractTest" in sdk_cmake and "media_sdk_core_frame_contract" in sdk_cmake,
@@ -132,14 +132,30 @@ def main() -> None:
         require(token in decode_worker_header + decode_worker_cpp,
                 f"DecodeWorker should use phase 6 async worker token: {token}")
     decode_worker_text = decode_worker_header + decode_worker_cpp
-    for token in ["ClockSync", "StateChangedEvent", "EndOfFileEvent"]:
+    for token in ["StateChangedEvent", "EndOfFileEvent"]:
         require(token in decode_worker_text,
                 f"DecodeWorker should integrate playback/event token: {token}")
-    require("FrameScheduler::decide" not in decode_worker_cpp and
-            "m_videoQueue" not in decode_worker_cpp,
-            "DecodeWorker should not pre-schedule or drop video before the Qt presenter")
-    require("emitEvent({ VideoFrameEvent { std::move(frame) } })" in decode_worker_cpp,
-            "DecodeWorker should emit decoded video frames directly to the presenter boundary")
+    forbidden_worker_scheduling_tokens = [
+        "ClockSync",
+        "FrameScheduler",
+        "FrameScheduleAction",
+        "FrameScheduleDecision",
+        "m_clock",
+        "currentTime()",
+        "setAudioClock",
+        "setPaused",
+        "SubmitLeadTime",
+        "LateDropThreshold",
+        "Action::Wait",
+        "Action::Drop",
+        "shouldDropVideoWhenFull",
+        "m_videoQueue",
+    ]
+    for token in forbidden_worker_scheduling_tokens:
+        require(token not in decode_worker_text,
+                f"DecodeWorker should not own presenter scheduling/clock token: {token}")
+    require("emitEvent(makeEvent(VideoFrameEvent { std::move(frame) }))" in decode_worker_cpp,
+            "DecodeWorker should emit decoded video frames through metadata-stamped SDK events")
     require("QueuePolicy::shouldDropVideoWhenFull" not in decode_worker_cpp,
             "DecodeWorker should leave presenter backpressure/drop policy to the Qt adapter layer")
     require("DecodeWorker" in playback_controller_header + playback_controller_cpp and
