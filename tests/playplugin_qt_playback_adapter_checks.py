@@ -43,6 +43,11 @@ def main() -> None:
             "QtPlaybackAdapter should never block the Qt thread on frame queue push")
     require("AudioFrameEvent" in adapter_cpp and "VideoFrameEvent" in adapter_cpp,
             "QtPlaybackAdapter should handle SDK audio and video frame events")
+    require("int videoRowBytes(media_sdk::PixelFormat format, int width)" in adapter_cpp and
+            "return width;" in adapter_cpp and
+            "(width + 1) / 2" not in adapter_cpp[adapter_cpp.find("int videoRowBytes"):
+                                                  adapter_cpp.find("} // namespace")],
+            "QtPlaybackAdapter should copy each SDK plane using that plane's byte width")
     require("mediaInfoReady" in adapter_h and "endOfFile" in adapter_h and "seekCompleted" in adapter_h,
             "QtPlaybackAdapter should expose decoder-compatible Qt signals")
 

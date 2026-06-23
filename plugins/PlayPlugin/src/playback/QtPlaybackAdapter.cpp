@@ -40,19 +40,16 @@ int bytesPerSample(AVSampleFormat format)
     return std::max(0, av_get_bytes_per_sample(format));
 }
 
-int videoRowBytes(media_sdk::PixelFormat format, int plane, int width)
+int videoRowBytes(media_sdk::PixelFormat format, int width)
 {
     switch (format)
     {
     case media_sdk::PixelFormat::Yuv420P:
-        return plane == 0 ? width : (width + 1) / 2;
     case media_sdk::PixelFormat::Nv12:
         return width;
     case media_sdk::PixelFormat::P010:
-        return width * 2;
     case media_sdk::PixelFormat::Yuv420P10:
     case media_sdk::PixelFormat::Yuv422P10:
-        return (plane == 0 ? width : (width + 1) / 2) * 2;
     case media_sdk::PixelFormat::Yuv444P10:
         return width * 2;
     default:
@@ -308,7 +305,7 @@ AVFramePtr QtPlaybackAdapter::makeVideoFrame(const media_sdk::VideoFrame& frame)
         const int rowBytes = std::min({
             std::abs(plane.stride),
             std::abs(avFrame->linesize[i]),
-            videoRowBytes(frame.pixelFormat(), static_cast<int>(i), plane.width)
+            videoRowBytes(frame.pixelFormat(), plane.width)
         });
         for (int row = 0; row < plane.height; ++row)
         {
