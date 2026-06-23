@@ -123,9 +123,22 @@ void testAudioFrameAndEvents()
     media_sdk::PlayerEvent audioEvent {
         media_sdk::AudioFrameEvent { media_sdk::AudioFrame {} }
     };
+    media_sdk::PlayerEvent mediaInfoEvent {
+        media_sdk::MediaInfoEvent {
+            media_sdk::MediaInfo {
+                .sampleRate = 48'000,
+                .channels = 2,
+                .channelLayoutMask = 3,
+            }
+        }
+    };
 
     assert(std::holds_alternative<media_sdk::VideoFrameEvent>(videoEvent.payload));
     assert(std::holds_alternative<media_sdk::AudioFrameEvent>(audioEvent.payload));
+    const auto& mediaInfo = std::get<media_sdk::MediaInfoEvent>(mediaInfoEvent.payload).info;
+    assert(mediaInfo.sampleRate == 48'000);
+    assert(mediaInfo.channels == 2);
+    assert(mediaInfo.channelLayoutMask == 3);
 }
 
 }

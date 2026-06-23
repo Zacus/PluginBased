@@ -71,25 +71,11 @@ qt_add_qml_module(PlayPlugin
         src/playback/PlaybackCompletionTracker.h src/playback/PlaybackCompletionTracker.cpp
         src/playback/QtPlaybackAdapter.h src/playback/QtPlaybackAdapter.cpp
         src/playback/PlaybackPipeline.h src/playback/PlaybackPipeline.cpp
-        src/playback/PlaybackSeekCoordinator.h src/playback/PlaybackSeekCoordinator.cpp
         src/playback/PlayerEngine.h     src/playback/PlayerEngine.cpp
         src/model/PlaylistModel.h    src/model/PlaylistModel.cpp
         src/model/MediaInfo.h
-        # 第二步拆出的 FFmpeg 解码器相关文件
         src/common/FFmpegUtils.h
         src/common/FrameQueue.h
-        src/decode/DecodePerformance.h src/decode/DecodePerformance.cpp
-        src/decode/DecodeLoopControl.h src/decode/DecodeLoopControl.cpp
-        src/decode/FFmpegLogBridge.h src/decode/FFmpegLogBridge.cpp
-        src/decode/MediaOpener.h src/decode/MediaOpener.cpp
-        src/decode/StreamFrameDecoder.h src/decode/StreamFrameDecoder.cpp
-        src/decode/VideoFrameProcessor.h src/decode/VideoFrameProcessor.cpp
-        src/decode/FFmpegDecoder.h    src/decode/FFmpegDecoder.cpp
-        src/decode/hw/HardwareDecoderBackend.h
-        src/decode/hw/HardwareDecoderFactory.h src/decode/hw/HardwareDecoderFactory.cpp
-        src/decode/hw/VideoToolboxBackend.h    src/decode/hw/VideoToolboxBackend.cpp
-        src/decode/hw/D3D11VABackend.h         src/decode/hw/D3D11VABackend.cpp
-        src/decode/hw/VaapiBackend.h           src/decode/hw/VaapiBackend.cpp
         src/video/native/NativeVideoFrame.h
         src/video/native/AppleMetalVideoTextureBridge.h
         src/video/native/AppleMetalVideoTextureBridge.mm

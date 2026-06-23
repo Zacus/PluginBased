@@ -367,7 +367,7 @@ void VideoRenderer::processNextFrame()
         }
 
         // ── 音视频同步决策 ────────────────────────────────────────────────────
-        // frame->pts 已由 FFmpegDecoder 统一换算为微秒（AV_TIME_BASE = 1000000）
+        // frame->pts 已由 media_sdk 统一换算为微秒（AV_TIME_BASE = 1000000）
         qint64 framePtsUs = entry.frame->pts;
         if (framePtsUs == AV_NOPTS_VALUE) framePtsUs = 0;
 

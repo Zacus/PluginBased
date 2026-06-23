@@ -28,26 +28,21 @@ def main():
     engine_h = read("plugins/PlayPlugin/src/playback/PlayerEngine.h")
     engine_cpp = read("plugins/PlayPlugin/src/playback/PlayerEngine.cpp")
     pipeline_cpp = read("plugins/PlayPlugin/src/playback/PlaybackPipeline.cpp")
-    seek_coordinator_cpp = read("plugins/PlayPlugin/src/playback/PlaybackSeekCoordinator.cpp")
+    pipeline_h = read("plugins/PlayPlugin/src/playback/PlaybackPipeline.h")
+    adapter_h = read("plugins/PlayPlugin/src/playback/QtPlaybackAdapter.h")
+    adapter_cpp = read("plugins/PlayPlugin/src/playback/QtPlaybackAdapter.cpp")
     ffmpeg_utils_h = read("plugins/PlayPlugin/src/common/FFmpegUtils.h")
-    decoder_h = read("plugins/PlayPlugin/src/decode/FFmpegDecoder.h")
-    decoder_cpp = read("plugins/PlayPlugin/src/decode/FFmpegDecoder.cpp")
-    decode_perf_h = read("plugins/PlayPlugin/src/decode/DecodePerformance.h")
-    decode_perf_cpp = read("plugins/PlayPlugin/src/decode/DecodePerformance.cpp")
-    media_opener_h = read("plugins/PlayPlugin/src/decode/MediaOpener.h")
-    media_opener_cpp = read("plugins/PlayPlugin/src/decode/MediaOpener.cpp")
-    video_processor_h = read("plugins/PlayPlugin/src/decode/VideoFrameProcessor.h")
-    video_processor_cpp = read("plugins/PlayPlugin/src/decode/VideoFrameProcessor.cpp")
-    hw_backend_h = read("plugins/PlayPlugin/src/decode/hw/HardwareDecoderBackend.h")
-    hw_factory_h = read("plugins/PlayPlugin/src/decode/hw/HardwareDecoderFactory.h")
-    hw_factory_cpp = read("plugins/PlayPlugin/src/decode/hw/HardwareDecoderFactory.cpp")
-    videotoolbox_h = read("plugins/PlayPlugin/src/decode/hw/VideoToolboxBackend.h")
-    videotoolbox_cpp = read("plugins/PlayPlugin/src/decode/hw/VideoToolboxBackend.cpp")
+    sdk_cmake = read("sdk/media_core/CMakeLists.txt")
+    sdk_decode_worker_h = read("sdk/media_core/src/DecodeWorker.h")
+    sdk_decode_worker_cpp = read("sdk/media_core/src/DecodeWorker.cpp")
+    sdk_demuxer_cpp = read("sdk/media_core/src/Demuxer.cpp")
+    sdk_decode_perf_h = read("sdk/media_core/src/DecodePerformance.h")
+    sdk_decode_perf_cpp = read("sdk/media_core/src/DecodePerformance.cpp")
+    sdk_video_processor_h = read("sdk/media_core/src/VideoFrameProcessor.h")
+    sdk_video_processor_cpp = read("sdk/media_core/src/VideoFrameProcessor.cpp")
+    sdk_hw_backend_h = read("sdk/media_core/src/HardwareDecoderBackend.h")
     native_frame_h = read("plugins/PlayPlugin/src/video/native/NativeVideoFrame.h")
-    apple_bridge_h = read("plugins/PlayPlugin/src/video/native/AppleMetalVideoTextureBridge.h")
     apple_bridge_mm = read("plugins/PlayPlugin/src/video/native/AppleMetalVideoTextureBridge.mm")
-    d3d11va_cpp = read("plugins/PlayPlugin/src/decode/hw/D3D11VABackend.cpp")
-    vaapi_cpp = read("plugins/PlayPlugin/src/decode/hw/VaapiBackend.cpp")
     cmake = read("plugins/PlayPlugin/CMakeLists.txt")
     audio_cpp = read("plugins/PlayPlugin/src/audio/AudioRenderer.cpp")
     audio_h = read("plugins/PlayPlugin/src/audio/AudioRenderer.h")
@@ -290,8 +285,8 @@ def main():
             "seeking after media completion should resume playback")
     require("stopAllComponents();" not in engine_cpp[engine_cpp.find("void PlayerEngine::finishMedia"):],
             "finished media should keep playback components available for seeking")
-    require("m_openCond.wakeOne();" in decoder_cpp[decoder_cpp.find("void FFmpegDecoder::seekTo"):],
-            "seek should wake decoder even if it is waiting after EOF")
+    require("m_adapter->seekTo(positionMs, generation)" in pipeline_cpp,
+            "seek should be submitted through the SDK Qt adapter")
     require(engine_cpp.count("emit endOfMedia();") == 1,
             "endOfMedia should be emitted from one guarded path")
     require("emit positionChanged(m_position);" in engine_cpp and
@@ -306,15 +301,12 @@ def main():
             "per-frame video sync debug logging should be removed or throttled")
     require('LOG_DEBUG("VideoRenderer: drop frame' not in renderer_cpp,
             "per-frame drop logging should stay out of the render loop")
-    require('LOG_DEBUG("FFmpegDecoder: converted video pixel format' not in decoder_cpp,
-            "per-frame pixel format conversion logging should stay out of the decode loop")
-    require("DecodePerformanceStats" in decode_perf_h and
-            "DecodePerformanceLogger" in decoder_h and
-            "PlayPerf: decoder" in decode_perf_cpp,
-            "decoder should report throttled playback performance summaries")
-    require("QElapsedTimer m_logTimer" in decode_perf_h and
-            "PerformanceLogIntervalMs" in decode_perf_cpp,
-            "decode performance logs should be time-throttled")
+    require("DecodePerformanceStats" in sdk_decode_perf_h and
+            "DecodePerformanceLogger" in sdk_decode_perf_h and
+            "DecodePerformanceReport" in sdk_decode_perf_cpp,
+            "SDK decoder should expose throttled playback performance summaries")
+    require("std::chrono::milliseconds" in sdk_decode_perf_h,
+            "SDK decode performance logs should use Qt-free chrono timing")
     require("VideoRenderPerformanceStats" in renderer_h and
             "maybeLogRenderPerformance" in renderer_cpp and
             "PlayPerf: renderer" in renderer_cpp,
@@ -322,8 +314,7 @@ def main():
     require("m_renderPerfLogTimer" in renderer_h and
             "PerformanceLogIntervalMs" in renderer_cpp,
             "render performance logs should be time-throttled")
-    require('LOG_DEBUG("PlayPerf: decoder frame' not in decoder_cpp and
-            'LOG_DEBUG("PlayPerf: renderer frame' not in renderer_cpp,
+    require('LOG_DEBUG("PlayPerf: renderer frame' not in renderer_cpp,
             "playback performance logging should not run per frame")
     require("setAudioClockEnabled" in renderer_h and "m_audioClockEnabled" in renderer_h,
             "VideoRenderer should explicitly support video-only clocking")
@@ -350,22 +341,21 @@ def main():
             "MaxConsecutiveDropsBeforeRender" in renderer_cpp and
             "m_consecutiveDroppedFrames < MaxConsecutiveDropsBeforeRender" in renderer_cpp,
             "VideoRenderer should bound late-frame drops so slow 4K/60 videos keep updating")
-    require("seekCompleted(int generation, int serial)" in decoder_h,
-            "decoder should report the frame serial produced after seek")
+    require("seekCompleted(int generation, int serial)" in adapter_h,
+            "QtPlaybackAdapter should report the frame serial produced after seek")
     require("setAcceptedSerial" in read("plugins/PlayPlugin/src/audio/AudioRenderer.h") and
             "setAcceptedSerial" in renderer_h,
             "audio and video renderers should track the currently accepted frame serial")
-    require("m_audioRenderer.setAcceptedSerial(serial)" in seek_coordinator_cpp and
-            "m_videoRenderer.completeSeek(generation, serial)" in seek_coordinator_cpp,
-            "PlaybackSeekCoordinator should apply seek serial to all frame consumers")
+    require("m_audioRenderer->setAcceptedSerial(serial)" in pipeline_cpp and
+            "m_videoRenderer->completeSeek(generation, serial)" in pipeline_cpp,
+            "PlaybackPipeline should apply seek serial to all frame consumers")
     require("entry.serial != m_acceptedSerial" in read("plugins/PlayPlugin/src/audio/AudioRenderer.cpp") and
             "entry.serial != m_acceptedSerial" in renderer_cpp,
             "frame consumers should discard stale frames from older seek serials")
-    require("quint64 channelLayoutMask" in decoder_h and
-            "m_audioChannelLayoutMask" in decoder_h,
-            "decoder should expose the source audio channel layout mask")
-    require("actx->ch_layout.u.mask" in media_opener_cpp,
-            "decoder should capture FFmpeg's native channel layout mask")
+    require("channelLayoutMask" in adapter_h and "channelLayoutMask" in adapter_cpp,
+            "Qt adapter should expose the source audio channel layout mask")
+    require("context->ch_layout.u.mask" in sdk_demuxer_cpp,
+            "SDK demuxer should capture FFmpeg's native channel layout mask")
     require("m_srcChannelLayoutMask" in audio_h and
             "av_channel_layout_from_mask" in audio_cpp and
             "av_channel_layout_default(&srcLayout, m_srcChannels)" in audio_cpp,
@@ -378,8 +368,8 @@ def main():
             "PlayerEngine should not consume host-originated pending open requests")
     require("buildColorMatrix" not in surface_cpp and "colorMatrix" not in surface_cpp,
             "FFmpegSurface should not keep obsolete color matrix code or comments")
-    require("AV_PIX_FMT_NV12" in video_processor_cpp and "AV_PIX_FMT_P010LE" in video_processor_cpp,
-            "decoder should let NV12 and P010 frames bypass sws normalization")
+    require("AV_PIX_FMT_NV12" in sdk_video_processor_cpp and "AV_PIX_FMT_P010LE" in sdk_video_processor_cpp,
+            "SDK decoder should let NV12 and P010 frames bypass sws normalization")
     require("PlaneLayout" in video_pixel_format_cpp and "Semiplanar" in video_pixel_format_cpp,
             "VideoPixelFormat should distinguish planar and semiplanar YUV layouts")
     require("QRhiTexture::RG8" in video_pixel_format_cpp and "QRhiTexture::RG16" in video_pixel_format_cpp,
@@ -396,17 +386,18 @@ def main():
             "Apple bridge should create Metal textures from CVPixelBuffer planes")
     require("QRhiTexture::NativeTexture" in apple_bridge_mm and "createFrom" in apple_bridge_mm,
             "Apple bridge should wrap Metal textures with QRhiTexture::createFrom")
-    require("AV_PIX_FMT_VIDEOTOOLBOX" in video_processor_cpp and
-            "shouldPreserveHardwareFrameForDirectRender" in video_processor_cpp,
-            "decoder should preserve VideoToolbox frames when native render is enabled")
-    require("transferHardwareFrameToCpu" in video_processor_cpp and "nativeFallbackVideoFrames" in decode_perf_h,
+    require("AV_PIX_FMT_VIDEOTOOLBOX" in sdk_video_processor_cpp and
+            "NativeHandleKind::VideoToolboxPixelBuffer" in sdk_video_processor_cpp,
+            "SDK decoder should preserve VideoToolbox frame metadata when native render is enabled")
+    require("transferHardwareFrameToCpu" in sdk_video_processor_cpp and
+            "nativeFallbackVideoFrames" in sdk_decode_perf_h,
             "native render failures should be observable and keep CPU fallback available")
     require("AppleMetalVideoTextureBridge" in video_node_cpp and "setNativeFrame" in video_node_cpp,
             "VideoNode should consume native VideoToolbox frames")
     require("supportsNativeVideoToolboxRendering" in surface_cpp and
-            "setVideoToolboxDirectRenderingEnabled" in decoder_h and
+            "setVideoToolboxDirectRenderingEnabled" in adapter_h and
             "nativeRenderingFailed" in surface_cpp,
-            "native rendering should be enabled by a Surface-to-Decoder capability handshake")
+            "native rendering should be enabled by a Surface-to-Adapter capability handshake")
     require("CoreVideo" in cmake and "Metal" in cmake and "QuartzCore" in cmake,
             "PlayPlugin should link Apple frameworks for CVMetalTextureCache")
     ensure_textures = video_node_cpp[video_node_cpp.find("void VideoNode::ensureTextures"):
@@ -444,97 +435,46 @@ def main():
     require("HoverHandler" in playlist_qml and "TapHandler" in playlist_qml and
             "id: delegateMouse" not in playlist_qml,
             "playlist row hover/double-click handling should not cover remove buttons")
-    require("normalizeVideoFrame" in video_processor_h and "sws_getCachedContext" in video_processor_cpp,
+    require("normalizeVideoFrame" in sdk_video_processor_h and "sws_getCachedContext" in sdk_video_processor_cpp,
             "unsupported video pixel formats should be converted before rendering")
-    require("class HardwareDecoderBackend" in hw_backend_h,
-            "hardware decoder backend interface should exist")
-    require("virtual QString name() const = 0" in hw_backend_h,
-            "hardware backend should expose a stable log name")
-    require("virtual bool isAvailableForCodec" in hw_backend_h,
-            "hardware backend should decide codec availability")
-    require("virtual bool configureContext(AVCodecContext* codecContext) = 0" in hw_backend_h,
-            "hardware backend should configure AVCodecContext before avcodec_open2")
-    require("virtual bool isHardwareFrame(const AVFrame* frame) const = 0" in hw_backend_h,
-            "hardware backend should identify frames that need transfer")
-    require("virtual AVFramePtr transferToCpuFrame(const AVFrame* frame) = 0" in hw_backend_h,
-            "hardware backend should transfer hardware frames to CPU frames")
-    require("src/decode/hw/HardwareDecoderBackend.h" in cmake,
-            "PlayPlugin target should include hardware backend interface")
-    require("createHardwareDecoderBackend" in hw_factory_h and
-            "std::unique_ptr<HardwareDecoderBackend>" in hw_factory_h,
-            "hardware decoder factory should return an optional backend")
-    require("#if defined(Q_OS_APPLE)" in hw_factory_cpp and "VideoToolboxBackend" in hw_factory_cpp,
-            "factory should select VideoToolbox only on Apple platforms")
-    require("#if defined(Q_OS_WIN)" in hw_factory_cpp and "D3D11VABackend" in hw_factory_cpp,
-            "factory should know the Windows skeleton backend")
-    require("#if defined(Q_OS_LINUX)" in hw_factory_cpp and "VaapiBackend" in hw_factory_cpp,
-            "factory should know the Linux skeleton backend")
-    require("return false;" in d3d11va_cpp and "d3d11va" in d3d11va_cpp,
-            "D3D11VA backend should be explicitly unavailable in phase 1")
-    require("return false;" in vaapi_cpp and "vaapi" in vaapi_cpp,
-            "VAAPI backend should be explicitly unavailable in phase 1")
-    require("videotoolbox" in videotoolbox_cpp,
-            "VideoToolbox backend should expose a stable backend name")
-    require('#include "decode/hw/HardwareDecoderFactory.h"' in media_opener_cpp,
-            "MediaOpener should include the hardware backend factory")
-    require("std::unique_ptr<HardwareDecoderBackend> m_hardwareDecoder" in decoder_h,
-            "FFmpegDecoder should own the selected hardware backend")
-    require("createHardwareDecoderBackend(codec, stream->codecpar->codec_id)" in media_opener_cpp,
-            "MediaOpener should ask the factory for video hardware decoding")
-    require("m_hardwareDecoder.reset();" in decoder_cpp[decoder_cpp.find("void FFmpegDecoder::closeInternal"):],
-            "FFmpegDecoder should release hardware backend on close")
-    require("Q_OS_APPLE" not in decoder_cpp and
-            "Q_OS_WIN" not in decoder_cpp and
-            "Q_OS_LINUX" not in decoder_cpp,
-            "FFmpegDecoder should not contain platform branching for hardware backend selection")
-    require("bool openVideoCodec(OpenedMedia& media, AVStream* stream, const AVCodec* codec)" in media_opener_h,
-            "MediaOpener should open video codec through a retryable helper")
-    require("m_mediaOpener.open(path)" in decoder_cpp,
-            "openInternal should delegate media opening")
-    require("configureContext(vctx)" in media_opener_cpp,
-            "video codec helper should configure hardware before avcodec_open2")
-    require("fallback to software decoding" in media_opener_cpp,
-            "hardware open failure should log software fallback")
-    require("AVCodecContext* MediaOpener::createVideoCodecContext" in media_opener_cpp and
-            "vctx = createVideoCodecContext(stream, codec)" in media_opener_cpp,
-            "software fallback should rebuild a clean AVCodecContext")
+    require("class HardwareDecoderBackend" in sdk_hw_backend_h,
+            "SDK hardware decoder backend interface should exist")
+    require("std::string_view name() const" in sdk_hw_backend_h,
+            "SDK hardware backend should expose a Qt-free stable log name")
+    require("virtual bool isHardwareFrame(const AVFrame* frame) const = 0" in sdk_hw_backend_h,
+            "SDK hardware backend should identify frames that need transfer")
+    require("virtual AVFramePtr transferToCpuFrame(const AVFrame* frame) = 0" in sdk_hw_backend_h,
+            "SDK hardware backend should transfer hardware frames to CPU frames")
+    require("virtual void reset() = 0" in sdk_hw_backend_h,
+            "SDK hardware backend should expose deterministic reset")
+    require("src/HardwareDecoderBackend.h" in sdk_cmake,
+            "media_sdk_core target should include hardware backend interface")
+    require("std::jthread" in sdk_decode_worker_h and
+            "std::stop_token" in sdk_decode_worker_h and
+            "IEventSink&" in sdk_decode_worker_h,
+            "SDK playback worker should own Qt-free async decode and event delivery")
+    require("Demuxer" in sdk_demuxer_cpp and "avformat_open_input" in sdk_demuxer_cpp,
+            "SDK demuxer should own FFmpeg input opening")
+    require("avcodec_open2" in sdk_demuxer_cpp and "createCodecContext" in sdk_demuxer_cpp,
+            "SDK demuxer should own codec context creation and opening")
     require("#include <libavutil/hwcontext.h>" in ffmpeg_utils_h,
             "FFmpegUtils should expose FFmpeg hardware context APIs")
     require("AVBufferRefPtr" in ffmpeg_utils_h,
             "FFmpegUtils should provide RAII for AVBufferRef")
-    require("AVBufferRefPtr m_deviceContext" in videotoolbox_h,
-            "VideoToolbox backend should own the hardware device context")
-    require("av_hwdevice_ctx_create" in videotoolbox_cpp and
-            "AV_HWDEVICE_TYPE_VIDEOTOOLBOX" in videotoolbox_cpp,
-            "VideoToolbox backend should create a VideoToolbox hardware device")
-    require("avcodec_get_hw_config" in videotoolbox_cpp and
-            "AV_PIX_FMT_VIDEOTOOLBOX" in videotoolbox_cpp,
-            "VideoToolbox backend should verify decoder hardware config")
-    require("selectVideoToolboxFormat" in videotoolbox_cpp and
-            "codecContext->get_format = selectVideoToolboxFormat" in videotoolbox_cpp,
-            "VideoToolbox backend should force FFmpeg to choose the hardware pixel format")
-    require("codecContext->hw_device_ctx = av_buffer_ref" in videotoolbox_cpp,
-            "VideoToolbox backend should attach hardware device to AVCodecContext")
-    require("av_hwframe_transfer_data" in videotoolbox_cpp,
-            "VideoToolbox backend should transfer hardware frames to CPU frames")
-    require("copyFrameMetadata" in video_processor_cpp,
-            "FFmpegDecoder should preserve timing and color metadata after hardware transfer")
-    require("prepareForQueue" in video_processor_h and
-            "m_videoFrameProcessor.prepareForQueue" in decoder_cpp,
-            "FFmpegDecoder should prepare video frames through VideoFrameProcessor before queueing")
-    prepare_body = video_processor_cpp[video_processor_cpp.find("AVFramePtr VideoFrameProcessor::prepareForQueue"):
-                                       video_processor_cpp.find("bool VideoFrameProcessor::shouldPreserveHardwareFrameForDirectRender")]
-    require("transferHardwareFrameToCpu" in prepare_body and
-            prepare_body.find("transferHardwareFrameToCpu") < prepare_body.find("normalizeVideoFrame"),
+    require("hardwareDecoder->transferToCpuFrame" in sdk_video_processor_cpp,
+            "SDK video processor should transfer hardware frames through the backend")
+    require("copyFrameMetadata" in sdk_video_processor_cpp,
+            "SDK decoder should preserve timing and color metadata after hardware transfer")
+    require("process(AVFramePtr frame" in sdk_video_processor_h and
+            "m_videoFrameProcessor.process" in sdk_decode_worker_cpp,
+            "SDK DecodeWorker should prepare video frames through VideoFrameProcessor before queueing")
+    process_body = sdk_video_processor_cpp[sdk_video_processor_cpp.find("Result<VideoFrame> VideoFrameProcessor::process"):
+                                           sdk_video_processor_cpp.find("AVFramePtr VideoFrameProcessor::transferHardwareFrameToCpu")]
+    require("transferHardwareFrameToCpu" in process_body and
+            process_body.find("transferHardwareFrameToCpu") < process_body.find("normalizeVideoFrame"),
             "hardware frames should be transferred before normalizeVideoFrame")
-    require("m_hardwareTransferFailureCount" in video_processor_h,
-            "VideoFrameProcessor should count hardware transfer failures")
-    require("MaxHardwareTransferFailureLogs" in video_processor_cpp,
-            "hardware transfer failure logs should be throttled")
-    require("hardware frame transfer failed" in video_processor_cpp,
-            "decoder should log hardware transfer failures at the decode boundary")
-    require("LOG_WARN(\"VideoToolboxBackend: av_hwframe_transfer_data failed" not in videotoolbox_cpp,
-            "backend should not emit one warning for every failed transfer")
+    require("transferFailures" in sdk_decode_perf_h,
+            "SDK video processor should count hardware transfer failures")
 
 
 if __name__ == "__main__":

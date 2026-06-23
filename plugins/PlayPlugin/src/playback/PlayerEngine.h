@@ -18,10 +18,10 @@ Q_MOC_INCLUDE("video/FFmpegSurface.h")
  * @brief PlayerEngine — PlayPlugin 的核心播放引擎
  *
  * 持有并协调以下组件：
- *   FFmpegDecoder   解码线程，产出视频帧和音频帧
- *   AudioRenderer   音频渲染线程，消费音频帧，维护音频时钟
- *   VideoRenderer   视频渲染定时器（主线程），消费视频帧，同步时钟
- *   FFmpegSurface   QML 视频输出组件（由 QML 侧创建，Engine 只持有弱引用）
+ *   PlaybackPipeline 播放管线，桥接 media_sdk::Player 与 Qt 渲染/音频组件
+ *   AudioRenderer    音频渲染线程，消费音频帧，维护音频时钟
+ *   VideoRenderer    视频调度器（主线程），消费视频帧，同步时钟
+ *   FFmpegSurface    QML 视频输出组件（由 QML 侧创建，Engine 只持有弱引用）
  *
  * QML 接口与之前完全保持不变：
  *   - 所有 Q_PROPERTY 和信号不变，QML 代码无需修改
@@ -59,7 +59,7 @@ public:
     void setVolume(float v);
     void setMuted(bool m);
 
-    /** QML 侧把 FFmpegSurface 对象传入，Engine 连接 VideoRenderer::frameReady */
+    /** QML 侧把 FFmpegSurface 对象传入，Engine 连接管线输出到 surface */
     Q_INVOKABLE void setSurface(FFmpegSurface* surface);
 
 public slots:
@@ -81,7 +81,7 @@ signals:
     void endOfMedia();
 
 private slots:
-    // 来自 FFmpegDecoder 的信号
+    // 来自播放管线的媒体核心信号
     void onMediaInfoReady(qint64 durationMs, int width, int height,
                           double fps, int sampleRate, int channels,
                           quint64 channelLayoutMask, int sampleFmt,

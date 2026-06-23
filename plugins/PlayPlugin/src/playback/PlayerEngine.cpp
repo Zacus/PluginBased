@@ -176,7 +176,7 @@ void PlayerEngine::stopAllComponents()
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 来自 FFmpegDecoder 的信号处理
+// 来自播放管线的媒体核心信号处理
 // ─────────────────────────────────────────────────────────────────────────────
 void PlayerEngine::onMediaInfoReady(qint64 durationMs, int width, int height, double fps,
                                     int sampleRate, int channels, quint64 channelLayoutMask,

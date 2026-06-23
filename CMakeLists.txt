@@ -204,36 +204,16 @@ if(BUILD_TESTING)
         COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tests/playplugin_surface_decoupling_checks.py"
         WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
     )
-    add_test(NAME playplugin_decoder_decoupling_checks
-        COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tests/playplugin_decoder_decoupling_checks.py"
-        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
-    )
-    add_test(NAME playplugin_video_frame_processor_checks
-        COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tests/playplugin_video_frame_processor_checks.py"
-        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
-    )
     add_test(NAME playplugin_video_renderer_scheduler_checks
         COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tests/playplugin_video_renderer_scheduler_checks.py"
         WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
     )
-    add_test(NAME playplugin_media_opener_checks
-        COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tests/playplugin_media_opener_checks.py"
-        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
-    )
-    add_test(NAME playplugin_stream_frame_decoder_checks
-        COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tests/playplugin_stream_frame_decoder_checks.py"
-        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
-    )
-    add_test(NAME playplugin_ffmpeg_log_bridge_checks
-        COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tests/playplugin_ffmpeg_log_bridge_checks.py"
-        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
-    )
-    add_test(NAME playplugin_decode_loop_control_checks
-        COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tests/playplugin_decode_loop_control_checks.py"
-        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
-    )
     add_test(NAME playplugin_qt_playback_adapter_checks
         COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tests/playplugin_qt_playback_adapter_checks.py"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+    )
+    add_test(NAME playplugin_bplus_completion_checks
+        COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tests/playplugin_bplus_completion_checks.py"
         WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
     )
     add_test(NAME media_sdk_core_architecture_checks

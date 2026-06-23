@@ -170,7 +170,7 @@ void QtPlaybackAdapter::handleEvent(const media_sdk::PlayerEvent& event)
                             info.fps,
                             info.sampleRate,
                             info.channels,
-                            0,
+                            static_cast<quint64>(info.channelLayoutMask),
                             AV_SAMPLE_FMT_FLT,
                             QString::fromStdString(info.formatName));
         return;

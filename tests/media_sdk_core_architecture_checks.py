@@ -76,7 +76,7 @@ def main() -> None:
                 f"Frame.h should expose the phase 3 frame contract token: {token}")
 
     media_events_header = read(PUBLIC_INCLUDE / "MediaEvents.h")
-    for token in ["MediaInfo", "PositionChangedEvent", "AudioFrameEvent",
+    for token in ["MediaInfo", "channelLayoutMask", "PositionChangedEvent", "AudioFrameEvent",
                   "VideoFrameEvent", "EndOfFileEvent"]:
         require(token in media_events_header,
                 f"MediaEvents.h should expose the phase 3 event token: {token}")

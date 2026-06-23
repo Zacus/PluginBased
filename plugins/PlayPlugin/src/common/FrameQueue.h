@@ -10,7 +10,7 @@
 /**
  * @brief 线程安全帧队列
  *
- * 解码线程（FFmpegDecoder）生产，渲染侧（VideoRenderer/AudioRenderer）消费。
+ * SDK Qt adapter 生产，渲染侧（VideoRenderer/AudioRenderer）消费。
  * 用双端队列 + mutex + wait condition 实现，简单可靠。
  *
  * 设计原则：

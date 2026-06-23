@@ -25,6 +25,7 @@ struct MediaInfo {
     double fps = 0.0;
     int sampleRate = 0;
     int channels = 0;
+    std::uint64_t channelLayoutMask = 0;
     std::string formatName;
 };
 

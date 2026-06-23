@@ -135,6 +135,7 @@ bool Demuxer::openAudioStream(OpenedMedia& media) const
         context->ch_layout.order == AV_CHANNEL_ORDER_NATIVE
             ? static_cast<std::uint64_t>(context->ch_layout.u.mask)
             : 0;
+    media.info.channelLayoutMask = media.audioChannelLayoutMask;
     media.audioSampleFormat = static_cast<int>(context->sample_fmt);
     return true;
 }

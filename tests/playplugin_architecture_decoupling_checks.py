@@ -25,16 +25,13 @@ def main():
         "playback/PlaybackCompletionTracker.cpp",
         "playback/PlaybackPipeline.h",
         "playback/PlaybackPipeline.cpp",
-        "playback/PlaybackSeekCoordinator.h",
-        "playback/PlaybackSeekCoordinator.cpp",
+        "playback/QtPlaybackAdapter.h",
+        "playback/QtPlaybackAdapter.cpp",
         "playback/PlayerEngine.h",
         "playback/PlayerEngine.cpp",
         "model/PlaylistModel.h",
         "model/PlaylistModel.cpp",
         "model/MediaInfo.h",
-        "decode/FFmpegDecoder.h",
-        "decode/FFmpegDecoder.cpp",
-        "decode/hw/HardwareDecoderBackend.h",
         "audio/AudioRenderer.h",
         "audio/AudioRenderer.cpp",
         "video/VideoRenderer.h",
@@ -56,11 +53,10 @@ def main():
         "PlaybackContext.h",
         "PlaybackCompletionTracker.h",
         "PlaybackPipeline.h",
-        "PlaybackSeekCoordinator.h",
+        "QtPlaybackAdapter.h",
         "PlayerEngine.h",
         "PlaylistModel.h",
         "MediaInfo.h",
-        "FFmpegDecoder.h",
         "AudioRenderer.h",
         "VideoRenderer.h",
         "FFmpegSurface.h",
@@ -76,14 +72,14 @@ def main():
     pipeline_cpp_path = ROOT / "plugins/PlayPlugin/src/playback/PlaybackPipeline.cpp"
     completion_h_path = ROOT / "plugins/PlayPlugin/src/playback/PlaybackCompletionTracker.h"
     completion_cpp_path = ROOT / "plugins/PlayPlugin/src/playback/PlaybackCompletionTracker.cpp"
-    seek_h_path = ROOT / "plugins/PlayPlugin/src/playback/PlaybackSeekCoordinator.h"
-    seek_cpp_path = ROOT / "plugins/PlayPlugin/src/playback/PlaybackSeekCoordinator.cpp"
+    adapter_h_path = ROOT / "plugins/PlayPlugin/src/playback/QtPlaybackAdapter.h"
+    adapter_cpp_path = ROOT / "plugins/PlayPlugin/src/playback/QtPlaybackAdapter.cpp"
     require(pipeline_h_path.exists(), "PlaybackPipeline.h should exist")
     require(pipeline_cpp_path.exists(), "PlaybackPipeline.cpp should exist")
     require(completion_h_path.exists(), "PlaybackCompletionTracker.h should exist")
     require(completion_cpp_path.exists(), "PlaybackCompletionTracker.cpp should exist")
-    require(seek_h_path.exists(), "PlaybackSeekCoordinator.h should exist")
-    require(seek_cpp_path.exists(), "PlaybackSeekCoordinator.cpp should exist")
+    require(adapter_h_path.exists(), "QtPlaybackAdapter.h should exist")
+    require(adapter_cpp_path.exists(), "QtPlaybackAdapter.cpp should exist")
 
     engine_h = read("plugins/PlayPlugin/src/playback/PlayerEngine.h")
     engine_cpp = read("plugins/PlayPlugin/src/playback/PlayerEngine.cpp")
@@ -91,8 +87,8 @@ def main():
     pipeline_cpp = read("plugins/PlayPlugin/src/playback/PlaybackPipeline.cpp")
     completion_h = read("plugins/PlayPlugin/src/playback/PlaybackCompletionTracker.h")
     completion_cpp = read("plugins/PlayPlugin/src/playback/PlaybackCompletionTracker.cpp")
-    seek_h = read("plugins/PlayPlugin/src/playback/PlaybackSeekCoordinator.h")
-    seek_cpp = read("plugins/PlayPlugin/src/playback/PlaybackSeekCoordinator.cpp")
+    adapter_h = read("plugins/PlayPlugin/src/playback/QtPlaybackAdapter.h")
+    adapter_cpp = read("plugins/PlayPlugin/src/playback/QtPlaybackAdapter.cpp")
     cmake = read("plugins/PlayPlugin/CMakeLists.txt")
     root_cmake = read("CMakeLists.txt")
 
@@ -148,6 +144,12 @@ def main():
             "PlaybackPipeline should coordinate renderer and queue seek side effects")
     require("m_decoder->seekTo(positionMs, generation)" not in pipeline_cpp,
             "PlaybackPipeline should not call FFmpegDecoder seek after SDK adapter integration")
+    require("public media_sdk::IEventSink" in adapter_h and
+            "std::unique_ptr<media_sdk::Player>" in adapter_h and
+            "QMetaObject::invokeMethod" in adapter_cpp,
+            "QtPlaybackAdapter should own the SDK player and marshal events to Qt")
+    require(not (ROOT / "plugins/PlayPlugin/src/decode").exists(),
+            "PlayPlugin should not keep the migrated decode core sources")
     require("PlaybackPipeline.h" in cmake and "PlaybackPipeline.cpp" in cmake and
             "PlaybackCompletionTracker.h" in cmake and "PlaybackCompletionTracker.cpp" in cmake and
             "QtPlaybackAdapter.h" in cmake and "QtPlaybackAdapter.cpp" in cmake,
