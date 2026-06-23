@@ -17,6 +17,12 @@ def require(condition: bool, message: str) -> None:
         raise AssertionError(message)
 
 
+def require_before(text: str, first: str, second: str, message: str) -> None:
+    first_index = text.find(first)
+    second_index = text.find(second)
+    require(first_index >= 0 and second_index >= 0 and first_index < second_index, message)
+
+
 def main() -> None:
     root_cmake = read("CMakeLists.txt")
     plugin_cmake = read("plugins/PlayPlugin/CMakeLists.txt")
@@ -24,6 +30,8 @@ def main() -> None:
     frame_queue = read("plugins/PlayPlugin/src/common/FrameQueue.h")
     adapter_h = read("plugins/PlayPlugin/src/playback/QtPlaybackAdapter.h")
     adapter_cpp = read("plugins/PlayPlugin/src/playback/QtPlaybackAdapter.cpp")
+    bridge_cpp = read("plugins/PlayPlugin/src/playback/PlaybackDataBridge.cpp")
+    pipeline_cpp = read("plugins/PlayPlugin/src/playback/PlaybackPipeline.cpp")
 
     decode_dir = ROOT / "plugins" / "PlayPlugin" / "src" / "decode"
     require(not decode_dir.exists(),
@@ -115,6 +123,49 @@ def main() -> None:
     for token in forbidden_adapter_eof_retry:
         require(token not in adapter_h and token not in adapter_cpp,
                 f"QtPlaybackAdapter should not keep temporary EOF retry/drop path: {token}")
+
+    require("m_videoQueue->abort();" in bridge_cpp and "m_audioQueue->abort();" in bridge_cpp,
+            "PlaybackDataBridge::cancel should abort queues to wake blocked data producers")
+    open_body = adapter_cpp[adapter_cpp.find("void QtPlaybackAdapter::openFile"):
+                            adapter_cpp.find("void QtPlaybackAdapter::setPaused")]
+    require_before(open_body,
+                   "m_dataBridge.cancel();",
+                   "resetPlayer();",
+                   "QtPlaybackAdapter::openFile should cancel the old data path before resetting player")
+    require_before(open_body,
+                   "m_videoQueue->flush();",
+                   "m_videoQueue->resetAbort();",
+                   "QtPlaybackAdapter::openFile should flush before resetting video queue abort state")
+    require_before(open_body,
+                   "m_audioQueue->flush();",
+                   "m_audioQueue->resetAbort();",
+                   "QtPlaybackAdapter::openFile should flush before resetting audio queue abort state")
+    seek_body = adapter_cpp[adapter_cpp.find("void QtPlaybackAdapter::seekTo"):
+                            adapter_cpp.find("void QtPlaybackAdapter::stopDecoding")]
+    require_before(seek_body,
+                   "m_dataBridge.cancelGeneration();",
+                   "m_player->seek",
+                   "QtPlaybackAdapter::seekTo should cancel only the old data generation before submitting seek")
+    require_before(seek_body,
+                   "m_videoQueue->flush();",
+                   "m_videoQueue->resetAbort();",
+                   "QtPlaybackAdapter::seekTo should flush before resetting video queue abort state")
+    require_before(seek_body,
+                   "m_audioQueue->flush();",
+                   "m_audioQueue->resetAbort();",
+                   "QtPlaybackAdapter::seekTo should flush before resetting audio queue abort state")
+    stop_body = pipeline_cpp[pipeline_cpp.find("void PlaybackPipeline::stopComponents"):
+                             pipeline_cpp.find("void PlaybackPipeline::seek")]
+    require_before(stop_body,
+                   "m_adapter->stopDecoding();",
+                   "m_audioRenderer->stopRenderer();",
+                   "PlaybackPipeline::stopComponents should cancel adapter/data path before waiting for renderers")
+    data_event_body = adapter_cpp[adapter_cpp.find("bool QtPlaybackAdapter::handleDataEvent"):
+                                  adapter_cpp.find("void QtPlaybackAdapter::handleEvent")]
+    require_before(data_event_body,
+                   "SeekCompletedEvent",
+                   "m_dataBridge.setGeneration",
+                   "QtPlaybackAdapter should restore bridge generation in the SDK callback path on seek completion")
 
 
 if __name__ == "__main__":

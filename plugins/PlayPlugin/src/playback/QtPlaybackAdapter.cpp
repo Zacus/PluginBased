@@ -73,6 +73,7 @@ QtPlaybackAdapter::QtPlaybackAdapter(VideoFrameQueue* videoQueue,
 
 QtPlaybackAdapter::~QtPlaybackAdapter()
 {
+    m_dataBridge.cancel();
     if (m_player)
         m_player->stop();
     m_player.reset();
@@ -80,21 +81,21 @@ QtPlaybackAdapter::~QtPlaybackAdapter()
 
 void QtPlaybackAdapter::openFile(const QUrl& url)
 {
+    m_dataBridge.cancel();
     resetPlayer();
     m_currentSerial = 0;
     m_pendingSeekRequests.clear();
-    m_dataBridge.cancel();
     m_hasAudio = false;
     m_hasVideo = false;
     if (m_videoQueue)
     {
-        m_videoQueue->resetAbort();
         m_videoQueue->flush();
+        m_videoQueue->resetAbort();
     }
     if (m_audioQueue)
     {
-        m_audioQueue->resetAbort();
         m_audioQueue->flush();
+        m_audioQueue->resetAbort();
     }
 
     const auto result = m_player->open(pathFromUrl(url));
@@ -118,10 +119,17 @@ void QtPlaybackAdapter::seekTo(qint64 positionMs, int generation)
     if (!m_player)
         return;
 
+    m_dataBridge.cancelGeneration();
     if (m_videoQueue)
+    {
         m_videoQueue->flush();
+        m_videoQueue->resetAbort();
+    }
     if (m_audioQueue)
+    {
         m_audioQueue->flush();
+        m_audioQueue->resetAbort();
+    }
 
     const auto result = m_player->seek(std::chrono::milliseconds(positionMs));
     if (!result.ok())

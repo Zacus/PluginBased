@@ -1,5 +1,6 @@
 #include "playback/PlaybackDataBridge.h"
 
+#include <limits>
 #include <utility>
 
 PlaybackDataBridge::PlaybackDataBridge(VideoFrameQueue* videoQueue, AudioFrameQueue* audioQueue)
@@ -24,8 +25,27 @@ void PlaybackDataBridge::setGeneration(std::uint64_t sessionId, std::uint64_t ge
 
 void PlaybackDataBridge::cancel()
 {
-    std::scoped_lock lock(m_mutex);
-    m_state = {};
+    {
+        std::scoped_lock lock(m_mutex);
+        m_state = {};
+    }
+    if (m_videoQueue)
+        m_videoQueue->abort();
+    if (m_audioQueue)
+        m_audioQueue->abort();
+}
+
+void PlaybackDataBridge::cancelGeneration()
+{
+    {
+        std::scoped_lock lock(m_mutex);
+        if (m_state.sessionId != 0)
+            m_state.generation = std::numeric_limits<std::uint64_t>::max();
+    }
+    if (m_videoQueue)
+        m_videoQueue->abort();
+    if (m_audioQueue)
+        m_audioQueue->abort();
 }
 
 bool PlaybackDataBridge::pushAudio(AVFramePtr frame,

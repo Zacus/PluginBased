@@ -21,6 +21,7 @@ public:
     void reset(StreamState state);
     void setGeneration(std::uint64_t sessionId, std::uint64_t generation);
     void cancel();
+    void cancelGeneration();
 
     bool pushAudio(AVFramePtr frame, std::uint64_t sessionId, std::uint64_t generation);
     bool pushVideo(AVFramePtr frame, std::uint64_t sessionId, std::uint64_t generation);
