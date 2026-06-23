@@ -166,12 +166,14 @@ void DecodeWorker::handleOpen(const std::filesystem::path& path)
     }
 
     m_media = std::move(opened.value());
+    ++m_sessionId;
+    m_generation = 0;
     m_hasMedia = true;
     m_playing = false;
     m_clock.invalidate();
     m_clock.setPaused(true);
 
-    emitEvent({ MediaInfoEvent { m_media.info } });
+    emitEvent(makeEvent(MediaInfoEvent { m_media.info }));
     emitState(PlayerState::Paused);
 }
 
@@ -197,7 +199,7 @@ void DecodeWorker::decodeUntilBlocked(WorkerStopToken stopToken)
         if (ret == AVERROR_EOF)
         {
             flushDecoders();
-            emitEvent({ EndOfFileEvent {} });
+            emitEvent(makeEvent(EndOfFileEvent {}));
             m_playing = false;
             emitState(PlayerState::Finished);
             return;
@@ -263,8 +265,9 @@ void DecodeWorker::handleSeek(std::chrono::milliseconds position)
     if (m_media.audioCodecContext)
         avcodec_flush_buffers(m_media.audioCodecContext.get());
     m_clock.invalidate();
+    ++m_generation;
 
-    emitEvent({ PositionChangedEvent { position } });
+    emitEvent(makeEvent(PositionChangedEvent { position }));
 }
 
 void DecodeWorker::closeMedia()
@@ -308,9 +311,9 @@ Result<void> DecodeWorker::decodePacket(AVCodecContext* codecContext,
 
             AudioFrame audioFrame = makeAudioFrame(std::move(frame));
             m_clock.setAudioClock(audioFrame.pts());
-            emitEvent({ PositionChangedEvent {
-                std::chrono::duration_cast<std::chrono::milliseconds>(audioFrame.pts()) } });
-            emitEvent({ AudioFrameEvent { std::move(audioFrame) } });
+            emitEvent(makeEvent(PositionChangedEvent {
+                std::chrono::duration_cast<std::chrono::milliseconds>(audioFrame.pts()) }));
+            emitEvent(makeEvent(AudioFrameEvent { std::move(audioFrame) }));
             return true;
         });
 }
@@ -339,10 +342,18 @@ void DecodeWorker::flushDecoders()
             [this](AVFramePtr frame) {
                 AudioFrame audioFrame = makeAudioFrame(std::move(frame));
                 m_clock.setAudioClock(audioFrame.pts());
-                emitEvent({ AudioFrameEvent { std::move(audioFrame) } });
+                emitEvent(makeEvent(AudioFrameEvent { std::move(audioFrame) }));
                 return true;
             });
     }
+}
+
+PlayerEvent DecodeWorker::makeEvent(PlayerEventPayload payload) const
+{
+    return {
+        .metadata = { .sessionId = m_sessionId, .generation = m_generation },
+        .payload = std::move(payload),
+    };
 }
 
 void DecodeWorker::emitEvent(PlayerEvent event)
@@ -352,17 +363,17 @@ void DecodeWorker::emitEvent(PlayerEvent event)
 
 void DecodeWorker::emitState(PlayerState state)
 {
-    emitEvent({ StateChangedEvent { state } });
+    emitEvent(makeEvent(StateChangedEvent { state }));
 }
 
 void DecodeWorker::emitError(MediaError error)
 {
-    emitEvent({ ErrorEvent { std::move(error) } });
+    emitEvent(makeEvent(ErrorEvent { std::move(error) }));
 }
 
 bool DecodeWorker::emitVideoFrame(VideoFrame frame)
 {
-    emitEvent({ VideoFrameEvent { std::move(frame) } });
+    emitEvent(makeEvent(VideoFrameEvent { std::move(frame) }));
     return true;
 }
 

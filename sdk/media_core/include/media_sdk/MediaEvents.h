@@ -56,6 +56,11 @@ struct ErrorEvent {
 struct EndOfFileEvent {
 };
 
+struct EventMetadata {
+    std::uint64_t sessionId = 0;
+    std::uint64_t generation = 0;
+};
+
 using PlayerEventPayload = std::variant<
     MediaInfoEvent,
     StateChangedEvent,
@@ -66,6 +71,7 @@ using PlayerEventPayload = std::variant<
     EndOfFileEvent>;
 
 struct PlayerEvent {
+    EventMetadata metadata;
     PlayerEventPayload payload;
 };
 

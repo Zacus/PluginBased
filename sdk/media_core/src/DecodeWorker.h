@@ -134,6 +134,7 @@ private:
                               AVRational timeBase,
                               bool video);
     void flushDecoders();
+    PlayerEvent makeEvent(PlayerEventPayload payload) const;
     void emitEvent(PlayerEvent event);
     void emitState(PlayerState state);
     void emitError(MediaError error);
@@ -156,6 +157,8 @@ private:
     DecodePerformanceStats m_decodeStats;
     ClockSync m_clock;
     OpenedMedia m_media;
+    std::uint64_t m_sessionId = 0;
+    std::uint64_t m_generation = 0;
     bool m_hasMedia = false;
     bool m_playing = false;
 };

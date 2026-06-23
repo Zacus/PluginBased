@@ -118,13 +118,16 @@ void testAudioFrameAndEvents()
     assert(frame.samples().size() == samples.size());
 
     media_sdk::PlayerEvent videoEvent {
-        media_sdk::VideoFrameEvent { media_sdk::VideoFrame {} }
+        .metadata = { .sessionId = 7, .generation = 3 },
+        .payload = media_sdk::VideoFrameEvent { media_sdk::VideoFrame {} }
     };
     media_sdk::PlayerEvent audioEvent {
-        media_sdk::AudioFrameEvent { media_sdk::AudioFrame {} }
+        .metadata = { .sessionId = 7, .generation = 3 },
+        .payload = media_sdk::AudioFrameEvent { media_sdk::AudioFrame {} }
     };
     media_sdk::PlayerEvent mediaInfoEvent {
-        media_sdk::MediaInfoEvent {
+        .metadata = { .sessionId = 7, .generation = 3 },
+        .payload = media_sdk::MediaInfoEvent {
             media_sdk::MediaInfo {
                 .sampleRate = 48'000,
                 .channels = 2,
@@ -133,8 +136,14 @@ void testAudioFrameAndEvents()
         }
     };
 
+    assert(videoEvent.metadata.sessionId == 7);
+    assert(videoEvent.metadata.generation == 3);
     assert(std::holds_alternative<media_sdk::VideoFrameEvent>(videoEvent.payload));
+    assert(audioEvent.metadata.sessionId == 7);
+    assert(audioEvent.metadata.generation == 3);
     assert(std::holds_alternative<media_sdk::AudioFrameEvent>(audioEvent.payload));
+    assert(mediaInfoEvent.metadata.sessionId == 7);
+    assert(mediaInfoEvent.metadata.generation == 3);
     const auto& mediaInfo = std::get<media_sdk::MediaInfoEvent>(mediaInfoEvent.payload).info;
     assert(mediaInfo.sampleRate == 48'000);
     assert(mediaInfo.channels == 2);

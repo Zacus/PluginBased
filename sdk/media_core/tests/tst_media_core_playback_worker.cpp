@@ -132,6 +132,22 @@ bool hasPositionAtOrAfter(const media_sdk::PlayerEvent& event,
     return false;
 }
 
+const media_sdk::PlayerEvent* firstEventMatching(
+    const std::vector<media_sdk::PlayerEvent>& events,
+    bool (*predicate)(const media_sdk::PlayerEvent&))
+{
+    const auto it = std::ranges::find_if(events, predicate);
+    return it == events.end() ? nullptr : &(*it);
+}
+
+void assertSingleSession(const std::vector<media_sdk::PlayerEvent>& events,
+                         std::uint64_t expectedSessionId)
+{
+    assert(expectedSessionId > 0);
+    for (const auto& event : events)
+        assert(event.metadata.sessionId == expectedSessionId);
+}
+
 void testOpenPlayReachesEof()
 {
     const auto samplePath = writeTinyWav();
@@ -147,6 +163,18 @@ void testOpenPlayReachesEof()
     assert(sink.waitFor([](const media_sdk::PlayerEvent& event) {
         return hasState(event, media_sdk::PlayerState::Finished);
     }));
+
+    const auto events = sink.snapshot();
+    const auto* mediaInfo = firstEventMatching(events, hasMediaInfo);
+    assert(mediaInfo);
+    assert(mediaInfo->metadata.sessionId > 0);
+    assert(mediaInfo->metadata.generation == 0);
+    assertSingleSession(events, mediaInfo->metadata.sessionId);
+
+    const auto* eof = firstEventMatching(events, hasEof);
+    assert(eof);
+    assert(eof->metadata.sessionId == mediaInfo->metadata.sessionId);
+    assert(eof->metadata.generation == mediaInfo->metadata.generation);
 
     std::filesystem::remove(samplePath);
 }
@@ -166,6 +194,20 @@ void testSeekEmitsPositionAndContinuesPlayback()
         return hasPositionAtOrAfter(event, 100ms);
     }));
     assert(sink.waitFor(hasAudioFrame));
+
+    const auto events = sink.snapshot();
+    const auto* mediaInfo = firstEventMatching(events, hasMediaInfo);
+    assert(mediaInfo);
+    assert(mediaInfo->metadata.sessionId > 0);
+    assert(mediaInfo->metadata.generation == 0);
+    assertSingleSession(events, mediaInfo->metadata.sessionId);
+
+    const auto positionAfterSeek = std::ranges::find_if(events, [](const media_sdk::PlayerEvent& event) {
+        return hasPositionAtOrAfter(event, 100ms);
+    });
+    assert(positionAfterSeek != events.end());
+    assert(positionAfterSeek->metadata.sessionId == mediaInfo->metadata.sessionId);
+    assert(positionAfterSeek->metadata.generation > mediaInfo->metadata.generation);
 
     player.stop();
     std::filesystem::remove(samplePath);
