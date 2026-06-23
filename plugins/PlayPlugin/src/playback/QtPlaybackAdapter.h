@@ -47,9 +47,6 @@ private:
     bool handleDataEvent(const media_sdk::PlayerEvent& event);
     void handleEvent(const media_sdk::PlayerEvent& event);
     void resetPlayer();
-    void clearPendingEof();
-    void tryPushPendingEof();
-    void scheduleEofRetry();
     AVFramePtr makeAudioFrame(const media_sdk::AudioFrame& frame) const;
     AVFramePtr makeVideoFrame(const media_sdk::VideoFrame& frame) const;
     AVPixelFormat mapPixelFormat(media_sdk::PixelFormat format) const;
@@ -65,9 +62,5 @@ private:
     std::deque<int> m_pendingSeekRequests;
     bool m_hasAudio = false;
     bool m_hasVideo = false;
-    bool m_paused = false;
-    bool m_pendingAudioEof = false;
-    bool m_pendingVideoEof = false;
-    bool m_eofRetryScheduled = false;
     bool m_directNativeVideoEnabled = false;
 };

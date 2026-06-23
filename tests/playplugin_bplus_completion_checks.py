@@ -22,6 +22,8 @@ def main() -> None:
     plugin_cmake = read("plugins/PlayPlugin/CMakeLists.txt")
     flow_doc = read("plugins/PlayPlugin/PlayPluginExecutionFlow.md")
     frame_queue = read("plugins/PlayPlugin/src/common/FrameQueue.h")
+    adapter_h = read("plugins/PlayPlugin/src/playback/QtPlaybackAdapter.h")
+    adapter_cpp = read("plugins/PlayPlugin/src/playback/QtPlaybackAdapter.cpp")
 
     decode_dir = ROOT / "plugins" / "PlayPlugin" / "src" / "decode"
     require(not decode_dir.exists(),
@@ -98,6 +100,21 @@ def main() -> None:
             "FrameQueue::finish should use blocking push so EOF preserves accepted-frame order")
     require("return tryPush(T {}, serial, true);" in frame_queue,
             "FrameQueue::tryFinish should make non-blocking EOF retry policies explicit")
+
+    forbidden_adapter_eof_retry = (
+        "m_pendingAudioEof",
+        "m_pendingVideoEof",
+        "m_eofRetryScheduled",
+        "tryPushPendingEof",
+        "scheduleEofRetry",
+        "QTimer::singleShot",
+        "tryPush(nullptr",
+        "dropped audio frame because queue is full",
+        "dropped video frame because queue is full",
+    )
+    for token in forbidden_adapter_eof_retry:
+        require(token not in adapter_h and token not in adapter_cpp,
+                f"QtPlaybackAdapter should not keep temporary EOF retry/drop path: {token}")
 
 
 if __name__ == "__main__":
