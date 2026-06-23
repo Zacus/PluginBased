@@ -176,11 +176,13 @@ void AudioRenderer::run()
         }
 
         // 应用主线程挂起的音量/静音变更（在音频线程操作 sink，线程安全）
-        if (m_paramDirty)
         {
             QMutexLocker lk(&m_paramMutex);
-            m_sink->setVolume(m_muted ? 0.0f : m_volume);
-            m_paramDirty = false;
+            if (m_paramDirty)
+            {
+                m_sink->setVolume(m_muted ? 0.0f : m_volume);
+                m_paramDirty = false;
+            }
         }
 
         if (!m_queue->pop(entry))

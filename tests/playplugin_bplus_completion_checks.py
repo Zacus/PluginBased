@@ -32,6 +32,7 @@ def main() -> None:
     adapter_cpp = read("plugins/PlayPlugin/src/playback/QtPlaybackAdapter.cpp")
     bridge_cpp = read("plugins/PlayPlugin/src/playback/PlaybackDataBridge.cpp")
     pipeline_cpp = read("plugins/PlayPlugin/src/playback/PlaybackPipeline.cpp")
+    audio_renderer_cpp = read("plugins/PlayPlugin/src/audio/AudioRenderer.cpp")
 
     decode_dir = ROOT / "plugins" / "PlayPlugin" / "src" / "decode"
     require(not decode_dir.exists(),
@@ -166,6 +167,20 @@ def main() -> None:
                    "SeekCompletedEvent",
                    "m_dataBridge.setGeneration",
                    "QtPlaybackAdapter should restore bridge generation in the SDK callback path on seek completion")
+    forbidden_audio_param_race = (
+        "if (m_paramDirty)\n"
+        "        {\n"
+        "            QMutexLocker lk(&m_paramMutex);"
+    )
+    required_audio_param_lock = (
+        "{\n"
+        "            QMutexLocker lk(&m_paramMutex);\n"
+        "            if (m_paramDirty)"
+    )
+    require(forbidden_audio_param_race not in audio_renderer_cpp,
+            "AudioRenderer should not read m_paramDirty before taking m_paramMutex")
+    require(required_audio_param_lock in audio_renderer_cpp,
+            "AudioRenderer should check pending volume/mute changes while holding m_paramMutex")
 
 
 if __name__ == "__main__":
