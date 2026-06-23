@@ -372,18 +372,29 @@ AudioFrame DecodeWorker::makeAudioFrame(AVFramePtr frame) const
     const int bytesPerSample = std::max(0, av_get_bytes_per_sample(format));
     const bool planar = av_sample_fmt_is_planar(format) != 0;
     const int channels = frame->ch_layout.nb_channels;
-    const int planeCount = planar ? channels : 1;
-    const int samplesPerPlane = planar ? frame->nb_samples : frame->nb_samples * channels;
-    const int bytesPerPlane = samplesPerPlane * bytesPerSample;
+    const int totalBytes = frame->nb_samples * channels * bytesPerSample;
 
     std::vector<std::byte> samples;
-    samples.reserve(static_cast<std::size_t>(std::max(0, bytesPerPlane * planeCount)));
-    for (int plane = 0; plane < planeCount; ++plane)
+    samples.reserve(static_cast<std::size_t>(std::max(0, totalBytes)));
+    if (planar)
     {
-        const auto* begin = reinterpret_cast<const std::byte*>(frame->extended_data[plane]);
-        if (!begin || bytesPerPlane <= 0)
-            continue;
-        samples.insert(samples.end(), begin, begin + bytesPerPlane);
+        for (int sample = 0; sample < frame->nb_samples; ++sample)
+        {
+            for (int channel = 0; channel < channels; ++channel)
+            {
+                const auto* planeData = reinterpret_cast<const std::byte*>(frame->extended_data[channel]);
+                if (!planeData || bytesPerSample <= 0)
+                    continue;
+                const auto* begin = planeData + sample * bytesPerSample;
+                samples.insert(samples.end(), begin, begin + bytesPerSample);
+            }
+        }
+    }
+    else
+    {
+        const auto* begin = reinterpret_cast<const std::byte*>(frame->extended_data[0]);
+        if (begin && totalBytes > 0)
+            samples.insert(samples.end(), begin, begin + totalBytes);
     }
 
     auto storage = std::make_shared<std::vector<std::byte>>(std::move(samples));

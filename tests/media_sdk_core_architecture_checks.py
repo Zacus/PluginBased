@@ -145,6 +145,9 @@ def main() -> None:
     require("DecodeWorker" in playback_controller_header + playback_controller_cpp and
             "submit" in playback_controller_cpp,
             "PlaybackController should submit commands to DecodeWorker")
+    require("for (int sample = 0; sample < frame->nb_samples; ++sample)" in decode_worker_cpp and
+            "planeData + sample * bytesPerSample" in decode_worker_cpp,
+            "DecodeWorker should interleave planar audio samples before publishing SDK AudioFrame")
 
     forbidden_tokens = [
         "#include <Q",
