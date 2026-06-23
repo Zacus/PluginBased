@@ -59,5 +59,6 @@ private:
     int m_pendingSeekGeneration = 0;
     bool m_hasAudio = false;
     bool m_hasVideo = false;
+    bool m_paused = false;
     bool m_directNativeVideoEnabled = false;
 };

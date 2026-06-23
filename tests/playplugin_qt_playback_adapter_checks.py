@@ -36,6 +36,11 @@ def main() -> None:
             "QtPlaybackAdapter should marshal SDK events to the Qt object thread")
     require("VideoFrameQueue" in adapter_h and "AudioFrameQueue" in adapter_h,
             "QtPlaybackAdapter should bridge SDK frames into existing PlayPlugin queues")
+    require("bool m_paused" in adapter_h and "if (m_paused)" in adapter_cpp,
+            "QtPlaybackAdapter should drop delayed frame events while playback is paused")
+    require("tryPush" in adapter_cpp and "m_audioQueue->push(" not in adapter_cpp and
+            "m_videoQueue->push(" not in adapter_cpp,
+            "QtPlaybackAdapter should never block the Qt thread on frame queue push")
     require("AudioFrameEvent" in adapter_cpp and "VideoFrameEvent" in adapter_cpp,
             "QtPlaybackAdapter should handle SDK audio and video frame events")
     require("mediaInfoReady" in adapter_h and "endOfFile" in adapter_h and "seekCompleted" in adapter_h,

@@ -87,6 +87,7 @@ void QtPlaybackAdapter::openFile(const QUrl& url)
     m_pendingSeekGeneration = 0;
     m_hasAudio = false;
     m_hasVideo = false;
+    m_paused = false;
     if (m_videoQueue)
     {
         m_videoQueue->resetAbort();
@@ -109,6 +110,7 @@ void QtPlaybackAdapter::openFile(const QUrl& url)
 
 void QtPlaybackAdapter::setPaused(bool paused)
 {
+    m_paused = paused;
     if (!m_player)
         return;
     paused ? m_player->pause() : m_player->play();
@@ -185,9 +187,15 @@ void QtPlaybackAdapter::handleEvent(const media_sdk::PlayerEvent& event)
     if (std::holds_alternative<media_sdk::EndOfFileEvent>(event.payload))
     {
         if (m_videoQueue && m_hasVideo)
-            m_videoQueue->push(nullptr, m_currentSerial, true);
+        {
+            m_videoQueue->flush();
+            m_videoQueue->tryPush(nullptr, m_currentSerial, true);
+        }
         if (m_audioQueue && m_hasAudio)
-            m_audioQueue->push(nullptr, m_currentSerial, true);
+        {
+            m_audioQueue->flush();
+            m_audioQueue->tryPush(nullptr, m_currentSerial, true);
+        }
         emit endOfFile();
         return;
     }
@@ -200,18 +208,26 @@ void QtPlaybackAdapter::handleEvent(const media_sdk::PlayerEvent& event)
 
     if (const auto* payload = std::get_if<media_sdk::AudioFrameEvent>(&event.payload))
     {
+        if (m_paused)
+            return;
         if (m_audioQueue)
-            m_audioQueue->push(makeAudioFrame(payload->frame), m_currentSerial);
+        {
+            auto frame = makeAudioFrame(payload->frame);
+            if (frame && !m_audioQueue->tryPush(std::move(frame), m_currentSerial))
+                LOG_DEBUG("QtPlaybackAdapter: dropped audio frame because queue is full");
+        }
         return;
     }
 
     if (const auto* payload = std::get_if<media_sdk::VideoFrameEvent>(&event.payload))
     {
+        if (m_paused)
+            return;
         if (m_videoQueue)
         {
             auto frame = makeVideoFrame(payload->frame);
-            if (frame)
-                m_videoQueue->push(std::move(frame), m_currentSerial);
+            if (frame && !m_videoQueue->tryPush(std::move(frame), m_currentSerial))
+                LOG_DEBUG("QtPlaybackAdapter: dropped video frame because queue is full");
         }
     }
 }
