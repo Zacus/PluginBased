@@ -38,17 +38,32 @@ def main() -> None:
             "media_sdk_core should compile the phase 2 primitive sources")
     require("MediaSdkCorePrimitivesTest" in sdk_cmake and "media_sdk_core_primitives" in sdk_cmake,
             "media_sdk_core should register primitive C++ tests")
+    require("MediaSdkCoreFrameContractTest" in sdk_cmake and "media_sdk_core_frame_contract" in sdk_cmake,
+            "media_sdk_core should register frame contract C++ tests")
 
     expected_headers = [
         "PlayerConfig.h",
         "Error.h",
         "Result.h",
+        "Frame.h",
         "MediaEvents.h",
         "Player.h",
     ]
     for header in expected_headers:
         require((PUBLIC_INCLUDE / header).exists(),
                 f"missing public SDK header: {header}")
+
+    frame_header = read(PUBLIC_INCLUDE / "Frame.h")
+    for token in ["PlaneView", "NativeHandle", "VideoFrame", "AudioFrame",
+                  "std::chrono::microseconds", "std::shared_ptr<void> storage"]:
+        require(token in frame_header,
+                f"Frame.h should expose the phase 3 frame contract token: {token}")
+
+    media_events_header = read(PUBLIC_INCLUDE / "MediaEvents.h")
+    for token in ["MediaInfo", "PositionChangedEvent", "AudioFrameEvent",
+                  "VideoFrameEvent", "EndOfFileEvent"]:
+        require(token in media_events_header,
+                f"MediaEvents.h should expose the phase 3 event token: {token}")
 
     forbidden_tokens = [
         "#include <Q",

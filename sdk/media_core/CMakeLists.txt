@@ -38,4 +38,22 @@ if(BUILD_TESTING)
     add_test(NAME media_sdk_core_primitives
         COMMAND $<TARGET_FILE:MediaSdkCorePrimitivesTest>
     )
+
+    add_executable(MediaSdkCoreFrameContractTest
+        tests/tst_media_core_frame_contract.cpp
+    )
+    target_compile_features(MediaSdkCoreFrameContractTest PRIVATE cxx_std_20)
+    set_target_properties(MediaSdkCoreFrameContractTest PROPERTIES
+        CXX_EXTENSIONS OFF
+        AUTOMOC OFF
+        AUTOUIC OFF
+        AUTORCC OFF
+    )
+    target_include_directories(MediaSdkCoreFrameContractTest PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/include"
+    )
+    target_link_libraries(MediaSdkCoreFrameContractTest PRIVATE media_sdk_core)
+    add_test(NAME media_sdk_core_frame_contract
+        COMMAND $<TARGET_FILE:MediaSdkCoreFrameContractTest>
+    )
 endif()

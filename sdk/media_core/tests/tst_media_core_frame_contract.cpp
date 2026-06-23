@@ -1,0 +1,139 @@
+#include "media_sdk/Frame.h"
+#include "media_sdk/MediaEvents.h"
+
+#include <cassert>
+#include <chrono>
+#include <cstddef>
+#include <cstdint>
+#include <memory>
+#include <span>
+#include <variant>
+#include <vector>
+
+using namespace std::chrono_literals;
+
+namespace {
+
+struct StorageProbe {
+    explicit StorageProbe(bool& destroyed)
+        : destroyed(destroyed)
+    {
+    }
+
+    ~StorageProbe()
+    {
+        destroyed = true;
+    }
+
+    bool& destroyed;
+};
+
+void testVideoFrameMetadataAndStorage()
+{
+    bool destroyed = false;
+    auto storage = std::make_shared<StorageProbe>(destroyed);
+    std::vector<std::byte> yPlane(16);
+    std::vector<std::byte> uPlane(4);
+    std::vector<std::byte> vPlane(4);
+
+    media_sdk::PlaneView planes[] = {
+        { yPlane.data(), 4, 4, 4 },
+        { uPlane.data(), 2, 2, 2 },
+        { vPlane.data(), 2, 2, 2 },
+    };
+
+    media_sdk::VideoFrame frame({
+        .width = 4,
+        .height = 4,
+        .pixelFormat = media_sdk::PixelFormat::Yuv420P,
+        .colorRange = media_sdk::ColorRange::Full,
+        .colorSpace = media_sdk::ColorSpace::Bt709,
+        .pts = 42'000us,
+        .planes = std::span<const media_sdk::PlaneView>(planes),
+        .nativeHandle = {},
+        .storage = storage,
+    });
+
+    storage.reset();
+    assert(!destroyed);
+    assert(frame.width() == 4);
+    assert(frame.height() == 4);
+    assert(frame.pixelFormat() == media_sdk::PixelFormat::Yuv420P);
+    assert(frame.colorRange() == media_sdk::ColorRange::Full);
+    assert(frame.colorSpace() == media_sdk::ColorSpace::Bt709);
+    assert(frame.pts() == 42'000us);
+    assert(frame.planes().size() == 3);
+    assert(frame.planes()[0].stride == 4);
+
+    auto copy = frame;
+    assert(!destroyed);
+    frame = {};
+    assert(!destroyed);
+    copy = {};
+    assert(destroyed);
+}
+
+void testNativeHandleMetadata()
+{
+    int nativeObject = 7;
+    media_sdk::NativeHandle handle {
+        .kind = media_sdk::NativeHandleKind::VideoToolboxPixelBuffer,
+        .handle = &nativeObject,
+        .pixelFormat = 875704438,
+    };
+
+    media_sdk::VideoFrame frame({
+        .width = 1920,
+        .height = 1080,
+        .pixelFormat = media_sdk::PixelFormat::Native,
+        .colorRange = media_sdk::ColorRange::Limited,
+        .colorSpace = media_sdk::ColorSpace::Bt709,
+        .pts = 120'000us,
+        .planes = {},
+        .nativeHandle = handle,
+        .storage = std::make_shared<int>(nativeObject),
+    });
+
+    assert(frame.nativeHandle().kind == media_sdk::NativeHandleKind::VideoToolboxPixelBuffer);
+    assert(frame.nativeHandle().handle == &nativeObject);
+    assert(frame.nativeHandle().pixelFormat == 875704438);
+}
+
+void testAudioFrameAndEvents()
+{
+    std::vector<std::byte> samples(128);
+    media_sdk::AudioFrame frame({
+        .sampleFormat = media_sdk::AudioSampleFormat::Float32Interleaved,
+        .sampleRate = 48'000,
+        .channels = 2,
+        .pts = 15'000us,
+        .samples = std::span<const std::byte>(samples),
+        .storage = std::make_shared<std::vector<std::byte>>(samples),
+    });
+
+    assert(frame.sampleFormat() == media_sdk::AudioSampleFormat::Float32Interleaved);
+    assert(frame.sampleRate() == 48'000);
+    assert(frame.channels() == 2);
+    assert(frame.pts() == 15'000us);
+    assert(frame.samples().size() == samples.size());
+
+    media_sdk::PlayerEvent videoEvent {
+        media_sdk::VideoFrameEvent { media_sdk::VideoFrame {} }
+    };
+    media_sdk::PlayerEvent audioEvent {
+        media_sdk::AudioFrameEvent { media_sdk::AudioFrame {} }
+    };
+
+    assert(std::holds_alternative<media_sdk::VideoFrameEvent>(videoEvent.payload));
+    assert(std::holds_alternative<media_sdk::AudioFrameEvent>(audioEvent.payload));
+}
+
+}
+
+int main()
+{
+    testVideoFrameMetadataAndStorage();
+    testNativeHandleMetadata();
+    testAudioFrameAndEvents();
+    return 0;
+}
