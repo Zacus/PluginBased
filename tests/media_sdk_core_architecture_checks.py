@@ -44,6 +44,8 @@ def main() -> None:
             "media_sdk_core should register FFmpeg integration tests")
     require("MediaSdkCoreVideoFrameProcessorTest" in sdk_cmake and "media_sdk_core_video_frame_processor" in sdk_cmake,
             "media_sdk_core should register video frame processor tests")
+    require("MediaSdkCorePlaybackWorkerTest" in sdk_cmake and "media_sdk_core_playback_worker" in sdk_cmake,
+            "media_sdk_core should register playback worker tests")
     require("FFmpeg::all" in sdk_cmake,
             "media_sdk_core should link FFmpeg for internal demux/decode support")
     require("FFmpegUtils.h" in sdk_cmake and "Demuxer.cpp" in sdk_cmake and
@@ -51,6 +53,9 @@ def main() -> None:
             "media_sdk_core should compile phase 4 FFmpeg internal sources")
     require("VideoFrameProcessor.cpp" in sdk_cmake and "HardwareDecoderBackend.h" in sdk_cmake,
             "media_sdk_core should compile phase 5 video processing internals")
+    require("DecodeWorker.cpp" in sdk_cmake and "PlaybackController.cpp" in sdk_cmake and
+            "QueuePolicy.h" in sdk_cmake,
+            "media_sdk_core should compile phase 6 playback worker internals")
 
     expected_headers = [
         "PlayerConfig.h",
@@ -98,6 +103,17 @@ def main() -> None:
         require(source.exists(),
                 f"missing phase 5 SDK internal source: {source.relative_to(ROOT)}")
 
+    phase6_sources = [
+        SDK_ROOT / "src" / "DecodeWorker.h",
+        SDK_ROOT / "src" / "DecodeWorker.cpp",
+        SDK_ROOT / "src" / "PlaybackController.h",
+        SDK_ROOT / "src" / "PlaybackController.cpp",
+        SDK_ROOT / "src" / "QueuePolicy.h",
+    ]
+    for source in phase6_sources:
+        require(source.exists(),
+                f"missing phase 6 SDK internal source: {source.relative_to(ROOT)}")
+
     hardware_backend_header = read(SDK_ROOT / "src" / "HardwareDecoderBackend.h")
     require("std::string_view name() const" in hardware_backend_header,
             "SDK hardware decoder backend names should use std::string_view, not QString")
@@ -107,6 +123,23 @@ def main() -> None:
                   "ColorRange::Full", "ColorSpace::Bt709", "NativeHandleKind::VideoToolboxPixelBuffer"]:
         require(token in video_processor_cpp,
                 f"VideoFrameProcessor should map video frame metadata token: {token}")
+
+    decode_worker_header = read(SDK_ROOT / "src" / "DecodeWorker.h")
+    decode_worker_cpp = read(SDK_ROOT / "src" / "DecodeWorker.cpp")
+    playback_controller_header = read(SDK_ROOT / "src" / "PlaybackController.h")
+    playback_controller_cpp = read(SDK_ROOT / "src" / "PlaybackController.cpp")
+    for token in ["std::jthread", "std::stop_token", "IEventSink&"]:
+        require(token in decode_worker_header + decode_worker_cpp,
+                f"DecodeWorker should use phase 6 async worker token: {token}")
+    decode_worker_text = decode_worker_header + decode_worker_cpp
+    for token in ["ClockSync", "FrameScheduler", "StateChangedEvent", "EndOfFileEvent"]:
+        require(token in decode_worker_text,
+                f"DecodeWorker should integrate playback/event token: {token}")
+    require("QueuePolicy::shouldDropVideoWhenFull" in decode_worker_cpp,
+            "DecodeWorker should apply queue policy for video backpressure/drop decisions")
+    require("DecodeWorker" in playback_controller_header + playback_controller_cpp and
+            "submit" in playback_controller_cpp,
+            "PlaybackController should submit commands to DecodeWorker")
 
     forbidden_tokens = [
         "#include <Q",

@@ -6,6 +6,9 @@ add_library(media_sdk_core STATIC
     src/FrameScheduler.cpp
     src/HardwareDecoderBackend.h
     src/Player.cpp
+    src/PlaybackController.cpp
+    src/DecodeWorker.cpp
+    src/QueuePolicy.h
     src/StreamDecoder.cpp
     src/VideoFrameProcessor.cpp
 )
@@ -103,5 +106,24 @@ if(BUILD_TESTING)
     target_link_libraries(MediaSdkCoreVideoFrameProcessorTest PRIVATE media_sdk_core FFmpeg::all)
     add_test(NAME media_sdk_core_video_frame_processor
         COMMAND $<TARGET_FILE:MediaSdkCoreVideoFrameProcessorTest>
+    )
+
+    add_executable(MediaSdkCorePlaybackWorkerTest
+        tests/tst_media_core_playback_worker.cpp
+    )
+    target_compile_features(MediaSdkCorePlaybackWorkerTest PRIVATE cxx_std_20)
+    set_target_properties(MediaSdkCorePlaybackWorkerTest PROPERTIES
+        CXX_EXTENSIONS OFF
+        AUTOMOC OFF
+        AUTOUIC OFF
+        AUTORCC OFF
+    )
+    target_include_directories(MediaSdkCorePlaybackWorkerTest PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/include"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src"
+    )
+    target_link_libraries(MediaSdkCorePlaybackWorkerTest PRIVATE media_sdk_core FFmpeg::all)
+    add_test(NAME media_sdk_core_playback_worker
+        COMMAND $<TARGET_FILE:MediaSdkCorePlaybackWorkerTest>
     )
 endif()
