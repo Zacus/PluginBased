@@ -132,11 +132,16 @@ def main() -> None:
         require(token in decode_worker_header + decode_worker_cpp,
                 f"DecodeWorker should use phase 6 async worker token: {token}")
     decode_worker_text = decode_worker_header + decode_worker_cpp
-    for token in ["ClockSync", "FrameScheduler", "StateChangedEvent", "EndOfFileEvent"]:
+    for token in ["ClockSync", "StateChangedEvent", "EndOfFileEvent"]:
         require(token in decode_worker_text,
                 f"DecodeWorker should integrate playback/event token: {token}")
-    require("QueuePolicy::shouldDropVideoWhenFull" in decode_worker_cpp,
-            "DecodeWorker should apply queue policy for video backpressure/drop decisions")
+    require("FrameScheduler::decide" not in decode_worker_cpp and
+            "m_videoQueue" not in decode_worker_cpp,
+            "DecodeWorker should not pre-schedule or drop video before the Qt presenter")
+    require("emitEvent({ VideoFrameEvent { std::move(frame) } })" in decode_worker_cpp,
+            "DecodeWorker should emit decoded video frames directly to the presenter boundary")
+    require("QueuePolicy::shouldDropVideoWhenFull" not in decode_worker_cpp,
+            "DecodeWorker should leave presenter backpressure/drop policy to the Qt adapter layer")
     require("DecodeWorker" in playback_controller_header + playback_controller_cpp and
             "submit" in playback_controller_cpp,
             "PlaybackController should submit commands to DecodeWorker")

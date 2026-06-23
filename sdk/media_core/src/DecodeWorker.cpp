@@ -1,10 +1,5 @@
 #include "DecodeWorker.h"
 
-#include "FrameScheduler.h"
-#include "QueuePolicy.h"
-
-#include <algorithm>
-#include <thread>
 #include <utility>
 #include <vector>
 
@@ -21,7 +16,6 @@ MediaError makeError(MediaErrorCode code, std::string message, std::string detai
 DecodeWorker::DecodeWorker(PlayerConfig config, IEventSink& events)
     : m_config(std::move(config))
     , m_events(events)
-    , m_videoQueue(static_cast<std::size_t>(std::max(1, m_config.videoQueueCapacity)))
 {
     m_thread = std::make_unique<WorkerThread>([this](WorkerStopToken stopToken) {
         run(stopToken);
@@ -176,8 +170,6 @@ void DecodeWorker::handleOpen(const std::filesystem::path& path)
     m_playing = false;
     m_clock.invalidate();
     m_clock.setPaused(true);
-    m_videoQueue.resetAbort();
-    m_videoQueue.flush();
 
     emitEvent({ MediaInfoEvent { m_media.info } });
     emitState(PlayerState::Paused);
@@ -270,7 +262,6 @@ void DecodeWorker::handleSeek(std::chrono::milliseconds position)
         avcodec_flush_buffers(m_media.videoCodecContext.get());
     if (m_media.audioCodecContext)
         avcodec_flush_buffers(m_media.audioCodecContext.get());
-    m_videoQueue.flush();
     m_clock.invalidate();
 
     emitEvent({ PositionChangedEvent { position } });
@@ -281,7 +272,6 @@ void DecodeWorker::closeMedia()
     if (!m_hasMedia)
         return;
 
-    m_videoQueue.flush();
     m_videoFrameProcessor.reset();
     m_clock.invalidate();
     m_media = {};
@@ -372,32 +362,7 @@ void DecodeWorker::emitError(MediaError error)
 
 bool DecodeWorker::emitVideoFrame(VideoFrame frame)
 {
-    if (!m_videoQueue.tryPush(frame))
-    {
-        if (QueuePolicy::shouldDropVideoWhenFull(m_media.audioStreamIndex >= 0))
-        {
-            ++m_decodeStats.queueDroppedVideoFrames;
-            return true;
-        }
-        if (!m_videoQueue.push(frame))
-            return false;
-    }
-
-    FrameQueue<VideoFrame>::Entry entry;
-    while (m_videoQueue.tryPop(entry))
-    {
-        if (entry.eof)
-            continue;
-
-        const auto decision = FrameScheduler::decide(entry.frame.pts(), m_clock.currentTime());
-        if (decision.action == FrameScheduleAction::Drop)
-            continue;
-        if (decision.action == FrameScheduleAction::Wait && decision.wait > std::chrono::microseconds { 0 })
-            std::this_thread::sleep_for(std::min(decision.wait, std::chrono::microseconds { 5'000 }));
-
-        emitEvent({ VideoFrameEvent { std::move(entry.frame) } });
-    }
-
+    emitEvent({ VideoFrameEvent { std::move(frame) } });
     return true;
 }
 

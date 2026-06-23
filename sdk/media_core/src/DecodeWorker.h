@@ -2,7 +2,6 @@
 
 #include "ClockSync.h"
 #include "Demuxer.h"
-#include "FrameQueue.h"
 #include "StreamDecoder.h"
 #include "VideoFrameProcessor.h"
 #include "media_sdk/Player.h"
@@ -156,7 +155,6 @@ private:
     VideoFrameProcessor m_videoFrameProcessor;
     DecodePerformanceStats m_decodeStats;
     ClockSync m_clock;
-    FrameQueue<VideoFrame> m_videoQueue;
     OpenedMedia m_media;
     bool m_hasMedia = false;
     bool m_playing = false;
