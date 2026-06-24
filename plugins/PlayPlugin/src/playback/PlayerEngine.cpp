@@ -71,6 +71,24 @@ void PlayerEngine::setMuted(bool m)
     emit mutedChanged(m_muted);
 }
 
+void PlayerEngine::setPlaybackRuntimeMode(int mode)
+{
+    if (mode != LegacyQt && mode != SdkRuntime)
+        return;
+    if (m_playbackRuntimeMode == mode)
+        return;
+
+    stop();
+    m_pipeline->clearSurface();
+    m_completion.resetForStop();
+    m_errorString.clear();
+    m_playbackRuntimeMode = mode;
+    m_pipeline->setRuntimeMode(mode == SdkRuntime
+                                   ? ::PlaybackRuntimeMode::SdkRuntime
+                                   : ::PlaybackRuntimeMode::LegacyQt);
+    emit playbackRuntimeModeChanged(m_playbackRuntimeMode);
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // 播放控制
 // ─────────────────────────────────────────────────────────────────────────────

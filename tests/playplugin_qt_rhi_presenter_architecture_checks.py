@@ -11,6 +11,10 @@ SURFACE_CPP = PLAYPLUGIN / "src" / "video" / "FFmpegSurface.cpp"
 VIDEO_NODE_CPP = PLAYPLUGIN / "src" / "video" / "render" / "VideoNode.cpp"
 METAL_BRIDGE_MM = PLAYPLUGIN / "src" / "video" / "native" / "AppleMetalVideoTextureBridge.mm"
 PLAYPLUGIN_CMAKE = PLAYPLUGIN / "CMakeLists.txt"
+PLAYBACK_PIPELINE_H = PLAYPLUGIN / "src" / "playback" / "PlaybackPipeline.h"
+PLAYBACK_PIPELINE_CPP = PLAYPLUGIN / "src" / "playback" / "PlaybackPipeline.cpp"
+PLAYER_ENGINE_H = PLAYPLUGIN / "src" / "playback" / "PlayerEngine.h"
+PLAYER_ENGINE_CPP = PLAYPLUGIN / "src" / "playback" / "PlayerEngine.cpp"
 ROOT_CMAKE = ROOT / "CMakeLists.txt"
 
 FORBIDDEN_RUNTIME_TOKENS = (
@@ -131,11 +135,45 @@ def check_cmake_registration() -> None:
     assert_contains(root_cmake, "playplugin_qt_rhi_presenter_architecture_checks", ROOT_CMAKE)
 
 
+def check_runtime_mode_switch_contract() -> None:
+    pipeline_header = read(PLAYBACK_PIPELINE_H)
+    pipeline_source = read(PLAYBACK_PIPELINE_CPP)
+    engine_header = read(PLAYER_ENGINE_H)
+    engine_source = read(PLAYER_ENGINE_CPP)
+    playplugin_cmake = read(PLAYPLUGIN_CMAKE)
+    combined = "\n".join((pipeline_header, pipeline_source, engine_header, engine_source))
+
+    for token in ("PlaybackRuntimeMode", "LegacyQt", "SdkRuntime"):
+        assert_contains(combined, token, PLAYBACK_PIPELINE_H)
+
+    assert_contains(engine_header, "playbackRuntimeMode", PLAYER_ENGINE_H)
+    assert_contains(engine_source, "setPlaybackRuntimeMode", PLAYER_ENGINE_CPP)
+    assert_contains(engine_source, "stop();", PLAYER_ENGINE_CPP)
+    assert_contains(engine_source, "m_completion.resetForStop()", PLAYER_ENGINE_CPP)
+    assert_contains(engine_source, "m_errorString.clear()", PLAYER_ENGINE_CPP)
+
+    assert_contains(pipeline_source, "setRuntimeMode", PLAYBACK_PIPELINE_CPP)
+    assert_contains(pipeline_source, "stopComponents();", PLAYBACK_PIPELINE_CPP)
+    assert_contains(pipeline_source, "clearSurface();", PLAYBACK_PIPELINE_CPP)
+    assert_contains(pipeline_source, "m_videoQueue.flush()", PLAYBACK_PIPELINE_CPP)
+    assert_contains(pipeline_source, "m_audioQueue.flush()", PLAYBACK_PIPELINE_CPP)
+
+    assert_contains(pipeline_source, "connectLegacySurface", PLAYBACK_PIPELINE_CPP)
+    assert_contains(pipeline_source, "disconnectLegacySurface", PLAYBACK_PIPELINE_CPP)
+    assert_contains(pipeline_source, "createSdkRuntimeChain", PLAYBACK_PIPELINE_CPP)
+    assert_contains(pipeline_source, "destroySdkRuntimeChain", PLAYBACK_PIPELINE_CPP)
+    assert_contains(pipeline_source, "QtRhiVideoPresenter", PLAYBACK_PIPELINE_CPP)
+    assert_contains(pipeline_source, "media_sdk::runtime::RuntimePlayer", PLAYBACK_PIPELINE_CPP)
+    assert_contains(pipeline_source, "media_sdk::platform::macos::CoreAudioAudioOutput", PLAYBACK_PIPELINE_CPP)
+    assert_contains(playplugin_cmake, "media_sdk::platform_audio_macos", PLAYPLUGIN_CMAKE)
+
+
 def main() -> None:
     check_runtime_boundary()
     check_presenter_contract()
     check_scene_graph_dependency_location()
     check_cmake_registration()
+    check_runtime_mode_switch_contract()
 
 
 if __name__ == "__main__":

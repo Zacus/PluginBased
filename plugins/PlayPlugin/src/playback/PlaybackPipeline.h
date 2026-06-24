@@ -15,6 +15,21 @@
 #include <memory>
 
 class FFmpegSurface;
+class QtRhiVideoPresenter;
+
+namespace media_sdk::runtime {
+class RuntimePlayer;
+}
+
+namespace media_sdk::platform::macos {
+class CoreAudioAudioOutput;
+}
+
+enum class PlaybackRuntimeMode
+{
+    LegacyQt,
+    SdkRuntime
+};
 
 class PlaybackPipeline : public QObject
 {
@@ -23,6 +38,9 @@ class PlaybackPipeline : public QObject
 public:
     explicit PlaybackPipeline(QObject* parent = nullptr);
     ~PlaybackPipeline() override;
+
+    PlaybackRuntimeMode runtimeMode() const { return m_runtimeMode; }
+    void setRuntimeMode(PlaybackRuntimeMode mode);
 
     void setSurface(FFmpegSurface* surface);
     void clearSurface();
@@ -61,6 +79,10 @@ private slots:
     void onNativeRenderingFailed();
 
 private:
+    void connectLegacySurface();
+    void disconnectLegacySurface();
+    void createSdkRuntimeChain();
+    void destroySdkRuntimeChain();
     void updateNativeVideoRenderingEnabled();
 
     VideoFrameQueue m_videoQueue { 30 };
@@ -70,7 +92,13 @@ private:
     std::unique_ptr<QtPlaybackAdapter> m_adapter;
     std::unique_ptr<AudioRenderer> m_audioRenderer;
     std::unique_ptr<VideoRenderer> m_videoRenderer;
+    std::unique_ptr<QtRhiVideoPresenter> m_sdkVideoPresenter;
+    std::unique_ptr<media_sdk::runtime::RuntimePlayer> m_sdkRuntimePlayer;
+#if defined(Q_OS_APPLE)
+    std::unique_ptr<media_sdk::platform::macos::CoreAudioAudioOutput> m_sdkAudioOutput;
+#endif
 
     QPointer<FFmpegSurface> m_surface;
+    PlaybackRuntimeMode m_runtimeMode = PlaybackRuntimeMode::LegacyQt;
     bool m_nativeVideoRenderingEnabled = false;
 };

@@ -144,6 +144,7 @@ target_link_libraries(PlayPlugin PRIVATE
 
 if(APPLE)
     target_link_libraries(PlayPlugin PRIVATE
+        media_sdk::platform_audio_macos
         "-framework CoreVideo"
         "-framework Metal"
         "-framework QuartzCore"

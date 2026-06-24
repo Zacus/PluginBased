@@ -39,10 +39,14 @@ class PlayerEngine : public QObject
     Q_PROPERTY(bool       muted         READ muted   WRITE setMuted  NOTIFY mutedChanged)
     Q_PROPERTY(MediaInfo* currentMedia  READ currentMedia     NOTIFY currentMediaChanged)
     Q_PROPERTY(QString    errorString   READ errorString      NOTIFY errorOccurred)
+    Q_PROPERTY(int        playbackRuntimeMode READ playbackRuntimeModeInt
+                   WRITE setPlaybackRuntimeMode NOTIFY playbackRuntimeModeChanged)
 
 public:
     enum PlaybackState { Stopped = 0, Playing = 1, Paused = 2 };
     Q_ENUM(PlaybackState)
+    enum PlaybackRuntimeMode { LegacyQt = 0, SdkRuntime = 1 };
+    Q_ENUM(PlaybackRuntimeMode)
 
     explicit PlayerEngine(QObject* parent = nullptr);
     ~PlayerEngine() override;
@@ -55,9 +59,11 @@ public:
     bool          muted()            const { return m_muted; }
     MediaInfo*    currentMedia()     const { return m_mediaInfo; }
     QString       errorString()      const { return m_errorString; }
+    int           playbackRuntimeModeInt() const { return m_playbackRuntimeMode; }
 
     void setVolume(float v);
     void setMuted(bool m);
+    void setPlaybackRuntimeMode(int mode);
 
     /** QML 侧把 FFmpegSurface 对象传入，Engine 连接管线输出到 surface */
     Q_INVOKABLE void setSurface(FFmpegSurface* surface);
@@ -76,6 +82,7 @@ signals:
     void durationChanged(qint64 durMs);
     void volumeChanged(float volume);
     void mutedChanged(bool muted);
+    void playbackRuntimeModeChanged(int mode);
     void currentMediaChanged(MediaInfo* info);
     void errorOccurred(const QString& msg);
     void endOfMedia();
@@ -115,6 +122,7 @@ private:
     qint64        m_duration   = 0;
     float         m_volume     = 1.0f;
     bool          m_muted      = false;
+    int           m_playbackRuntimeMode = LegacyQt;
     PlaybackCompletionTracker m_completion;
     int           m_seekGeneration = 0;
     QString       m_errorString;
