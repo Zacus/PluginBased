@@ -94,6 +94,7 @@ add_subdirectory(logger)
 add_subdirectory(plugin)
 add_subdirectory(core)
 add_subdirectory(sdk/media_core)
+add_subdirectory(sdk/media_playback_runtime)
 
 # ── UI 组件库：独立仓库，通过 FetchContent 引入 ───────────────
 # 生产环境替换 SOURCE_DIR 为 GIT_REPOSITORY + GIT_TAG：
@@ -218,6 +219,10 @@ if(BUILD_TESTING)
     )
     add_test(NAME media_sdk_core_architecture_checks
         COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tests/media_sdk_core_architecture_checks.py"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+    )
+    add_test(NAME media_sdk_playback_runtime_architecture_checks
+        COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tests/media_sdk_playback_runtime_architecture_checks.py"
         WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
     )
     add_test(NAME plugin_generator_checks
