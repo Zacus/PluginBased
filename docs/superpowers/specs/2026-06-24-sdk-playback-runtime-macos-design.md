@@ -60,6 +60,15 @@ CoreAudioAudioOutput -> media_sdk_playback_runtime interfaces
 media_sdk_core 不依赖 runtime、Qt 或 CoreAudio presenter
 ```
 
+`media_sdk_playback_runtime` 只依赖 `IAudioOutput`、`IVideoPresenter` 等接口，不直接 include 或创建 `CoreAudioAudioOutput`。具体平台实现由应用 composition root 或 factory 注入：
+
+```text
+PlayPlugin / app composition root
+  creates CoreAudioAudioOutput
+  creates QtRhiVideoPresenter
+  injects both into RuntimePlayer
+```
+
 ## 分层职责
 
 ### media_sdk_core
@@ -86,7 +95,7 @@ Runtime 负责：
 - 拥有 `media_sdk::Player` 或内部 core playback controller。
 - 接收 core event，并写入 runtime AV 队列。
 - 管理 audio/video queue capacity、blocking backpressure、abort、flush、serial/generation。
-- 管理 `CoreAudioAudioOutput` 写入和音频主时钟。
+- 通过注入的 `IAudioOutput` 管理音频写入和音频主时钟。
 - 根据 master clock 决定视频帧 `Wait`、`Render`、`Drop`。
 - 调用 `IVideoPresenter` 展示到点的视频帧。
 - 管理 seek/pause/resume/stop/open/EOF drain。
@@ -124,6 +133,9 @@ struct AudioFormat {
 
 struct ClockSnapshot {
     std::chrono::microseconds position { 0 };
+    std::chrono::microseconds hardwareLatency { 0 };
+    std::chrono::microseconds queuedDuration { 0 };
+    std::uint64_t generation = 0;
     bool valid = false;
     bool paused = false;
 };
@@ -142,7 +154,14 @@ public:
 };
 ```
 
-`CoreAudioAudioOutput` 实现 `IAudioOutput`。它负责 AudioUnit/AudioQueue 初始化、音频设备写入、pause/resume/flush 和真实播放进度 clock。runtime 使用该 clock 作为默认 master clock。
+`CoreAudioAudioOutput` 实现 `IAudioOutput`，但由 composition root 注入 runtime。它负责 AudioUnit/AudioQueue 初始化、音频设备写入、pause/resume/flush 和真实播放进度 clock。
+
+CoreAudio clock 约束：
+
+- `clock().position` 表示估算的实际硬件播放位置，不是已经写入 CoreAudio 的字节位置。
+- 实现必须考虑 device sample time、host time、已排队帧数、hardware latency 和 pause/flush 后的基准重置。
+- 如果采用 CoreAudio pull callback，`write()` 可以表示向 SDK runtime 内部 audio ring buffer 提交数据；callback 消费后更新 device clock snapshot。
+- `flush()` 必须递增 audio clock generation，使 runtime 能丢弃 flush 前的 pending audio/video sync 决策。
 
 ### Video Presenter
 
@@ -167,17 +186,44 @@ struct PresentTiming {
     std::chrono::microseconds lateness { 0 };
 };
 
+using PresentId = std::uint64_t;
+
+struct PresentResult {
+    PresentId id = 0;
+    PresentStatus status = PresentStatus::Failed;
+};
+
+struct PresentCompletion {
+    PresentId id = 0;
+    PresentStatus status = PresentStatus::Failed;
+    std::string detail;
+};
+
+class IVideoPresenterEvents {
+public:
+    virtual ~IVideoPresenterEvents() = default;
+    virtual void onPresentComplete(PresentCompletion completion) = 0;
+};
+
 class IVideoPresenter {
 public:
     virtual ~IVideoPresenter() = default;
 
     virtual VideoPresenterCapabilities capabilities() const = 0;
-    virtual PresentStatus present(VideoFrame frame, PresentTiming timing) = 0;
+    virtual void setEvents(IVideoPresenterEvents* events) = 0;
+    virtual PresentResult present(VideoFrame frame, PresentTiming timing) = 0;
     virtual void clear() = 0;
 };
 ```
 
 `QtRhiVideoPresenter` 实现 `IVideoPresenter`，但 SDK runtime 不知道 QObject。Qt presenter 内部用 `QMetaObject::invokeMethod()` 或等价机制 marshal 到 GUI 线程，再由 `FFmpegSurface` 和 Scene Graph 完成渲染。
+
+异步完成规则：
+
+- `present()` 返回 `Queued` 只表示 presenter 接收了提交，不表示 native texture 已创建或已经绘制。
+- native texture 创建失败、设备丢失或 Qt surface 销毁必须通过 `IVideoPresenterEvents::onPresentComplete()` 回传给 runtime。
+- `PresentId` 由 presenter 或 runtime 保证单调唯一，用于忽略 stop/open/seek 后迟到的 completion。
+- runtime 必须把 completion 与 session/generation 绑定；旧 generation 的失败不能触发当前 session fallback。
 
 ## 线程模型
 
@@ -207,7 +253,7 @@ Qt Scene Graph render thread
 
 - SDK runtime 可以阻塞在自己的队列和 CoreAudio 写入路径，不能阻塞 Qt GUI 线程。
 - `IVideoPresenter::present()` 可以是异步提交；Qt presenter 必须内部保证 QObject 线程亲和性。
-- Runtime 不等待 Qt Scene Graph 完成每次实际 draw，除非后续 presenter contract 显式加入 completion callback。
+- Runtime 不阻塞等待 Qt Scene Graph draw，但必须处理 presenter completion/failure callback。
 - stop/open/seek 必须 abort runtime queue、唤醒 audio/video 调度和取消 pending present。
 
 ## VideoToolbox 零拷贝路径
@@ -246,6 +292,10 @@ Native handle 生命周期：
 - 如果 storage 持有 `AVFrame`，则 `AVFrame` 释放前必须保证 render 侧不再使用 `data[3]`。
 - Qt presenter 不拥有底层 CVPixelBuffer；只在 `VideoFrame` 生命周期内借用。
 - 如果 Qt presenter 异步持有 frame，必须保存 `VideoFrame` 值或其 shared storage，不能只保存裸 handle。
+- `CVMetalTextureRef` 必须由 presenter 侧 RAII 对象持有，并至少活到对应 QRhi native texture 不再被 Scene Graph 使用。
+- `QRhiTexture::createFrom()` 创建的 native wrapper 与 `CVMetalTextureRef` 释放顺序必须在 presenter 中固定：先停止使用/替换 QRhiTexture，再释放 CVMetalTextureRef。
+- `presenter.clear()`、stop、surface 销毁和 device lost 必须取消 pending present，并释放 presenter 持有的 `VideoFrame`、CVMetalTexture 和 QRhiTexture。
+- 任何 render-thread 持有的 native texture 集合都必须由 Qt presenter 管理，不能由 SDK runtime 直接释放。
 
 ## Fallback 策略
 
@@ -258,14 +308,20 @@ Native handle 生命周期：
 
 流程：
 
-1. `QtRhiVideoPresenter` 返回 `UnsupportedNativeHandle`、`DeviceLost` 或 `Failed`。
-2. runtime 记录 `nativeFallbacks++`，把当前 session 的 output policy 切为 `CpuOnly`。
-3. runtime abort 当前 video queue，清空 pending native frames。
-4. runtime 请求 core 切换 `preferNativeVideoFrames=false`。
-5. runtime 从当前播放位置附近重新 seek 或重新解码，后续帧走 CPU YUV。
-6. UI 不报 fatal error，播放继续；日志必须记录 fallback 原因。
+1. `QtRhiVideoPresenter` 通过同步 `PresentResult` 或异步 `PresentCompletion` 报告 `UnsupportedNativeHandle`、`DeviceLost` 或 `Failed`。
+2. runtime 校验 completion 的 session/generation；旧 completion 只计数，不触发当前 session fallback。
+3. runtime 进入 `FallbackPending` 状态，暂停视频调度，并让 audio output pause。
+4. runtime 记录 `nativeFallbacks++`，把当前 session 的 output policy 切为 `CpuOnly`。
+5. runtime abort audio/video queue，flush CoreAudio buffered audio，清空 pending native frames 和 pending present。
+6. runtime 递增 seek/fallback generation，使 fallback 前的 audio/video/EOF/completion 全部失效。
+7. runtime 请求 core 切换 `preferNativeVideoFrames=false`。
+8. runtime 按 fallback generation 从当前 audio clock 对应 position 附近重新 seek 或重新解码。
+9. 新 generation 的 `SeekCompletedEvent` 到达后，runtime resume audio output 和 video scheduling。
+10. UI 不报 fatal error，播放继续；日志必须记录 fallback 原因。
 
 第一版允许 fallback seek 粒度为当前 audio clock 对应 position，后续可优化为更精确的 decoder resume。
+
+Fallback 是完整 runtime state transition，不能只 abort video queue。它必须同时处理 audio output、audio queue、video queue、pending present、generation 和 EOF drain 状态。
 
 ## Output Policy
 
@@ -342,6 +398,7 @@ enum class VideoScheduleAction {
 - frame PTS 还未到：wait 到目标显示时间附近。
 - frame PTS 在阈值内：present。
 - 连续 drop 超过阈值时强制 render 一帧，避免长时间无画面。
+- presenter 已有 pending frame 时，新 frame 的处理由 runtime policy 决定：同 generation 且更接近当前 clock 的 frame 可以替换旧 pending frame；跨 generation pending frame 必须取消。
 
 具体阈值第一版沿用当前 PlayPlugin 行为：
 
@@ -349,6 +406,12 @@ enum class VideoScheduleAction {
 - late drop threshold：约 100 ms。
 - max scheduled wait：约 40 ms。
 - max consecutive drops before forced render：8。
+
+Qt presenter 延迟约束：
+
+- 2 ms submit lead time 只作为初始值，runtime 必须记录 presenter queue latency 和 present completion latency。
+- 如果 Qt marshal + render loop 延迟稳定大于 submit lead time，应通过配置或自适应估计提高 lead time。
+- runtime 需要限制 presenter pending depth，避免 Qt GUI 线程积压过期帧。
 
 ## 新旧链路并行接入
 
@@ -367,6 +430,10 @@ RuntimePlayer + CoreAudioAudioOutput + QtRhiVideoPresenter
 切换方式：
 
 - 增加运行时配置或实验开关，例如 `PlayerEngine::setPlaybackRuntimeMode(...)`。
+- 播放期间切换模式必须先执行 stop/close 旧链路，等待旧 audio output、decode worker、video presenter 和 pending present 完全停止。
+- 同一时刻只允许一条链路拥有音频设备。
+- 同一时刻只允许一条链路绑定同一个 `FFmpegSurface`。
+- 切换模式必须清空 surface、completion tracker、队列、runtime/pipeline 状态和错误状态。
 - 默认先保持旧链路，便于稳定回归。
 - CI 和手工测试覆盖两条链路。
 - 新链路稳定后再改默认值，最后移除旧链路。
@@ -380,9 +447,14 @@ nativeDecoded
 nativeAccepted
 nativePresented
 nativeFallbacks
+nativeTextureCreated
+nativeTextureFailed
+nativeTextureDrawn
 cpuDecoded
 cpuPresented
 cpuCopied
+cpuTransferred
+cpuMemcpy
 hardwareTransfers
 audioQueued
 audioWritten
@@ -399,9 +471,15 @@ queueAbortCount
 
 ```text
 nativePresented > 0
+nativeTextureCreated > 0
+nativeTextureDrawn > 0
 cpuCopied == 0
+cpuTransferred == 0
+cpuMemcpy == 0
 nativeFallbacks == 0
 ```
+
+`nativePresented` 只表示 runtime/presenter 接收了 native frame；`nativeTextureCreated` 和 `nativeTextureDrawn` 用于证明 Qt/Metal 路径实际创建并使用 native texture。`cpuTransferred`、`cpuMemcpy` 用于证明没有发生硬件帧回读或 plane copy。
 
 如果 fallback 发生：
 
@@ -422,6 +500,9 @@ cpuPresented > 0
 - 新链路不得把 `PixelFormat::Native` 丢弃。
 - 新链路不得把 `preferNativeVideoFrames` 固定为 false。
 - 新链路不得依赖 Qt `FrameQueue<AVFramePtr>`。
+- `media_sdk_playback_runtime` 不得直接 include `CoreAudioAudioOutput` 具体实现头；只能依赖 `IAudioOutput`。
+- `IVideoPresenter` 必须提供异步 completion/failure 回传通道。
+- 新旧链路切换必须经过 stop/close 互斥状态机，不能同时拥有音频设备或同一 surface。
 
 ### 单元测试
 
@@ -430,6 +511,8 @@ cpuPresented > 0
 - EOF drain 顺序。
 - native fallback state machine。
 - CoreAudioAudioOutput mock clock 驱动的视频调度。
+- presenter async completion：queued、success、failure、迟到旧 generation completion。
+- fallback transition 同时 flush audio/video queue、audio output 和 pending present。
 
 ### 集成测试
 
@@ -437,6 +520,8 @@ cpuPresented > 0
 - 验证 seek 后旧 generation frame 不会 present。
 - 验证 native present 失败后切换 CPU policy 并继续播放。
 - 验证无音频流时使用 video monotonic clock。
+- 验证新旧链路切换不会双开音频设备，也不会双写同一 surface。
+- 验证 Qt presenter native texture 创建失败通过 async completion 触发 fallback。
 
 ### 手工验证
 
@@ -444,6 +529,7 @@ macOS 真机：
 
 - VideoToolbox native path 有画面。
 - 日志显示 `nativePresented > 0` 且 `cpuCopied == 0`。
+- 日志显示 `nativeTextureCreated > 0`、`nativeTextureDrawn > 0`，且 `cpuTransferred == 0`、`cpuMemcpy == 0`。
 - native path 失败可 fallback，不黑屏。
 - pause/play 不冻结。
 - seek 前后没有旧帧。
@@ -452,12 +538,12 @@ macOS 真机：
 
 ## 实施阶段建议
 
-1. 建立 `media_sdk_playback_runtime` target、接口和架构检查。
+1. 建立 `media_sdk_playback_runtime` target、接口和架构检查，runtime 只依赖注入的 `IAudioOutput` / `IVideoPresenter`。
 2. 增加 runtime queue、generation filter、EOF drain 和测试。
 3. 增加 scheduler 和 mock clock 测试。
 4. 增加 `IAudioOutput` 和 mock audio output，runtime 使用 audio clock 调度。
 5. 实现 `CoreAudioAudioOutput`，先用 mock presenter 验证音频主时钟。
-6. 定义 `IVideoPresenter` 和 `QtRhiVideoPresenter`。
+6. 定义 `IVideoPresenter`、completion callback 和 `QtRhiVideoPresenter`。
 7. 打通 VideoToolbox native frame 到 Qt presenter。
 8. 实现 native failure fallback 到 CPU YUV。
 9. 增加新旧链路切换开关。
@@ -469,5 +555,8 @@ macOS 真机：
 - Qt presenter 异步展示必须持有 `VideoFrame` storage，不能保存裸 native handle。
 - fallback 需要清空 native 队列并重建 CPU 输出策略，否则会出现连续失败或黑屏。
 - 新旧链路共存期间要防止两套播放器同时持有音频设备。
+- 新旧链路共存期间要防止两套 presenter 同时写同一个 `FFmpegSurface`。
+- Qt presenter completion 可能在 stop/open/seek 后迟到，runtime 必须用 session/generation/present id 过滤。
+- CoreAudio clock 必须是硬件消费进度估计，不是写入进度；否则 A/V sync 会系统性偏移。
 - runtime 不能直接访问 Qt 对象，否则会破坏 SDK 可复用性。
 - 所有跨线程回调必须有明确生命周期，stop/open/seek 必须先取消阻塞，再销毁对象。
