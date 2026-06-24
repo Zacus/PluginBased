@@ -31,6 +31,7 @@
 | `PlayerEngine` | QML-facing 播放门面，维护 QML 属性、错误、当前媒体和播放状态。 |
 | `PlaybackPipeline` | Qt 播放管线，拥有队列、时钟、adapter、音频渲染器和视频渲染器。 |
 | `QtPlaybackAdapter` | 持有 `media_sdk::Player`，实现 `IEventSink`，把 SDK event marshal 到 Qt 线程。 |
+| `PlaybackDataBridge` | 非 GUI 数据桥，负责 generation 过滤、可取消背压、EOF drain 和播放数据通道诊断。 |
 | `media_sdk::Player` | SDK 播放入口，向 `PlaybackController` 提交 open/play/pause/seek/stop 命令。 |
 | `DecodeWorker` | SDK 内部 `std::jthread` worker，执行打开媒体、读包、解码、seek、EOF 和事件输出。 |
 | `AudioRenderer` | Qt 音频线程，消费 `AudioFrameQueue`，创建和驱动 `QAudioSink`，维护音频主时钟。 |
@@ -51,6 +52,7 @@
 - `PlaybackPipeline` 以值成员拥有 `VideoFrameQueue`、`AudioFrameQueue`、`ClockSync`，
   并用 `std::unique_ptr` 拥有 `QtPlaybackAdapter`、`AudioRenderer`、`VideoRenderer`。
 - `QtPlaybackAdapter` 独占 `media_sdk::Player`，只以非 owning 指针观察两条 Qt 帧队列。
+- `PlaybackDataBridge` 是 `QtPlaybackAdapter` 的值成员，不拥有队列，只在 SDK 回调线程执行可阻塞数据入队。
 - `PlaybackPipeline` 对 `FFmpegSurface` 只保存 `QPointer` 观察引用，Surface 仍由 QML 拥有。
 - `VideoFrameDataPtr` 使用 shared ownership 跨 GUI/渲染线程保存待显示帧，避免帧在 GPU 上传前释放。
 
@@ -74,6 +76,7 @@
 - 音频帧不能静默丢弃；视频帧只能由 presenter/renderer 基于主时钟和 lateness 策略丢弃。
 - pause 只冻结消费、时钟和呈现推进，不应让 adapter 丢弃已解码事件。
 - `QAudioSink` 必须在线程内创建、使用和销毁，主线程不能直接调用它。
+- 音量/静音参数由 `m_paramMutex` 保护，音频线程不能无锁读取 `m_paramDirty`、`m_volume` 或 `m_muted`。
 - `QQuickItem::update()` 必须回到 GUI 线程调度，实际节点更新由 Scene Graph 调用。
 - `FFmpegSurface` 用 mutex 在 GUI 线程和渲染线程之间移交 `m_pendingFrame`。
 
@@ -128,12 +131,13 @@ sequenceDiagram
 细节：
 
 1. `PlayerEngine::open()` 先调用 `stop()`，确保旧文件的 worker、队列、Surface 状态清掉。
-2. `PlaybackPipeline::openFile()` 重置队列 abort 状态、清空队列、使 `ClockSync` 失效。
-3. `QtPlaybackAdapter::openFile()` 创建新的 SDK player 状态，转换 `QUrl` 为 `std::filesystem::path`。
-4. `media_sdk::Player` 向 `DecodeWorker` 提交 open/play 命令。
-5. `DecodeWorker` 在 `std::jthread` 中打开媒体、发现音视频流、打开 codec context。
-6. 媒体信息通过 `IEventSink` 发出，adapter 回到 Qt 线程后触发 `mediaInfoReady`。
-7. `PlayerEngine::onMediaInfoReady()` 更新 `duration`、`MediaInfo`，并通知管线启动音频/视频渲染器。
+2. `PlaybackPipeline::openFile()` 先重置 renderer 接受 serial、队列 abort 状态和 `ClockSync`。
+3. `QtPlaybackAdapter::openFile()` 先取消旧 data bridge、停止旧 SDK player，再 flush 队列、reset abort。
+4. adapter 创建新的 SDK player 状态，转换 `QUrl` 为 `std::filesystem::path`。
+5. `media_sdk::Player` 向 `DecodeWorker` 提交 open/play 命令。
+6. `DecodeWorker` 在 `std::jthread` 中打开媒体、发现音视频流、打开 codec context。
+7. 媒体信息通过 `IEventSink` 发出，adapter 回到 Qt 线程后触发 `mediaInfoReady`。
+8. `PlayerEngine::onMediaInfoReady()` 更新 `duration`、`MediaInfo`，并通知管线启动音频/视频渲染器。
 
 ## 6. SDK 解码与事件输出
 
@@ -160,11 +164,13 @@ SDK worker 的主循环负责：
 - SDK event 从 worker 线程进入 `onEvent()`。
 - control event 使用 `QMetaObject::invokeMethod(..., Qt::QueuedConnection)` 投递到 Qt 线程。
 - audio/video frame event 和 EOF 进入非 GUI 的 data bridge，由 data bridge 负责可取消背压、generation 过滤和 drain 顺序。
+- `SeekCompletedEvent` 在 SDK 回调路径先恢复 data bridge 的新 generation，再 queued 到 Qt 线程完成 UI seek 映射。
 - `MediaInfoEvent` 转为 `mediaInfoReady(...)` Qt 信号。
 - `AudioFrameEvent` 转为 `AVFramePtr`，按当前 generation 写入 `AudioFrameQueue`。
 - `VideoFrameEvent` 转为 `AVFramePtr`，按当前 generation 写入 `VideoFrameQueue`。
 - `EndOfFileEvent` 作为 drain marker 进入同一条数据通道，再发出 `endOfFile()`。
 - `ErrorEvent` 转为 `errorOccurred(QString)`。
+- data bridge 在 EOF 或 stop/cancel 时输出每个 session/generation 的 accepted、stale、EOF 和 abort 计数汇总。
 
 B+ 仍复用 Qt 侧 `AVFramePtr` 和 `FrameQueue`，这是 adapter 层的兼容边界，不代表 SDK core 暴露 Qt 或 QML 类型。
 
@@ -219,18 +225,19 @@ VideoToolbox 原生路径仍属于 Qt 呈现层；如果原生纹理创建失败
 2. `PlaybackPipeline::seek(positionMs, generation)` 固定 Qt 侧副作用顺序。
 3. `VideoRenderer::beginSeek(generation)` 丢弃 held frame 并暂停旧画面推进。
 4. `AudioRenderer::setAcceptedSerial(generation)` 临时丢弃旧音频帧。
-5. `QtPlaybackAdapter::seekTo(positionMs, generation)` 提交 SDK seek。
-6. `AudioRenderer::flush()` 清空音频队列、重置 sink 和 clock。
-7. `VideoRenderer::flush()` 清空视频 renderer 内部 held frame 和时钟。
-8. `ClockSync::invalidate()` 使主时钟失效。
-9. SDK worker 完成实际 seek、decoder flush 和状态重置后，adapter 发出 `seekCompleted(generation, serial)`。
-10. `PlaybackPipeline::onDecoderSeekCompleted()` 设置音视频接受 serial，并完成视频 seek。
+5. `QtPlaybackAdapter::seekTo(positionMs, generation)` 取消旧 data generation、flush 队列、reset abort，再提交 SDK seek。
+6. `AudioRenderer::flush()` 重置 sink、重采样器和音频 clock 状态。
+7. `VideoRenderer::flush()` 清空视频 renderer 内部 held frame 和本地时钟。
+8. `ClockSync::invalidate()` 使 Qt presenter 主时钟失效。
+9. SDK worker 完成实际 seek、decoder flush 和状态重置后发出 `SeekCompletedEvent`。
+10. adapter 在 SDK 回调线程恢复 data bridge generation，并在 Qt 线程发出 `seekCompleted(generation, serial)`。
+11. `PlaybackPipeline::onDecoderSeekCompleted()` 设置音视频接受 serial，并完成视频 seek。
 
 ## 12. 停止与销毁流程
 
 - `PlayerEngine::stop()` 重置 QML 状态、完成状态、position/duration，并调用 `PlaybackPipeline::stopComponents()`。
-- `PlaybackPipeline::stopComponents()` 停止 SDK player、音频线程和视频调度器，abort 并清空队列，使时钟失效。
-- `QtPlaybackAdapter` 析构时停止 `media_sdk::Player`，确保 SDK worker 不再回调 adapter。
+- `PlaybackPipeline::stopComponents()` 先让 adapter 取消 data bridge 并停止 SDK player，再停止音频线程和视频调度器，最后 flush 队列并 reset abort。
+- `QtPlaybackAdapter` 析构时先取消 data bridge，再停止 `media_sdk::Player`，确保 SDK worker 不再回调 adapter。
 - `AudioRenderer` 在线程内销毁 `QAudioSink`。
 - `FFmpegSurface` 销毁时释放 Scene Graph 节点和 pending frame。
 

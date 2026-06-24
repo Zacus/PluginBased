@@ -2,7 +2,7 @@
 
 ## 背景
 
-`PlayPlugin` 现在已经把播放器拆成 `PlayerEngine`、`PlaybackPipeline`、`FFmpegDecoder`、`AudioRenderer`、`VideoRenderer`、`FFmpegSurface` 和若干 helper。这个结构适合 Qt/QML 插件内部维护，但编解码和播放内核仍然直接依赖 Qt 类型、Qt 线程模型、Qt 信号槽和 Qt RHI/Scene Graph 渲染路径。
+`PlayPlugin` 迁移前把播放器拆成 `PlayerEngine`、`PlaybackPipeline`、`FFmpegDecoder`、`AudioRenderer`、`VideoRenderer`、`FFmpegSurface` 和若干 helper。这个结构适合 Qt/QML 插件内部维护，但编解码和播放内核仍然直接依赖 Qt 类型、Qt 线程模型、Qt 信号槽和 Qt RHI/Scene Graph 渲染路径。
 
 下一阶段目标是把播放器演进成可复用 SDK：先抽出 Qt-free 的 C++20 播放内核，再让当前 PlayPlugin 通过 Qt adapter 接入该 SDK。这个阶段称为 B+。B+ 不把 Qt RHI 封装进 core SDK，也不急于完成 OpenGL presenter；它先稳定 media core、frame contract 和 adapter 边界，为后续 C 阶段的 presenter 插件化留下清晰扩展点。
 
@@ -42,7 +42,7 @@ PlayPlugin QML/UI
 
 ### SOLID 落地方式
 
-- 单一职责：demux、decode、queue、clock、scheduler、command state、event delivery 分成小对象。
+- 单一职责：demux、decode、queue、command state、event delivery 分成小对象；clock 和 scheduler 保留在 presenter/renderer 层。
 - 开闭原则：新增 Qt RHI/OpenGL presenter 时扩展 adapter，不修改 core 播放状态机。
 - 里氏替换：adapter 接口只表达能力和契约，不要求实现方继承不适用行为。
 - 接口隔离：event sink、audio sink、video frame sink、logger、hardware policy 分开定义。
@@ -116,10 +116,7 @@ sdk/media_core/
     Demuxer.cpp
     StreamDecoder.cpp
     VideoFrameProcessor.cpp
-    AudioFrameProcessor.cpp
     FrameQueue.h
-    ClockSync.cpp
-    FrameScheduler.cpp
     ffmpeg/FFmpegUtils.h
     hw/HardwareDecoderBackend.h
 ```
@@ -173,8 +170,6 @@ public:
     void pause();
     void stop();
     Result<void> seek(std::chrono::milliseconds position);
-    void setVolume(float volume);
-    void setMuted(bool muted);
 };
 
 }
@@ -182,9 +177,9 @@ public:
 
 说明：
 
-- `Player` 是 SDK façade，但不是全能类。内部委托 `PlaybackController`、`DecodeWorker`、queue、clock、scheduler。
+- `Player` 是 SDK façade，但不是全能类。内部委托 `PlaybackController` 和 `DecodeWorker`。
 - `IEventSink` 是核心事件出口。Qt adapter 实现它，把事件投递到 Qt GUI 线程后转成 signals。
-- B+ 阶段 `setVolume`/`setMuted` 可以先由 Qt adapter 处理；如果 core 不直接输出音频，应避免在 core API 中承诺音量行为。最终 API 以实施计划确认。
+- B+ 阶段音量/静音由 Qt `AudioRenderer` 处理；core API 不承诺音量行为。
 
 ### 3. Frame Contract
 
@@ -261,11 +256,9 @@ private:
 建议新建或保留在 PlayPlugin 内：
 
 ```text
-plugins/PlayPlugin/src/sdk_adapter/
+plugins/PlayPlugin/src/playback/
   QtPlaybackAdapter.h/.cpp
-  QtFrameMapper.h/.cpp
-  QtAudioSinkAdapter.h/.cpp
-  QtVideoFrameBridge.h/.cpp
+  PlaybackDataBridge.h/.cpp
 ```
 
 职责：
@@ -273,8 +266,9 @@ plugins/PlayPlugin/src/sdk_adapter/
 - 把 `QUrl` / `QString` 转成 `std::filesystem::path` / `std::string`。
 - 持有 `media_sdk::Player`。
 - 实现 `media_sdk::IEventSink`。
-- 把 SDK worker thread event 投递到 Qt GUI thread。
-- 把 SDK `VideoFrame` 转换为现有 `VideoFrameDataPtr` 或新的 Qt-facing frame wrapper。
+- 把 SDK control event 投递到 Qt GUI thread。
+- 把 SDK `AudioFrame` / `VideoFrame` 转换为现有 Qt `AVFramePtr` 队列输入。
+- 用非 GUI `PlaybackDataBridge` 承担可取消背压、generation 过滤、EOF drain 和诊断计数。
 - 维持现有 `PlayerEngine` QML 属性和信号。
 - 在 B+ 阶段继续使用现有 `FFmpegSurface`、`VideoNode`、`VideoMaterial` 和 Qt RHI 路径。
 
@@ -282,9 +276,9 @@ plugins/PlayPlugin/src/sdk_adapter/
 
 B+ 有两个可选切法：
 
-推荐第一步：core 输出 decoded/resampled audio frames，Qt adapter 用 `QAudioSink` 播放并回写音频时钟快照给 core。
+推荐第一步：core 输出 decoded audio frames，Qt adapter / `AudioRenderer` 用 `QAudioSink` 播放，并在 Qt presenter 层维护音频主时钟。
 
-更完整但风险更高：core 内部管理 audio clock，并通过 `IAudioOutput` 抽象写音频设备。
+更完整但风险更高：后续 C 阶段通过 `IAudioSink` 抽象写音频设备，但播放主时钟仍不得让 core 做 render/wait/drop 决策。
 
 B+ 推荐第一步采用前者，因为当前 `QAudioSink` 线程亲和性强，直接迁进 SDK 会让 core 被 Qt 约束。后续 C 阶段再抽 `IAudioSink`，让 CoreAudio/WASAPI/ALSA/QtAudio 都作为 adapter。
 
@@ -375,8 +369,6 @@ struct MediaError {
 新增测试分三类：
 
 1. Core unit tests：
-   - `FrameScheduler` wait/drop/render。
-   - `ClockSync` pause/resume/invalid clock。
    - `FrameQueue` push/pop/abort/flush/wakeup。
    - `Result` 和 error mapping。
 
@@ -393,6 +385,7 @@ struct MediaError {
    - `sdk/media_core/src` 不包含 QObject/QThread/QMutex/QString/QUrl/QRhi/QSG。
    - Qt adapter 可以依赖 SDK，SDK 不依赖 PlayPlugin。
    - `PlayerEngine` 不直接 include FFmpeg decoder internals。
+   - `DecodeWorker` 不 include 或使用 `ClockSync`、`FrameScheduler`、wait/drop/render 调度决策。
 
 ## 接受标准
 
@@ -423,7 +416,7 @@ struct MediaError {
 1. 迁移必要的 Qt-free 基础并发组件，替换 `QMutex/QWaitCondition`。
 2. 定义 data bridge / queue 的 cancellation、backpressure 和 drain 语义。
 3. 为 queue、drain、abort、wakeup 写 C++ unit tests。
-4. `VideoFrameScheduler` 和 `ClockSync` 暂留 presenter/renderer 层，不进入 core decode worker。
+4. `VideoFrameScheduler` 和 `ClockSync` 留在 PlayPlugin presenter/renderer 层，不进入 SDK core target 或 decode worker。
 
 交付：数据通道基础组件可独立测试，不依赖 FFmpeg 或 Qt，并明确 EOF/drain 语义。
 
