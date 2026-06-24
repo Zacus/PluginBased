@@ -54,6 +54,7 @@ void testVideoFrameMetadataAndStorage()
         .storage = storage,
     });
 
+    assert(frame.storage() == storage);
     storage.reset();
     assert(!destroyed);
     assert(frame.width() == 4);
@@ -64,6 +65,7 @@ void testVideoFrameMetadataAndStorage()
     assert(frame.pts() == 42'000us);
     assert(frame.planes().size() == 3);
     assert(frame.planes()[0].stride == 4);
+    assert(frame.hasStorage());
 
     auto copy = frame;
     assert(!destroyed);

@@ -89,6 +89,7 @@ public:
     std::span<const PlaneView> planes() const { return m_planes; }
     NativeHandle nativeHandle() const { return m_nativeHandle; }
     bool hasStorage() const { return static_cast<bool>(m_storage); }
+    std::shared_ptr<void> storage() const { return m_storage; }
 
 private:
     int m_width = 0;

@@ -71,6 +71,9 @@ def check_presenter_contract() -> None:
     assert_contains(combined, "UnsupportedNativeHandle", PRESENTER_CPP)
     assert_contains(combined, "QMetaObject::invokeMethod", PRESENTER_CPP)
     assert_contains(combined, "Qt::QueuedConnection", PRESENTER_CPP)
+    assert_contains(combined, "frame.storage()", PRESENTER_CPP)
+    assert_contains(combined, "av_frame_clone", PRESENTER_CPP)
+    assert_contains(combined, "surface->onFrameReady", PRESENTER_CPP)
     assert_contains(combined, "surface->clear()", PRESENTER_CPP)
 
 

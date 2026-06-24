@@ -6,9 +6,12 @@
 
 #include <atomic>
 #include <deque>
+#include <memory>
 #include <mutex>
 
 class FFmpegSurface;
+struct VideoFrameData;
+using VideoFrameDataPtr = std::shared_ptr<VideoFrameData>;
 
 class QtRhiVideoPresenter final : public media_sdk::runtime::IVideoPresenter
 {
@@ -26,11 +29,12 @@ public:
 private:
     struct PendingPresent {
         media_sdk::runtime::PresentId id = 0;
-        media_sdk::VideoFrame frame;
+        VideoFrameDataPtr frame;
         media_sdk::runtime::PresentTiming timing;
     };
 
     bool surfaceSupportsNativeRendering(const QPointer<FFmpegSurface>& surface) const;
+    VideoFrameDataPtr makeSurfaceFrame(const media_sdk::VideoFrame& frame) const;
     void complete(media_sdk::runtime::PresentCompletion completion);
 
     QPointer<FFmpegSurface> m_surface;
