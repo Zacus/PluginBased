@@ -2,6 +2,7 @@
 
 #include "media_sdk/Frame.h"
 
+#include <chrono>
 #include <cstdint>
 
 namespace media_sdk::runtime {
@@ -52,6 +53,14 @@ struct RuntimeDiagnostics {
     std::uint64_t eofAccepted = 0;
     std::uint64_t eofPresented = 0;
     std::uint64_t queueAbortCount = 0;
+};
+
+struct RuntimeFallbackAction {
+    SessionId sessionId = 0;
+    Generation generation = 0;
+    std::chrono::microseconds resumePosition { 0 };
+    VideoOutputPolicy outputPolicy = VideoOutputPolicy::CpuOnly;
+    bool preferNativeVideoFrames = false;
 };
 
 } // namespace media_sdk::runtime

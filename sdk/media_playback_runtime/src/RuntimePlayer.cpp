@@ -78,6 +78,7 @@ struct RuntimePlayer::Impl {
             generation = 1;
             running = true;
             paused = false;
+            fallbackPending = false;
             audioEofSeen = false;
             videoEofSeen = false;
 
@@ -162,9 +163,30 @@ struct RuntimePlayer::Impl {
         bool shouldResume = false;
         {
             std::lock_guard lock(m_mutex);
-            if (!running || !paused)
+            if (!running || !paused || fallbackPending)
                 return;
             paused = false;
+            shouldResume = true;
+        }
+
+        if (shouldResume)
+            dependencies.audioOutput->resume();
+        m_controlChanged.notify_all();
+    }
+
+    void completeSeek(SessionId completedSessionId, Generation completedGeneration)
+    {
+        bool shouldResume = false;
+        {
+            std::lock_guard lock(m_mutex);
+            if (!running ||
+                !fallbackController.completeSeek(completedSessionId, completedGeneration)) {
+                return;
+            }
+
+            fallbackPending = false;
+            paused = false;
+            scheduler.reset(completedGeneration);
             shouldResume = true;
         }
 
@@ -184,6 +206,7 @@ struct RuntimePlayer::Impl {
 
             activeSession = sessionId;
             nextGeneration = ++generation;
+            fallbackPending = false;
             audioEofSeen = false;
             videoEofSeen = false;
             diagnostics.queueAbortCount += 2;
@@ -213,6 +236,7 @@ struct RuntimePlayer::Impl {
 
             running = false;
             paused = false;
+            fallbackPending = false;
             generation = 0;
             diagnostics.queueAbortCount += 2;
             shouldStop = true;
@@ -246,6 +270,7 @@ struct RuntimePlayer::Impl {
     void onPresentComplete(PresentCompletion completion)
     {
         bool failed = false;
+        PresentStatus failureStatus = completion.status;
         {
             std::lock_guard lock(m_mutex);
             if (!running)
@@ -256,7 +281,7 @@ struct RuntimePlayer::Impl {
         }
 
         if (failed)
-            handlePresentFailure(PresentStatus::Failed);
+            handlePresentFailure(failureStatus);
     }
 
     void audioLoop()
@@ -420,14 +445,16 @@ struct RuntimePlayer::Impl {
 
     void handlePresentFailure(PresentStatus reason)
     {
+        const auto clock = dependencies.audioOutput->clock();
         FallbackTransition transition;
         SessionId activeSession = 0;
+        RuntimeFallbackAction fallbackAction;
+        bool requestCpuDecode = false;
         {
             std::lock_guard lock(m_mutex);
             if (!running)
                 return;
 
-            const auto clock = dependencies.audioOutput->clock();
             transition = fallbackController.beginFallback({
                 .sessionId = sessionId,
                 .generation = generation,
@@ -441,15 +468,24 @@ struct RuntimePlayer::Impl {
             ++diagnostics.nativeFallbacks;
             config.outputPolicy = transition.newPolicy;
             generation = transition.newGeneration;
+            paused = true;
+            fallbackPending = true;
             audioEofSeen = false;
             videoEofSeen = false;
             presentTracker.clear();
             presentTracker.reset(activeSession, generation);
             presentTracker.setMaxPending(dependencies.videoPresenter->capabilities().maxPendingFrames);
             scheduler.reset(generation);
-            fallbackController.completeSeek(activeSession, generation);
             if (transition.abortQueues)
                 diagnostics.queueAbortCount += 2;
+            requestCpuDecode = transition.requestCpuDecode;
+            fallbackAction = {
+                .sessionId = activeSession,
+                .generation = generation,
+                .resumePosition = clock.position,
+                .outputPolicy = transition.newPolicy,
+                .preferNativeVideoFrames = false,
+            };
         }
 
         if (transition.pauseAudio)
@@ -464,6 +500,8 @@ struct RuntimePlayer::Impl {
         }
         if (transition.clearPresenter)
             dependencies.videoPresenter->clear();
+        if (requestCpuDecode && dependencies.events)
+            dependencies.events->onFallbackToCpuRequested(fallbackAction);
         m_controlChanged.notify_all();
     }
 
@@ -476,7 +514,7 @@ struct RuntimePlayer::Impl {
     bool isAcceptingVideo() const
     {
         std::lock_guard lock(m_mutex);
-        return running && !paused;
+        return running && !paused && !fallbackPending;
     }
 
     bool isCurrent(SessionId checkedSessionId, Generation checkedGeneration) const
@@ -516,6 +554,7 @@ struct RuntimePlayer::Impl {
     Generation generation = 0;
     bool running = false;
     bool paused = false;
+    bool fallbackPending = false;
     bool audioEofSeen = false;
     bool videoEofSeen = false;
 };
@@ -560,6 +599,11 @@ void RuntimePlayer::resume()
 void RuntimePlayer::seek(std::chrono::microseconds position)
 {
     m_impl->seek(position);
+}
+
+void RuntimePlayer::completeSeek(SessionId sessionId, Generation generation)
+{
+    m_impl->completeSeek(sessionId, generation);
 }
 
 void RuntimePlayer::stop()

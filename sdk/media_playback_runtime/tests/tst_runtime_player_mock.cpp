@@ -152,6 +152,21 @@ public:
     std::atomic_int clearCount = 0;
 };
 
+class MockRuntimeEvents final : public media_sdk::runtime::IRuntimePlayerEvents {
+public:
+    void onFallbackToCpuRequested(
+        media_sdk::runtime::RuntimeFallbackAction action) override
+    {
+        std::lock_guard lock(mutex);
+        lastAction = action;
+        ++fallbackRequestCount;
+    }
+
+    mutable std::mutex mutex;
+    media_sdk::runtime::RuntimeFallbackAction lastAction {};
+    std::atomic_int fallbackRequestCount = 0;
+};
+
 bool waitUntil(const std::function<bool()>& predicate,
                std::chrono::milliseconds timeout = 500ms)
 {
@@ -242,6 +257,20 @@ media_sdk::runtime::RuntimePlayer makePlayer(
         {
             .audioOutput = &audio,
             .videoPresenter = &presenter,
+        });
+}
+
+media_sdk::runtime::RuntimePlayer makePlayer(
+    MockAudioOutput& audio,
+    MockPresenter& presenter,
+    MockRuntimeEvents& events)
+{
+    return media_sdk::runtime::RuntimePlayer(
+        {},
+        {
+            .audioOutput = &audio,
+            .videoPresenter = &presenter,
+            .events = &events,
         });
 }
 
@@ -413,6 +442,83 @@ void nativePresenterFailureRunsFullFallbackTransition()
     assert(presenter.presentCount == 1);
 
     audio.setClock(100ms, 2);
+    player.completeSeek(1, 2);
+    player.enqueueVideo(runtimeVideo(1, 2, 100ms));
+    assert(waitUntil([&presenter]() { return presenter.presentCount == 2; }));
+}
+
+void currentGenerationDeviceLostPausesAudioFlushesQueuesClearsPresenterAndRequestsCpuOnlyDecode()
+{
+    MockAudioOutput audio;
+    audio.setClock(100ms, 1);
+    MockPresenter presenter;
+    MockRuntimeEvents events;
+    auto player = makePlayer(audio, presenter, events);
+    assert(player.open().ok());
+
+    player.enqueueVideo(runtimeVideo(1, 1, 100ms, media_sdk::PixelFormat::Native));
+    assert(waitUntil([&presenter]() { return presenter.presentCount == 1; }));
+    presenter.complete(presenter.lastId(), media_sdk::runtime::PresentStatus::DeviceLost);
+
+    assert(waitUntil([&player]() { return player.diagnostics().nativeFallbacks == 1; }));
+    assert(waitUntil([&events]() { return events.fallbackRequestCount == 1; }));
+    assert(audio.pauseCount == 1);
+    assert(audio.flushCount == 1);
+    assert(presenter.clearCount == 1);
+    assert(player.diagnostics().queueAbortCount == 2);
+
+    std::lock_guard lock(events.mutex);
+    assert(events.lastAction.sessionId == 1);
+    assert(events.lastAction.generation == 2);
+    assert(events.lastAction.resumePosition == 100ms);
+    assert(events.lastAction.outputPolicy == media_sdk::runtime::VideoOutputPolicy::CpuOnly);
+    assert(!events.lastAction.preferNativeVideoFrames);
+}
+
+void oldGenerationDeviceLostDoesNotInterruptCurrentPlayback()
+{
+    MockAudioOutput audio;
+    audio.setClock(100ms, 1);
+    MockPresenter presenter;
+    MockRuntimeEvents events;
+    auto player = makePlayer(audio, presenter, events);
+    assert(player.open().ok());
+
+    player.enqueueVideo(runtimeVideo(1, 1, 100ms, media_sdk::PixelFormat::Native));
+    assert(waitUntil([&presenter]() { return presenter.presentCount == 1; }));
+    const auto oldPresentId = presenter.lastId();
+
+    player.seek(500ms);
+    presenter.complete(oldPresentId, media_sdk::runtime::PresentStatus::DeviceLost);
+    std::this_thread::sleep_for(10ms);
+
+    assert(player.diagnostics().nativeFallbacks == 0);
+    assert(events.fallbackRequestCount == 0);
+    assert(audio.pauseCount == 0);
+    assert(presenter.clearCount == 1);
+}
+
+void fallbackSeekCompletionResumesAudioAndVideoScheduling()
+{
+    MockAudioOutput audio;
+    audio.setClock(100ms, 1);
+    MockPresenter presenter;
+    MockRuntimeEvents events;
+    auto player = makePlayer(audio, presenter, events);
+    assert(player.open().ok());
+
+    player.enqueueVideo(runtimeVideo(1, 1, 100ms, media_sdk::PixelFormat::Native));
+    assert(waitUntil([&presenter]() { return presenter.presentCount == 1; }));
+    presenter.complete(presenter.lastId(), media_sdk::runtime::PresentStatus::DeviceLost);
+    assert(waitUntil([&events]() { return events.fallbackRequestCount == 1; }));
+
+    audio.setClock(100ms, 2);
+    player.enqueueVideo(runtimeVideo(1, 2, 100ms));
+    std::this_thread::sleep_for(10ms);
+    assert(presenter.presentCount == 1);
+
+    player.completeSeek(1, 2);
+    assert(audio.resumeCount == 1);
     player.enqueueVideo(runtimeVideo(1, 2, 100ms));
     assert(waitUntil([&presenter]() { return presenter.presentCount == 2; }));
 }
@@ -429,4 +535,7 @@ int main()
     seekInvalidatesOldGenerationFramesAndCompletions();
     stopAbortsQueuesPausesAudioClearsPresenterAndReturnsIdle();
     nativePresenterFailureRunsFullFallbackTransition();
+    currentGenerationDeviceLostPausesAudioFlushesQueuesClearsPresenterAndRequestsCpuOnlyDecode();
+    oldGenerationDeviceLostDoesNotInterruptCurrentPlayback();
+    fallbackSeekCompletionResumesAudioAndVideoScheduling();
 }

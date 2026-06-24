@@ -11,6 +11,8 @@
 
 namespace media_sdk::runtime {
 
+class IRuntimePlayerEvents;
+
 struct RuntimeSyncConfig {
     std::chrono::microseconds submitLeadTime { std::chrono::milliseconds(2) };
     std::chrono::microseconds lateDropThreshold { std::chrono::milliseconds(100) };
@@ -33,6 +35,13 @@ struct RuntimePlayerConfig {
 struct RuntimePlayerDependencies {
     IAudioOutput* audioOutput = nullptr;
     IVideoPresenter* videoPresenter = nullptr;
+    IRuntimePlayerEvents* events = nullptr;
+};
+
+class IRuntimePlayerEvents {
+public:
+    virtual ~IRuntimePlayerEvents() = default;
+    virtual void onFallbackToCpuRequested(RuntimeFallbackAction action) = 0;
 };
 
 class RuntimePlayer final : private IVideoPresenterEvents
@@ -51,6 +60,7 @@ public:
     void pause();
     void resume();
     void seek(std::chrono::microseconds position);
+    void completeSeek(SessionId sessionId, Generation generation);
     void stop();
     RuntimeDiagnostics diagnostics() const;
 
