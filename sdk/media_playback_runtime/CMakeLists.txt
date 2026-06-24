@@ -2,6 +2,7 @@ add_library(media_sdk_playback_runtime STATIC
     src/AvSyncScheduler.cpp
     src/MasterClock.cpp
     src/PlaybackRuntimeVersion.cpp
+    src/PresentTracker.cpp
 )
 
 add_library(media_sdk::playback_runtime ALIAS media_sdk_playback_runtime)
@@ -79,5 +80,25 @@ if(BUILD_TESTING)
     )
     add_test(NAME media_sdk_playback_runtime_av_sync_scheduler
         COMMAND $<TARGET_FILE:MediaSdkPlaybackRuntimeAvSyncSchedulerTest>
+    )
+
+    add_executable(MediaSdkPlaybackRuntimePresentTrackerTest
+        tests/tst_present_tracker.cpp
+    )
+    target_compile_features(MediaSdkPlaybackRuntimePresentTrackerTest PRIVATE cxx_std_20)
+    set_target_properties(MediaSdkPlaybackRuntimePresentTrackerTest PROPERTIES
+        CXX_EXTENSIONS OFF
+        AUTOMOC OFF
+        AUTOUIC OFF
+        AUTORCC OFF
+    )
+    target_include_directories(MediaSdkPlaybackRuntimePresentTrackerTest PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/src"
+    )
+    target_link_libraries(MediaSdkPlaybackRuntimePresentTrackerTest PRIVATE
+        media_sdk_playback_runtime
+    )
+    add_test(NAME media_sdk_playback_runtime_present_tracker
+        COMMAND $<TARGET_FILE:MediaSdkPlaybackRuntimePresentTrackerTest>
     )
 endif()
