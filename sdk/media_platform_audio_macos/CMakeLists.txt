@@ -43,4 +43,24 @@ if(BUILD_TESTING)
     add_test(NAME media_sdk_platform_audio_macos_contract
         COMMAND $<TARGET_FILE:MediaSdkPlatformAudioMacosContractTest>
     )
+
+    add_executable(MediaSdkPlatformAudioMacosRingBufferTest
+        tests/tst_core_audio_ring_buffer.cpp
+    )
+    target_compile_features(MediaSdkPlatformAudioMacosRingBufferTest PRIVATE cxx_std_20)
+    set_target_properties(MediaSdkPlatformAudioMacosRingBufferTest PROPERTIES
+        CXX_EXTENSIONS OFF
+        AUTOMOC OFF
+        AUTOUIC OFF
+        AUTORCC OFF
+    )
+    target_include_directories(MediaSdkPlatformAudioMacosRingBufferTest PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/src"
+    )
+    target_link_libraries(MediaSdkPlatformAudioMacosRingBufferTest PRIVATE
+        media_sdk_platform_audio_macos
+    )
+    add_test(NAME media_sdk_platform_audio_macos_ring_buffer
+        COMMAND $<TARGET_FILE:MediaSdkPlatformAudioMacosRingBufferTest>
+    )
 endif()
