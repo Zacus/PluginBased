@@ -6,6 +6,10 @@ PLAYPLUGIN = ROOT / "plugins" / "PlayPlugin"
 RUNTIME = ROOT / "sdk" / "media_playback_runtime"
 PRESENTER_H = PLAYPLUGIN / "src" / "playback" / "QtRhiVideoPresenter.h"
 PRESENTER_CPP = PLAYPLUGIN / "src" / "playback" / "QtRhiVideoPresenter.cpp"
+SURFACE_H = PLAYPLUGIN / "src" / "video" / "FFmpegSurface.h"
+SURFACE_CPP = PLAYPLUGIN / "src" / "video" / "FFmpegSurface.cpp"
+VIDEO_NODE_CPP = PLAYPLUGIN / "src" / "video" / "render" / "VideoNode.cpp"
+METAL_BRIDGE_MM = PLAYPLUGIN / "src" / "video" / "native" / "AppleMetalVideoTextureBridge.mm"
 PLAYPLUGIN_CMAKE = PLAYPLUGIN / "CMakeLists.txt"
 ROOT_CMAKE = ROOT / "CMakeLists.txt"
 
@@ -59,7 +63,18 @@ def check_runtime_boundary() -> None:
 def check_presenter_contract() -> None:
     header = read(PRESENTER_H)
     source = read(PRESENTER_CPP)
-    combined = header + "\n" + source
+    surface_header = read(SURFACE_H)
+    surface_source = read(SURFACE_CPP)
+    video_node_source = read(VIDEO_NODE_CPP)
+    metal_bridge_source = read(METAL_BRIDGE_MM)
+    combined = "\n".join((
+        header,
+        source,
+        surface_header,
+        surface_source,
+        video_node_source,
+        metal_bridge_source,
+    ))
 
     assert_contains(header, "media_sdk/runtime/VideoPresenter.h", PRESENTER_H)
     assert_contains(header, "class QtRhiVideoPresenter final", PRESENTER_H)
@@ -75,6 +90,22 @@ def check_presenter_contract() -> None:
     assert_contains(combined, "av_frame_clone", PRESENTER_CPP)
     assert_contains(combined, "surface->onFrameReady", PRESENTER_CPP)
     assert_contains(combined, "surface->clear()", PRESENTER_CPP)
+
+    for forbidden in (
+        "sws_scale",
+        "av_hwframe_transfer_data",
+        "transferHardwareFrameToCpu",
+    ):
+        assert_not_contains(source, forbidden, PRESENTER_CPP)
+
+    assert_contains(source, "PixelFormat::Native", PRESENTER_CPP)
+    assert_contains(source, "NativeHandleKind::VideoToolboxPixelBuffer", PRESENTER_CPP)
+    assert_contains(metal_bridge_source, "CVMetalTextureCacheCreateTextureFromImage", METAL_BRIDGE_MM)
+    assert_contains(metal_bridge_source, "createFrom", METAL_BRIDGE_MM)
+    assert_contains(metal_bridge_source, "releaseNativeTextures", METAL_BRIDGE_MM)
+
+    for token in ("nativeTextureCreated", "nativeTextureDrawn", "cpuMemcpy", "cpuTransferred"):
+        assert_contains(combined, token, PRESENTER_CPP)
 
 
 def check_scene_graph_dependency_location() -> None:

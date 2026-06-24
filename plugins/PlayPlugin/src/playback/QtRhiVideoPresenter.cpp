@@ -125,7 +125,7 @@ media_sdk::runtime::PresentResult QtRhiVideoPresenter::present(
     {
         std::lock_guard lock(m_mutex);
         m_pending.clear();
-        m_pending.push_back(PendingPresent { id, surfaceFrame, timing });
+        m_pending.push_back(PendingPresent { id, std::move(frame), surfaceFrame, timing });
     }
 
     QMetaObject::invokeMethod(surface, [surface, surfaceFrame]() {

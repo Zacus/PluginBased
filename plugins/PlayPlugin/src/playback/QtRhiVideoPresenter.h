@@ -29,6 +29,7 @@ public:
 private:
     struct PendingPresent {
         media_sdk::runtime::PresentId id = 0;
+        media_sdk::VideoFrame sdkFrame;
         VideoFrameDataPtr frame;
         media_sdk::runtime::PresentTiming timing;
     };

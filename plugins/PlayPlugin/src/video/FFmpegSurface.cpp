@@ -5,6 +5,34 @@
 #include <QQuickWindow>
 #include <QSGRendererInterface>
 #include <QMutexLocker>
+#include <cstdlib>
+
+namespace {
+
+std::uint64_t cpuFrameBytes(const AVFrame* frame)
+{
+    if (!frame)
+        return 0;
+
+    const int packedSize = av_image_get_buffer_size(
+        static_cast<AVPixelFormat>(frame->format),
+        frame->width,
+        frame->height,
+        1);
+    if (packedSize > 0)
+        return static_cast<std::uint64_t>(packedSize);
+
+    std::uint64_t total = 0;
+    for (int plane = 0; plane < AV_NUM_DATA_POINTERS; ++plane) {
+        if (!frame->data[plane] || frame->linesize[plane] == 0)
+            continue;
+        total += static_cast<std::uint64_t>(std::abs(frame->linesize[plane]))
+            * static_cast<std::uint64_t>(frame->height);
+    }
+    return total;
+}
+
+} // namespace
 
 // ══════════════════════════════════════════════════════════════════════════════
 // FFmpegSurface
@@ -37,6 +65,24 @@ bool FFmpegSurface::supportsNativeVideoToolboxRendering() const
 #else
     return false;
 #endif
+}
+
+FFmpegSurfaceDiagnostics FFmpegSurface::diagnosticsSnapshot() const
+{
+    return {
+        .nativeTextureCreated = m_nativeTextureCreated.load(std::memory_order_relaxed),
+        .nativeTextureDrawn = m_nativeTextureDrawn.load(std::memory_order_relaxed),
+        .cpuTransferred = m_cpuTransferred.load(std::memory_order_relaxed),
+        .cpuMemcpy = m_cpuMemcpy.load(std::memory_order_relaxed),
+    };
+}
+
+void FFmpegSurface::resetDiagnostics()
+{
+    m_nativeTextureCreated.store(0, std::memory_order_relaxed);
+    m_nativeTextureDrawn.store(0, std::memory_order_relaxed);
+    m_cpuTransferred.store(0, std::memory_order_relaxed);
+    m_cpuMemcpy.store(0, std::memory_order_relaxed);
 }
 
 // 可从任意线程调用（VideoRenderer::frameReady 可能跨线程发出）
@@ -92,14 +138,23 @@ QSGNode* FFmpegSurface::updatePaintNode(QSGNode*         old_node,
 
     node->setRect(draw_rect);
 
-    if (frame && !node->setFrame(window(), frame) &&
-        frame->native.kind == NativeFrameKind::VideoToolbox) {
-        if (m_nativeRenderingFailureLogs < 3) {
-            qWarning("FFmpegSurface: native VideoToolbox texture creation failed, "
-                     "disabling native rendering for future frames.");
-            ++m_nativeRenderingFailureLogs;
+    if (frame) {
+        const bool nativeFrame = frame->native.kind == NativeFrameKind::VideoToolbox;
+        const bool accepted = node->setFrame(window(), frame);
+        if (!accepted && nativeFrame) {
+            if (m_nativeRenderingFailureLogs < 3) {
+                qWarning("FFmpegSurface: native VideoToolbox texture creation failed, "
+                         "disabling native rendering for future frames.");
+                ++m_nativeRenderingFailureLogs;
+            }
+            emit nativeRenderingFailed();
+        } else if (accepted && nativeFrame) {
+            m_nativeTextureCreated.fetch_add(1, std::memory_order_relaxed);
+            m_nativeTextureDrawn.fetch_add(1, std::memory_order_relaxed);
+        } else if (accepted) {
+            m_cpuTransferred.fetch_add(1, std::memory_order_relaxed);
+            m_cpuMemcpy.fetch_add(cpuFrameBytes(frame->frame.get()), std::memory_order_relaxed);
         }
-        emit nativeRenderingFailed();
     }
 
     return node;

@@ -12,9 +12,19 @@
 
 #include "common/FFmpegUtils.h"
 
+#include <atomic>
+#include <cstdint>
 #include <QMutex>
 #include <QQmlEngine>
 #include <QQuickItem>
+
+struct FFmpegSurfaceDiagnostics
+{
+    std::uint64_t nativeTextureCreated = 0;
+    std::uint64_t nativeTextureDrawn = 0;
+    std::uint64_t cpuTransferred = 0;
+    std::uint64_t cpuMemcpy = 0;
+};
 
 /**
  * @brief FFmpegSurface — QML 视频渲染组件
@@ -52,6 +62,8 @@ class FFmpegSurface : public QQuickItem
     }
     void setAspectRatioMode(Qt::AspectRatioMode mode);
     Q_INVOKABLE bool supportsNativeVideoToolboxRendering() const;
+    FFmpegSurfaceDiagnostics diagnosticsSnapshot() const;
+    void resetDiagnostics();
 
   public slots:
     /** 接收 VideoRenderer::frameReady 信号 */
@@ -71,6 +83,10 @@ class FFmpegSurface : public QQuickItem
     bool m_dirty = false;             // 是否有新帧待渲染
     bool m_clearPending = false;
     int m_nativeRenderingFailureLogs = 0;
+    std::atomic_uint64_t m_nativeTextureCreated { 0 };
+    std::atomic_uint64_t m_nativeTextureDrawn { 0 };
+    std::atomic_uint64_t m_cpuTransferred { 0 };
+    std::atomic_uint64_t m_cpuMemcpy { 0 };
 
     Qt::AspectRatioMode m_aspectRatioMode = Qt::KeepAspectRatio;
 };

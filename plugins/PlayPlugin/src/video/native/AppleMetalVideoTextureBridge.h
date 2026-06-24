@@ -14,6 +14,8 @@ struct AppleMetalTextureSet
 {
     ~AppleMetalTextureSet();
 
+    void releaseNativeTextures() noexcept;
+
     std::unique_ptr<QRhiTexture> yTexture;
     std::unique_ptr<QRhiTexture> uvTexture;
     std::unique_ptr<QRhiTexture> vPlaceholderTexture;

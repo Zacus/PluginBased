@@ -48,10 +48,23 @@ MetalPlaneFormat mapPixelBufferFormat(OSType format)
 
 AppleMetalTextureSet::~AppleMetalTextureSet()
 {
-    if (yCoreVideoTexture)
+    releaseNativeTextures();
+}
+
+void AppleMetalTextureSet::releaseNativeTextures() noexcept
+{
+    vPlaceholderTexture.reset();
+    uvTexture.reset();
+    yTexture.reset();
+
+    if (yCoreVideoTexture) {
         CFRelease(static_cast<CVMetalTextureRef>(yCoreVideoTexture));
-    if (uvCoreVideoTexture)
+        yCoreVideoTexture = nullptr;
+    }
+    if (uvCoreVideoTexture) {
         CFRelease(static_cast<CVMetalTextureRef>(uvCoreVideoTexture));
+        uvCoreVideoTexture = nullptr;
+    }
 }
 
 AppleMetalVideoTextureBridge::AppleMetalVideoTextureBridge() = default;
