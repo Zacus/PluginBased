@@ -95,6 +95,9 @@ add_subdirectory(plugin)
 add_subdirectory(core)
 add_subdirectory(sdk/media_core)
 add_subdirectory(sdk/media_playback_runtime)
+if(APPLE)
+    add_subdirectory(sdk/media_platform_audio_macos)
+endif()
 
 # ── UI 组件库：独立仓库，通过 FetchContent 引入 ───────────────
 # 生产环境替换 SOURCE_DIR 为 GIT_REPOSITORY + GIT_TAG：

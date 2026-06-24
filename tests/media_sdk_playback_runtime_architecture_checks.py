@@ -2,6 +2,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 RUNTIME = ROOT / "sdk" / "media_playback_runtime"
+PLATFORM_AUDIO_MACOS = ROOT / "sdk" / "media_platform_audio_macos"
 ROOT_CMAKE = ROOT / "CMakeLists.txt"
 
 FORBIDDEN_RUNTIME_TOKENS = (
@@ -32,6 +33,8 @@ def main() -> None:
     cmake = read(ROOT_CMAKE)
     assert_contains(cmake, "add_subdirectory(sdk/media_playback_runtime)", ROOT_CMAKE)
     assert_contains(cmake, "media_sdk_playback_runtime_architecture_checks", ROOT_CMAKE)
+    assert_contains(cmake, "if(APPLE)", ROOT_CMAKE)
+    assert_contains(cmake, "add_subdirectory(sdk/media_platform_audio_macos)", ROOT_CMAKE)
 
     runtime_cmake = read(RUNTIME / "CMakeLists.txt")
     assert_contains(runtime_cmake, "add_library(media_sdk_playback_runtime STATIC", RUNTIME / "CMakeLists.txt")
@@ -70,6 +73,28 @@ def main() -> None:
         for token in FORBIDDEN_RUNTIME_TOKENS:
             if token in text:
                 raise AssertionError(f"{path} contains forbidden runtime dependency token {token!r}")
+
+    platform_cmake_path = PLATFORM_AUDIO_MACOS / "CMakeLists.txt"
+    platform_cmake = read(platform_cmake_path)
+    assert_contains(platform_cmake, "add_library(media_sdk_platform_audio_macos STATIC", platform_cmake_path)
+    assert_contains(
+        platform_cmake,
+        "add_library(media_sdk::platform_audio_macos ALIAS media_sdk_platform_audio_macos)",
+        platform_cmake_path,
+    )
+    assert_contains(platform_cmake, "media_sdk::playback_runtime", platform_cmake_path)
+    assert_contains(platform_cmake, "-framework CoreAudio", platform_cmake_path)
+    assert_contains(platform_cmake, "-framework AudioToolbox", platform_cmake_path)
+
+    concrete_header = PLATFORM_AUDIO_MACOS / "include" / "media_sdk" / "platform" / "macos" / "CoreAudioAudioOutput.h"
+    if not concrete_header.exists():
+        raise AssertionError(f"{concrete_header} must exist")
+
+    concrete_include = '#include "media_sdk/platform/macos/CoreAudioAudioOutput.h"'
+    for path in scanned:
+        text = read(path)
+        if concrete_include in text:
+            raise AssertionError(f"{path} must not include the concrete CoreAudio output header")
 
 
 if __name__ == "__main__":
