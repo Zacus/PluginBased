@@ -48,6 +48,17 @@ def main() -> None:
     assert_contains(runtime_cmake, "AUTOMOC OFF", RUNTIME / "CMakeLists.txt")
     assert_contains(runtime_cmake, "media_sdk::core", RUNTIME / "CMakeLists.txt")
 
+    runtime_include = RUNTIME / "include" / "media_sdk" / "runtime"
+    for header_name in ("AudioOutput.h", "VideoPresenter.h", "RuntimeTypes.h"):
+        header = runtime_include / header_name
+        if not header.exists():
+            raise AssertionError(f"{header} must exist")
+
+    video_presenter_header = runtime_include / "VideoPresenter.h"
+    video_presenter = read(video_presenter_header)
+    for token in ("IVideoPresenterEvents", "PresentCompletion", "onPresentComplete", "PresentId"):
+        assert_contains(video_presenter, token, video_presenter_header)
+
     scanned = []
     for suffix in ("*.h", "*.cpp"):
         scanned.extend(RUNTIME.rglob(suffix))
