@@ -4,6 +4,7 @@ add_library(media_sdk_playback_runtime STATIC
     src/NativeFallbackController.cpp
     src/PlaybackRuntimeVersion.cpp
     src/PresentTracker.cpp
+    src/RuntimePlayer.cpp
 )
 
 add_library(media_sdk::playback_runtime ALIAS media_sdk_playback_runtime)
@@ -121,5 +122,22 @@ if(BUILD_TESTING)
     )
     add_test(NAME media_sdk_playback_runtime_native_fallback_controller
         COMMAND $<TARGET_FILE:MediaSdkPlaybackRuntimeNativeFallbackControllerTest>
+    )
+
+    add_executable(MediaSdkPlaybackRuntimePlayerMockTest
+        tests/tst_runtime_player_mock.cpp
+    )
+    target_compile_features(MediaSdkPlaybackRuntimePlayerMockTest PRIVATE cxx_std_20)
+    set_target_properties(MediaSdkPlaybackRuntimePlayerMockTest PROPERTIES
+        CXX_EXTENSIONS OFF
+        AUTOMOC OFF
+        AUTOUIC OFF
+        AUTORCC OFF
+    )
+    target_link_libraries(MediaSdkPlaybackRuntimePlayerMockTest PRIVATE
+        media_sdk_playback_runtime
+    )
+    add_test(NAME media_sdk_playback_runtime_player_mock
+        COMMAND $<TARGET_FILE:MediaSdkPlaybackRuntimePlayerMockTest>
     )
 endif()
