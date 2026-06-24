@@ -1,4 +1,6 @@
 add_library(media_sdk_playback_runtime STATIC
+    src/AvSyncScheduler.cpp
+    src/MasterClock.cpp
     src/PlaybackRuntimeVersion.cpp
 )
 
@@ -57,5 +59,25 @@ if(BUILD_TESTING)
     )
     add_test(NAME media_sdk_playback_runtime_frame_queue
         COMMAND $<TARGET_FILE:MediaSdkPlaybackRuntimeFrameQueueTest>
+    )
+
+    add_executable(MediaSdkPlaybackRuntimeAvSyncSchedulerTest
+        tests/tst_av_sync_scheduler.cpp
+    )
+    target_compile_features(MediaSdkPlaybackRuntimeAvSyncSchedulerTest PRIVATE cxx_std_20)
+    set_target_properties(MediaSdkPlaybackRuntimeAvSyncSchedulerTest PROPERTIES
+        CXX_EXTENSIONS OFF
+        AUTOMOC OFF
+        AUTOUIC OFF
+        AUTORCC OFF
+    )
+    target_include_directories(MediaSdkPlaybackRuntimeAvSyncSchedulerTest PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/src"
+    )
+    target_link_libraries(MediaSdkPlaybackRuntimeAvSyncSchedulerTest PRIVATE
+        media_sdk_playback_runtime
+    )
+    add_test(NAME media_sdk_playback_runtime_av_sync_scheduler
+        COMMAND $<TARGET_FILE:MediaSdkPlaybackRuntimeAvSyncSchedulerTest>
     )
 endif()
