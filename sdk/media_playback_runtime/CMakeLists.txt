@@ -38,4 +38,24 @@ if(BUILD_TESTING)
     add_test(NAME media_sdk_playback_runtime_interface_contract
         COMMAND $<TARGET_FILE:MediaSdkPlaybackRuntimeInterfaceContractTest>
     )
+
+    add_executable(MediaSdkPlaybackRuntimeFrameQueueTest
+        tests/tst_runtime_frame_queue.cpp
+    )
+    target_compile_features(MediaSdkPlaybackRuntimeFrameQueueTest PRIVATE cxx_std_20)
+    set_target_properties(MediaSdkPlaybackRuntimeFrameQueueTest PROPERTIES
+        CXX_EXTENSIONS OFF
+        AUTOMOC OFF
+        AUTOUIC OFF
+        AUTORCC OFF
+    )
+    target_include_directories(MediaSdkPlaybackRuntimeFrameQueueTest PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/src"
+    )
+    target_link_libraries(MediaSdkPlaybackRuntimeFrameQueueTest PRIVATE
+        media_sdk_playback_runtime
+    )
+    add_test(NAME media_sdk_playback_runtime_frame_queue
+        COMMAND $<TARGET_FILE:MediaSdkPlaybackRuntimeFrameQueueTest>
+    )
 endif()
