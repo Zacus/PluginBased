@@ -73,6 +73,28 @@ void readSilenceWhenUnderrun()
     assert(output == bytes({ 9, 8, 0, 0, 0, 0 }));
 }
 
+void underrunSilenceDoesNotAdvancePlaybackClock()
+{
+    media_sdk::platform::macos::CoreAudioRingBuffer buffer(48000);
+    buffer.configure(audioFormat(), 1);
+
+    std::vector<std::byte> input(48000 * 2 * 4 / 100);
+    assert(buffer.write({
+        .bytes = input,
+        .pts = 20ms,
+        .generation = 1,
+    }));
+
+    std::vector<std::byte> output(input.size() * 3);
+    const auto read = buffer.read(output);
+    assert(read.copiedBytes == input.size());
+    assert(read.silenceBytes == input.size() * 2);
+
+    const auto snapshot = buffer.clock();
+    assert(snapshot.position == 30ms);
+    assert(snapshot.queuedDuration == 0us);
+}
+
 void flushClearsQueuedBytesAndIncrementsGeneration()
 {
     media_sdk::platform::macos::CoreAudioRingBuffer buffer(8);
@@ -164,6 +186,7 @@ int main()
 {
     writeAndReadPreserveByteOrder();
     readSilenceWhenUnderrun();
+    underrunSilenceDoesNotAdvancePlaybackClock();
     flushClearsQueuedBytesAndIncrementsGeneration();
     queuedDurationUsesFormatByteRate();
     closeWakesBlockedWriters();

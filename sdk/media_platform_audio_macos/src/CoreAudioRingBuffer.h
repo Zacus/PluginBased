@@ -120,7 +120,7 @@ inline CoreAudioRingBufferReadResult CoreAudioRingBuffer::read(std::span<std::by
             }
         }
 
-        m_playbackPosition += durationForBytes(destination.size());
+        m_playbackPosition += durationForBytes(result.copiedBytes);
         updateSnapshotLocked();
     }
     m_notFull.notify_all();
