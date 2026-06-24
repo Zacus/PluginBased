@@ -1,6 +1,7 @@
 add_library(media_sdk_playback_runtime STATIC
     src/AvSyncScheduler.cpp
     src/MasterClock.cpp
+    src/NativeFallbackController.cpp
     src/PlaybackRuntimeVersion.cpp
     src/PresentTracker.cpp
 )
@@ -100,5 +101,25 @@ if(BUILD_TESTING)
     )
     add_test(NAME media_sdk_playback_runtime_present_tracker
         COMMAND $<TARGET_FILE:MediaSdkPlaybackRuntimePresentTrackerTest>
+    )
+
+    add_executable(MediaSdkPlaybackRuntimeNativeFallbackControllerTest
+        tests/tst_native_fallback_controller.cpp
+    )
+    target_compile_features(MediaSdkPlaybackRuntimeNativeFallbackControllerTest PRIVATE cxx_std_20)
+    set_target_properties(MediaSdkPlaybackRuntimeNativeFallbackControllerTest PROPERTIES
+        CXX_EXTENSIONS OFF
+        AUTOMOC OFF
+        AUTOUIC OFF
+        AUTORCC OFF
+    )
+    target_include_directories(MediaSdkPlaybackRuntimeNativeFallbackControllerTest PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/src"
+    )
+    target_link_libraries(MediaSdkPlaybackRuntimeNativeFallbackControllerTest PRIVATE
+        media_sdk_playback_runtime
+    )
+    add_test(NAME media_sdk_playback_runtime_native_fallback_controller
+        COMMAND $<TARGET_FILE:MediaSdkPlaybackRuntimeNativeFallbackControllerTest>
     )
 endif()
