@@ -1,8 +1,12 @@
 #include "media_sdk/runtime/RuntimePlayer.h"
 
 #include <cassert>
+#include <atomic>
 #include <chrono>
 #include <cstddef>
+#include <functional>
+#include <mutex>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -14,6 +18,7 @@ class MockAudioOutput final : public media_sdk::runtime::IAudioOutput {
 public:
     media_sdk::Result<void> open(const media_sdk::runtime::AudioFormat& format) override
     {
+        std::lock_guard lock(mutex);
         lastFormat = format;
         ++openCount;
         return media_sdk::Result<void>::success();
@@ -21,6 +26,7 @@ public:
 
     media_sdk::Result<void> write(media_sdk::runtime::AudioBufferView buffer) override
     {
+        std::lock_guard lock(mutex);
         ++writeCount;
         writtenBytes += buffer.bytes.size();
         lastWritePts = buffer.pts;
@@ -30,14 +36,29 @@ public:
 
     media_sdk::runtime::ClockSnapshot clock() const override
     {
+        std::lock_guard lock(mutex);
         return snapshot;
     }
 
     void pause() override { ++pauseCount; }
     void resume() override { ++resumeCount; }
-    void flush() override { ++flushCount; ++snapshot.generation; }
+    void flush() override
+    {
+        std::lock_guard lock(mutex);
+        ++flushCount;
+        ++snapshot.generation;
+    }
     void close() override { ++closeCount; }
 
+    void setClock(std::chrono::microseconds position, media_sdk::runtime::Generation generation)
+    {
+        std::lock_guard lock(mutex);
+        snapshot.position = position;
+        snapshot.generation = generation;
+        snapshot.valid = true;
+    }
+
+    mutable std::mutex mutex;
     media_sdk::runtime::AudioFormat lastFormat {};
     media_sdk::runtime::ClockSnapshot snapshot {
         .position = 0us,
@@ -47,12 +68,12 @@ public:
         .valid = true,
         .paused = false,
     };
-    int openCount = 0;
-    int writeCount = 0;
-    int pauseCount = 0;
-    int resumeCount = 0;
-    int flushCount = 0;
-    int closeCount = 0;
+    std::atomic_int openCount = 0;
+    std::atomic_int writeCount = 0;
+    std::atomic_int pauseCount = 0;
+    std::atomic_int resumeCount = 0;
+    std::atomic_int flushCount = 0;
+    std::atomic_int closeCount = 0;
     std::size_t writtenBytes = 0;
     std::chrono::microseconds lastWritePts { 0 };
     media_sdk::runtime::Generation lastWriteGeneration = 0;
@@ -72,6 +93,7 @@ public:
 
     void setEvents(media_sdk::runtime::IVideoPresenterEvents* nextEvents) override
     {
+        std::lock_guard lock(mutex);
         events = nextEvents;
     }
 
@@ -79,6 +101,7 @@ public:
         media_sdk::VideoFrame frame,
         media_sdk::runtime::PresentTiming timing) override
     {
+        std::lock_guard lock(mutex);
         ++presentCount;
         lastFrame = std::move(frame);
         lastTiming = timing;
@@ -96,24 +119,50 @@ public:
 
     void complete(media_sdk::runtime::PresentId id, media_sdk::runtime::PresentStatus status)
     {
-        if (events) {
-            events->onPresentComplete({
-                .id = id,
-                .status = status,
-                .detail = {},
-            });
+        media_sdk::runtime::IVideoPresenterEvents* target = nullptr;
+        {
+            std::lock_guard lock(mutex);
+            target = events;
+        }
+        if (target) {
+            target->onPresentComplete({ .id = id, .status = status, .detail = {} });
         }
     }
 
+    media_sdk::runtime::PresentId lastId() const
+    {
+        std::lock_guard lock(mutex);
+        return lastPresentId;
+    }
+
+    media_sdk::runtime::PresentTiming timing() const
+    {
+        std::lock_guard lock(mutex);
+        return lastTiming;
+    }
+
+    mutable std::mutex mutex;
     media_sdk::runtime::IVideoPresenterEvents* events = nullptr;
     media_sdk::runtime::PresentStatus nextStatus = media_sdk::runtime::PresentStatus::Queued;
     media_sdk::VideoFrame lastFrame {};
     media_sdk::runtime::PresentTiming lastTiming {};
     media_sdk::runtime::PresentId nextPresentId = 0;
     media_sdk::runtime::PresentId lastPresentId = 0;
-    int presentCount = 0;
-    int clearCount = 0;
+    std::atomic_int presentCount = 0;
+    std::atomic_int clearCount = 0;
 };
+
+bool waitUntil(const std::function<bool()>& predicate,
+               std::chrono::milliseconds timeout = 500ms)
+{
+    const auto deadline = std::chrono::steady_clock::now() + timeout;
+    while (std::chrono::steady_clock::now() < deadline) {
+        if (predicate())
+            return true;
+        std::this_thread::sleep_for(1ms);
+    }
+    return predicate();
+}
 
 media_sdk::AudioFrame makeAudioFrame(
     std::chrono::microseconds pts,
@@ -183,6 +232,19 @@ media_sdk::runtime::RuntimePlayer makePlayer(MockAudioOutput& audio, MockPresent
         });
 }
 
+media_sdk::runtime::RuntimePlayer makePlayer(
+    MockAudioOutput& audio,
+    MockPresenter& presenter,
+    media_sdk::runtime::RuntimePlayerConfig config)
+{
+    return media_sdk::runtime::RuntimePlayer(
+        config,
+        {
+            .audioOutput = &audio,
+            .videoPresenter = &presenter,
+        });
+}
+
 void openStartsNewSessionAndResetsQueues()
 {
     MockAudioOutput audio;
@@ -190,17 +252,20 @@ void openStartsNewSessionAndResetsQueues()
     auto player = makePlayer(audio, presenter);
 
     assert(player.open().ok());
+    assert(audio.openCount == 1);
     player.enqueueAudio(runtimeAudio(0, 0, 0ms));
+    std::this_thread::sleep_for(10ms);
     assert(audio.writeCount == 0);
 
     player.enqueueAudio(runtimeAudio(1, 1, 10ms));
-    assert(audio.writeCount == 1);
+    assert(waitUntil([&audio]() { return audio.writeCount == 1; }));
 
     assert(player.open().ok());
     player.enqueueAudio(runtimeAudio(1, 1, 20ms));
+    std::this_thread::sleep_for(10ms);
     assert(audio.writeCount == 1);
     player.enqueueAudio(runtimeAudio(2, 1, 20ms));
-    assert(audio.writeCount == 2);
+    assert(waitUntil([&audio]() { return audio.writeCount == 2; }));
 }
 
 void audioFramesAreWrittenToInjectedAudioOutput()
@@ -211,7 +276,7 @@ void audioFramesAreWrittenToInjectedAudioOutput()
     assert(player.open().ok());
 
     player.enqueueAudio(runtimeAudio(1, 1, 42ms));
-    assert(audio.writeCount == 1);
+    assert(waitUntil([&audio]() { return audio.writeCount == 1; }));
     assert(audio.writtenBytes == 128);
     assert(audio.lastWritePts == 42ms);
     assert(audio.lastWriteGeneration == 1);
@@ -222,34 +287,57 @@ void audioFramesAreWrittenToInjectedAudioOutput()
 void videoFramesAreScheduledAgainstAudioClock()
 {
     MockAudioOutput audio;
-    audio.snapshot.position = 100ms;
-    audio.snapshot.generation = 1;
+    audio.setClock(100ms, 1);
     MockPresenter presenter;
     auto player = makePlayer(audio, presenter);
     assert(player.open().ok());
 
     player.enqueueVideo(runtimeVideo(1, 1, 101ms));
-    assert(presenter.presentCount == 1);
-    assert(presenter.lastTiming.clock == 100ms);
+    assert(waitUntil([&presenter]() { return presenter.presentCount == 1; }));
+    assert(presenter.timing().clock == 100ms);
 
-    audio.snapshot.position = 250ms;
+    audio.setClock(250ms, 1);
     player.enqueueVideo(runtimeVideo(1, 1, 1ms));
+    std::this_thread::sleep_for(10ms);
     assert(presenter.presentCount == 1);
     assert(player.diagnostics().videoDroppedLate == 1);
+}
+
+void videoWaitDecisionDelaysAndEventuallyPresentsSameFrame()
+{
+    MockAudioOutput audio;
+    audio.setClock(0ms, 1);
+    MockPresenter presenter;
+    media_sdk::runtime::RuntimePlayerConfig config;
+    config.syncConfig.submitLeadTime = 0us;
+    config.syncConfig.maxScheduledWait = 5ms;
+    auto player = makePlayer(audio, presenter, config);
+    assert(player.open().ok());
+
+    player.enqueueVideo(runtimeVideo(1, 1, 5ms));
+    std::this_thread::sleep_for(2ms);
+    assert(presenter.presentCount == 0);
+
+    audio.setClock(5ms, 1);
+    assert(waitUntil([&presenter]() { return presenter.presentCount == 1; }));
+    assert(player.diagnostics().videoWaited >= 1);
+    assert(player.diagnostics().videoPresented == 1);
 }
 
 void eofCompletesOnlyAfterAudioAndVideoDrain()
 {
     MockAudioOutput audio;
-    audio.snapshot.position = 100ms;
-    audio.snapshot.generation = 1;
+    audio.setClock(100ms, 1);
     MockPresenter presenter;
     auto player = makePlayer(audio, presenter);
     assert(player.open().ok());
 
     player.enqueueAudio(runtimeAudio(1, 1, 10ms));
     player.enqueueVideo(runtimeVideo(1, 1, 100ms));
+    assert(waitUntil([&audio]() { return audio.writeCount == 1; }));
+    assert(waitUntil([&presenter]() { return presenter.presentCount == 1; }));
     player.enqueueEndOfStream(1, 1);
+    assert(waitUntil([&player]() { return player.diagnostics().eofPresented == 1; }));
 
     const auto diagnostics = player.diagnostics();
     assert(diagnostics.audioWritten == 1);
@@ -261,15 +349,14 @@ void eofCompletesOnlyAfterAudioAndVideoDrain()
 void seekInvalidatesOldGenerationFramesAndCompletions()
 {
     MockAudioOutput audio;
-    audio.snapshot.position = 100ms;
-    audio.snapshot.generation = 1;
+    audio.setClock(100ms, 1);
     MockPresenter presenter;
     auto player = makePlayer(audio, presenter);
     assert(player.open().ok());
 
     player.enqueueVideo(runtimeVideo(1, 1, 100ms, media_sdk::PixelFormat::Native));
-    const auto oldPresentId = presenter.lastPresentId;
-    assert(presenter.presentCount == 1);
+    assert(waitUntil([&presenter]() { return presenter.presentCount == 1; }));
+    const auto oldPresentId = presenter.lastId();
 
     player.seek(500ms);
     presenter.complete(oldPresentId, media_sdk::runtime::PresentStatus::DeviceLost);
@@ -278,10 +365,9 @@ void seekInvalidatesOldGenerationFramesAndCompletions()
     player.enqueueVideo(runtimeVideo(1, 1, 500ms));
     assert(presenter.presentCount == 1);
 
-    audio.snapshot.generation = 2;
-    audio.snapshot.position = 500ms;
+    audio.setClock(500ms, 2);
     player.enqueueVideo(runtimeVideo(1, 2, 500ms));
-    assert(presenter.presentCount == 2);
+    assert(waitUntil([&presenter]() { return presenter.presentCount == 2; }));
 }
 
 void stopAbortsQueuesPausesAudioClearsPresenterAndReturnsIdle()
@@ -305,16 +391,16 @@ void stopAbortsQueuesPausesAudioClearsPresenterAndReturnsIdle()
 void nativePresenterFailureRunsFullFallbackTransition()
 {
     MockAudioOutput audio;
-    audio.snapshot.position = 100ms;
-    audio.snapshot.generation = 1;
+    audio.setClock(100ms, 1);
     MockPresenter presenter;
     auto player = makePlayer(audio, presenter);
     assert(player.open().ok());
 
     player.enqueueVideo(runtimeVideo(1, 1, 100ms, media_sdk::PixelFormat::Native));
-    assert(presenter.presentCount == 1);
+    assert(waitUntil([&presenter]() { return presenter.presentCount == 1; }));
 
-    presenter.complete(presenter.lastPresentId, media_sdk::runtime::PresentStatus::DeviceLost);
+    presenter.complete(presenter.lastId(), media_sdk::runtime::PresentStatus::DeviceLost);
+    assert(waitUntil([&player]() { return player.diagnostics().nativeFallbacks == 1; }));
     const auto diagnostics = player.diagnostics();
     assert(diagnostics.nativeFallbacks == 1);
     assert(diagnostics.queueAbortCount == 2);
@@ -323,7 +409,12 @@ void nativePresenterFailureRunsFullFallbackTransition()
     assert(presenter.clearCount == 1);
 
     player.enqueueVideo(runtimeVideo(1, 1, 100ms));
+    std::this_thread::sleep_for(10ms);
     assert(presenter.presentCount == 1);
+
+    audio.setClock(100ms, 2);
+    player.enqueueVideo(runtimeVideo(1, 2, 100ms));
+    assert(waitUntil([&presenter]() { return presenter.presentCount == 2; }));
 }
 
 } // namespace
@@ -333,6 +424,7 @@ int main()
     openStartsNewSessionAndResetsQueues();
     audioFramesAreWrittenToInjectedAudioOutput();
     videoFramesAreScheduledAgainstAudioClock();
+    videoWaitDecisionDelaysAndEventuallyPresentsSameFrame();
     eofCompletesOnlyAfterAudioAndVideoDrain();
     seekInvalidatesOldGenerationFramesAndCompletions();
     stopAbortsQueuesPausesAudioClearsPresenterAndReturnsIdle();

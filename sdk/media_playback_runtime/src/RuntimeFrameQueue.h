@@ -81,8 +81,10 @@ public:
         lock.unlock();
         m_notFull.notify_one();
 
-        if (entry.endOfStream)
+        if (entry.endOfStream) {
+            frame = std::move(entry.frame);
             return PopResult::EndOfStream;
+        }
 
         frame = std::move(entry.frame);
         return PopResult::Frame;

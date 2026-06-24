@@ -21,6 +21,11 @@ struct RuntimeSyncConfig {
 struct RuntimePlayerConfig {
     std::size_t audioQueueCapacity = 32;
     std::size_t videoQueueCapacity = 8;
+    AudioFormat audioFormat {
+        .sampleRate = 48000,
+        .channels = 2,
+        .sampleFormat = AudioSampleFormat::Float32,
+    };
     VideoOutputPolicy outputPolicy = VideoOutputPolicy::PreferNative;
     RuntimeSyncConfig syncConfig {};
 };
