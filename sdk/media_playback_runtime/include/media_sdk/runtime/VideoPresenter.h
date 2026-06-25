@@ -36,10 +36,20 @@ struct PresentResult {
     PresentStatus status = PresentStatus::Failed;
 };
 
+struct PresentDiagnostics {
+    std::uint64_t nativeTextureCreated = 0;
+    std::uint64_t nativeTextureFailed = 0;
+    std::uint64_t nativeTextureDrawn = 0;
+    std::uint64_t cpuCopied = 0;
+    std::uint64_t cpuTransferred = 0;
+    std::uint64_t cpuMemcpy = 0;
+};
+
 struct PresentCompletion {
     PresentId id = 0;
     PresentStatus status = PresentStatus::Failed;
     std::string detail;
+    PresentDiagnostics diagnostics {};
 };
 
 class IVideoPresenterEvents {

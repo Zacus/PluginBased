@@ -59,7 +59,21 @@ def main() -> None:
 
     video_presenter_header = runtime_include / "VideoPresenter.h"
     video_presenter = read(video_presenter_header)
-    for token in ("IVideoPresenterEvents", "PresentCompletion", "onPresentComplete", "PresentId"):
+    for token in (
+        "IVideoPresenterEvents",
+        "PresentCompletion",
+        "PresentDiagnostics",
+        "onPresentComplete",
+        "PresentId",
+    ):
+        assert_contains(video_presenter, token, video_presenter_header)
+    for token in (
+        "nativeTextureCreated",
+        "nativeTextureDrawn",
+        "cpuTransferred",
+        "cpuMemcpy",
+        "diagnostics",
+    ):
         assert_contains(video_presenter, token, video_presenter_header)
 
     scanned = []

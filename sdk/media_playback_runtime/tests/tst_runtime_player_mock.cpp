@@ -117,7 +117,10 @@ public:
         ++clearCount;
     }
 
-    void complete(media_sdk::runtime::PresentId id, media_sdk::runtime::PresentStatus status)
+    void complete(
+        media_sdk::runtime::PresentId id,
+        media_sdk::runtime::PresentStatus status,
+        media_sdk::runtime::PresentDiagnostics diagnostics = {})
     {
         media_sdk::runtime::IVideoPresenterEvents* target = nullptr;
         {
@@ -125,7 +128,12 @@ public:
             target = events;
         }
         if (target) {
-            target->onPresentComplete({ .id = id, .status = status, .detail = {} });
+            target->onPresentComplete({
+                .id = id,
+                .status = status,
+                .detail = {},
+                .diagnostics = diagnostics,
+            });
         }
     }
 
@@ -447,6 +455,42 @@ void nativePresenterFailureRunsFullFallbackTransition()
     assert(waitUntil([&presenter]() { return presenter.presentCount == 2; }));
 }
 
+void nativeDiagnosticsTrackZeroCopySuccessWithoutCpuCopy()
+{
+    MockAudioOutput audio;
+    audio.setClock(100ms, 1);
+    MockPresenter presenter;
+    auto player = makePlayer(audio, presenter);
+    assert(player.open().ok());
+
+    player.enqueueVideo(runtimeVideo(1, 1, 100ms, media_sdk::PixelFormat::Native));
+    assert(waitUntil([&presenter]() { return presenter.presentCount == 1; }));
+    presenter.complete(
+        presenter.lastId(),
+        media_sdk::runtime::PresentStatus::Presented,
+        {
+            .nativeTextureCreated = 1,
+            .nativeTextureDrawn = 1,
+            .cpuTransferred = 0,
+            .cpuMemcpy = 0,
+        });
+
+    assert(waitUntil([&player]() {
+        return player.diagnostics().nativeTextureCreated == 1 &&
+            player.diagnostics().nativeTextureDrawn == 1;
+    }));
+
+    const auto diagnostics = player.diagnostics();
+    assert(diagnostics.nativeAccepted == 1);
+    assert(diagnostics.nativePresented == 1);
+    assert(diagnostics.nativeTextureCreated == 1);
+    assert(diagnostics.nativeTextureDrawn == 1);
+    assert(diagnostics.cpuCopied == 0);
+    assert(diagnostics.cpuTransferred == 0);
+    assert(diagnostics.cpuMemcpy == 0);
+    assert(diagnostics.nativeFallbacks == 0);
+}
+
 void currentGenerationDeviceLostPausesAudioFlushesQueuesClearsPresenterAndRequestsCpuOnlyDecode()
 {
     MockAudioOutput audio;
@@ -521,6 +565,10 @@ void fallbackSeekCompletionResumesAudioAndVideoScheduling()
     assert(audio.resumeCount == 1);
     player.enqueueVideo(runtimeVideo(1, 2, 100ms));
     assert(waitUntil([&presenter]() { return presenter.presentCount == 2; }));
+
+    const auto diagnostics = player.diagnostics();
+    assert(diagnostics.nativeFallbacks == 1);
+    assert(diagnostics.cpuPresented == 1);
 }
 
 } // namespace
@@ -535,6 +583,7 @@ int main()
     seekInvalidatesOldGenerationFramesAndCompletions();
     stopAbortsQueuesPausesAudioClearsPresenterAndReturnsIdle();
     nativePresenterFailureRunsFullFallbackTransition();
+    nativeDiagnosticsTrackZeroCopySuccessWithoutCpuCopy();
     currentGenerationDeviceLostPausesAudioFlushesQueuesClearsPresenterAndRequestsCpuOnlyDecode();
     oldGenerationDeviceLostDoesNotInterruptCurrentPlayback();
     fallbackSeekCompletionResumesAudioAndVideoScheduling();

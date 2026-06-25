@@ -94,6 +94,10 @@ def check_presenter_contract() -> None:
     assert_contains(combined, "av_frame_clone", PRESENTER_CPP)
     assert_contains(combined, "surface->onFrameReady", PRESENTER_CPP)
     assert_contains(combined, "surface->clear()", PRESENTER_CPP)
+    assert_contains(source, "diagnosticsSnapshot()", PRESENTER_CPP)
+    assert_contains(source, "media_sdk::runtime::PresentDiagnostics", PRESENTER_CPP)
+    assert_contains(source, "afterRendering", PRESENTER_CPP)
+    assert_contains(source, "Qt::SingleShotConnection", PRESENTER_CPP)
 
     for forbidden in (
         "sws_scale",
@@ -109,7 +113,7 @@ def check_presenter_contract() -> None:
     assert_contains(metal_bridge_source, "releaseNativeTextures", METAL_BRIDGE_MM)
 
     for token in ("nativeTextureCreated", "nativeTextureDrawn", "cpuMemcpy", "cpuTransferred"):
-        assert_contains(combined, token, PRESENTER_CPP)
+        assert_contains(source, token, PRESENTER_CPP)
 
 
 def check_scene_graph_dependency_location() -> None:

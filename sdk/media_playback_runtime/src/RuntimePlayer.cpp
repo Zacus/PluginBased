@@ -270,14 +270,20 @@ struct RuntimePlayer::Impl {
     void onPresentComplete(PresentCompletion completion)
     {
         bool failed = false;
+        bool accepted = false;
         PresentStatus failureStatus = completion.status;
+        const auto completionDiagnostics = completion.diagnostics;
         {
             std::lock_guard lock(m_mutex);
             if (!running)
                 return;
 
             const auto action = presentTracker.complete(sessionId, generation, std::move(completion));
+            accepted = action == PresentCompletionAction::AcceptedSuccess
+                || action == PresentCompletionAction::AcceptedFailure;
             failed = action == PresentCompletionAction::AcceptedFailure;
+            if (accepted)
+                accumulatePresentDiagnostics(completionDiagnostics);
         }
 
         if (failed)
@@ -441,6 +447,16 @@ struct RuntimePlayer::Impl {
 
         if (audioEofSeen && videoEofSeen)
             ++diagnostics.eofPresented;
+    }
+
+    void accumulatePresentDiagnostics(PresentDiagnostics presentDiagnostics)
+    {
+        diagnostics.nativeTextureCreated += presentDiagnostics.nativeTextureCreated;
+        diagnostics.nativeTextureFailed += presentDiagnostics.nativeTextureFailed;
+        diagnostics.nativeTextureDrawn += presentDiagnostics.nativeTextureDrawn;
+        diagnostics.cpuCopied += presentDiagnostics.cpuCopied;
+        diagnostics.cpuTransferred += presentDiagnostics.cpuTransferred;
+        diagnostics.cpuMemcpy += presentDiagnostics.cpuMemcpy;
     }
 
     void handlePresentFailure(PresentStatus reason)

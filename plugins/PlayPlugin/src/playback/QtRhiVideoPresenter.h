@@ -10,6 +10,7 @@
 #include <mutex>
 
 class FFmpegSurface;
+struct QtRhiVideoPresenterEventState;
 struct VideoFrameData;
 using VideoFrameDataPtr = std::shared_ptr<VideoFrameData>;
 
@@ -39,7 +40,7 @@ private:
     void complete(media_sdk::runtime::PresentCompletion completion);
 
     QPointer<FFmpegSurface> m_surface;
-    media_sdk::runtime::IVideoPresenterEvents* m_events = nullptr;
+    std::shared_ptr<QtRhiVideoPresenterEventState> m_eventState;
     std::atomic_uint64_t m_nextPresentId { 0 };
     mutable std::mutex m_mutex;
     std::deque<PendingPresent> m_pending;

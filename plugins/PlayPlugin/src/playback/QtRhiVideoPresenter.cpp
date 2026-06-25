@@ -4,6 +4,7 @@
 #include "video/FFmpegSurface.h"
 
 #include <QMetaObject>
+#include <QQuickWindow>
 #include <QThread>
 
 #if defined(Q_OS_APPLE)
@@ -11,7 +12,14 @@
 #endif
 
 #include <memory>
+#include <mutex>
 #include <utility>
+
+struct QtRhiVideoPresenterEventState
+{
+    std::mutex mutex;
+    media_sdk::runtime::IVideoPresenterEvents* events = nullptr;
+};
 
 namespace {
 
@@ -54,10 +62,48 @@ NativeVideoFrame nativeVideoFrameFrom(const media_sdk::VideoFrame& frame, const 
     return native;
 }
 
+std::uint64_t counterDelta(std::uint64_t before, std::uint64_t after)
+{
+    return after >= before ? after - before : 0;
+}
+
+media_sdk::runtime::PresentDiagnostics diagnosticsDelta(
+    const FFmpegSurfaceDiagnostics& before,
+    const FFmpegSurfaceDiagnostics& after)
+{
+    return {
+        .nativeTextureCreated = counterDelta(before.nativeTextureCreated, after.nativeTextureCreated),
+        .nativeTextureFailed = 0,
+        .nativeTextureDrawn = counterDelta(before.nativeTextureDrawn, after.nativeTextureDrawn),
+        .cpuCopied = 0,
+        .cpuTransferred = counterDelta(before.cpuTransferred, after.cpuTransferred),
+        .cpuMemcpy = counterDelta(before.cpuMemcpy, after.cpuMemcpy),
+    };
+}
+
+void dispatchCompletion(
+    const std::weak_ptr<QtRhiVideoPresenterEventState>& weakState,
+    media_sdk::runtime::PresentCompletion completion)
+{
+    const auto state = weakState.lock();
+    if (!state)
+        return;
+
+    media_sdk::runtime::IVideoPresenterEvents* events = nullptr;
+    {
+        std::lock_guard lock(state->mutex);
+        events = state->events;
+    }
+
+    if (events)
+        events->onPresentComplete(std::move(completion));
+}
+
 } // namespace
 
 QtRhiVideoPresenter::QtRhiVideoPresenter(FFmpegSurface* surface)
     : m_surface(surface)
+    , m_eventState(std::make_shared<QtRhiVideoPresenterEventState>())
 {
 }
 
@@ -80,8 +126,8 @@ media_sdk::runtime::VideoPresenterCapabilities QtRhiVideoPresenter::capabilities
 
 void QtRhiVideoPresenter::setEvents(media_sdk::runtime::IVideoPresenterEvents* events)
 {
-    std::lock_guard lock(m_mutex);
-    m_events = events;
+    std::lock_guard lock(m_eventState->mutex);
+    m_eventState->events = events;
 }
 
 media_sdk::runtime::PresentResult QtRhiVideoPresenter::present(
@@ -128,9 +174,40 @@ media_sdk::runtime::PresentResult QtRhiVideoPresenter::present(
         m_pending.push_back(PendingPresent { id, std::move(frame), surfaceFrame, timing });
     }
 
-    QMetaObject::invokeMethod(surface, [surface, surfaceFrame]() {
+    const auto beforeDiagnostics = surface->diagnosticsSnapshot();
+    const std::weak_ptr<QtRhiVideoPresenterEventState> weakEventState = m_eventState;
+    QMetaObject::invokeMethod(surface, [surface, surfaceFrame, id, weakEventState, beforeDiagnostics]() {
         if (surface) {
             surface->onFrameReady(surfaceFrame);
+
+            auto* window = surface->window();
+            if (!window) {
+                const auto afterDiagnostics = surface->diagnosticsSnapshot();
+                dispatchCompletion(weakEventState, {
+                    .id = id,
+                    .status = media_sdk::runtime::PresentStatus::Presented,
+                    .detail = {},
+                    .diagnostics = diagnosticsDelta(beforeDiagnostics, afterDiagnostics),
+                });
+                return;
+            }
+
+            QObject::connect(
+                window,
+                &QQuickWindow::afterRendering,
+                surface,
+                [surface, id, weakEventState, beforeDiagnostics]() {
+                    if (!surface)
+                        return;
+                    const auto afterDiagnostics = surface->diagnosticsSnapshot();
+                    dispatchCompletion(weakEventState, {
+                        .id = id,
+                        .status = media_sdk::runtime::PresentStatus::Presented,
+                        .detail = {},
+                        .diagnostics = diagnosticsDelta(beforeDiagnostics, afterDiagnostics),
+                    });
+                },
+                static_cast<Qt::ConnectionType>(Qt::DirectConnection | Qt::SingleShotConnection));
         }
     }, Qt::QueuedConnection);
 
@@ -189,13 +266,5 @@ void QtRhiVideoPresenter::clear()
 
 void QtRhiVideoPresenter::complete(media_sdk::runtime::PresentCompletion completion)
 {
-    media_sdk::runtime::IVideoPresenterEvents* events = nullptr;
-    {
-        std::lock_guard lock(m_mutex);
-        events = m_events;
-    }
-
-    if (events) {
-        events->onPresentComplete(std::move(completion));
-    }
+    dispatchCompletion(m_eventState, std::move(completion));
 }
