@@ -174,6 +174,7 @@ struct RuntimePlayer::Impl {
         if (shouldResume)
             dependencies.audioOutput->resume();
         m_controlChanged.notify_all();
+        m_presentCapacityChanged.notify_all();
     }
 
     void completeSeek(SessionId completedSessionId, Generation completedGeneration)
@@ -227,6 +228,7 @@ struct RuntimePlayer::Impl {
         dependencies.videoPresenter->clear();
         dependencies.audioOutput->flush();
         m_controlChanged.notify_all();
+        m_presentCapacityChanged.notify_all();
     }
 
     void stop()
@@ -251,6 +253,7 @@ struct RuntimePlayer::Impl {
         audioQueue.abort();
         videoQueue.abort();
         m_controlChanged.notify_all();
+        m_presentCapacityChanged.notify_all();
         joinWorkers();
 
         dependencies.audioOutput->pause();
@@ -299,6 +302,8 @@ struct RuntimePlayer::Impl {
                 accumulatePresentDiagnostics(completionDiagnostics);
         }
 
+        if (accepted)
+            m_presentCapacityChanged.notify_all();
         if (failed)
             handlePresentFailure(failureStatus);
     }
@@ -391,6 +396,11 @@ struct RuntimePlayer::Impl {
                 .clock = clockPosition,
                 .lateness = decision.lateness,
             };
+            if (!waitForPresentCapacity(queuedFrame.sessionId, queuedFrame.generation))
+                return;
+
+            const auto frameSessionId = queuedFrame.sessionId;
+            const auto frameGeneration = queuedFrame.generation;
             const bool presentedNativeFrame = queuedFrame.frame.pixelFormat() == PixelFormat::Native;
             const auto result = dependencies.videoPresenter->present(std::move(queuedFrame.frame), timing);
             if (isFailureStatus(result.status)) {
@@ -399,6 +409,9 @@ struct RuntimePlayer::Impl {
             }
 
             std::lock_guard lock(m_mutex);
+            if (!isCurrentLocked(frameSessionId, frameGeneration))
+                return;
+
             ++diagnostics.videoPresented;
             if (presentedNativeFrame)
                 ++diagnostics.nativePresented;
@@ -408,8 +421,8 @@ struct RuntimePlayer::Impl {
             if (result.status == PresentStatus::Queued && result.id != 0) {
                 presentTracker.track({
                     .id = result.id,
-                    .sessionId = sessionId,
-                    .generation = generation,
+                    .sessionId = frameSessionId,
+                    .generation = frameGeneration,
                     .nativeFrame = presentedNativeFrame,
                 });
             }
@@ -446,6 +459,17 @@ struct RuntimePlayer::Impl {
         });
         while (running && paused && isCurrentLocked(checkedSessionId, checkedGeneration))
             m_controlChanged.wait(lock);
+        return running && isCurrentLocked(checkedSessionId, checkedGeneration);
+    }
+
+    bool waitForPresentCapacity(SessionId checkedSessionId, Generation checkedGeneration)
+    {
+        std::unique_lock lock(m_mutex);
+        m_presentCapacityChanged.wait(lock, [this, checkedSessionId, checkedGeneration]() {
+            return !running
+                || !isCurrentLocked(checkedSessionId, checkedGeneration)
+                || presentTracker.hasCapacity();
+        });
         return running && isCurrentLocked(checkedSessionId, checkedGeneration);
     }
 
@@ -547,6 +571,7 @@ struct RuntimePlayer::Impl {
         if (requestCpuDecode && dependencies.events)
             dependencies.events->onFallbackToCpuRequested(fallbackAction);
         m_controlChanged.notify_all();
+        m_presentCapacityChanged.notify_all();
     }
 
     bool isRunning() const
@@ -590,6 +615,7 @@ struct RuntimePlayer::Impl {
     NativeFallbackController fallbackController;
     mutable std::mutex m_mutex;
     std::condition_variable m_controlChanged;
+    std::condition_variable m_presentCapacityChanged;
     std::thread audioThread;
     std::thread videoThread;
     RuntimeDiagnostics diagnostics {};

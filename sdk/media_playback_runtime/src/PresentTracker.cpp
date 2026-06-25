@@ -14,8 +14,6 @@ void PresentTracker::reset(SessionId sessionId, Generation generation)
 void PresentTracker::setMaxPending(std::size_t maxPending)
 {
     m_maxPending = maxPending == 0 ? 1 : maxPending;
-    while (m_pending.size() > m_maxPending)
-        m_pending.pop_front();
 }
 
 bool PresentTracker::track(TrackedPresent present)
@@ -26,8 +24,8 @@ bool PresentTracker::track(TrackedPresent present)
     if (findPending(present.sessionId, present.generation, present.id) != m_pending.end())
         return false;
 
-    while (m_pending.size() >= m_maxPending)
-        m_pending.pop_front();
+    if (!hasCapacity())
+        return false;
 
     m_pending.push_back(present);
     return true;
@@ -55,6 +53,11 @@ PresentCompletionAction PresentTracker::complete(
 void PresentTracker::clear()
 {
     m_pending.clear();
+}
+
+bool PresentTracker::hasCapacity() const
+{
+    return m_pending.size() < m_maxPending;
 }
 
 std::size_t PresentTracker::pendingCount() const

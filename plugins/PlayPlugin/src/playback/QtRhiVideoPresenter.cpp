@@ -175,19 +175,20 @@ media_sdk::runtime::PresentResult QtRhiVideoPresenter::present(
     }
 
     const auto beforeDiagnostics = surface->diagnosticsSnapshot();
+    const bool expectsNativeDraw = frame.pixelFormat() == media_sdk::PixelFormat::Native &&
+        frame.nativeHandle().kind == media_sdk::NativeHandleKind::VideoToolboxPixelBuffer;
     const std::weak_ptr<QtRhiVideoPresenterEventState> weakEventState = m_eventState;
-    QMetaObject::invokeMethod(surface, [surface, surfaceFrame, id, weakEventState, beforeDiagnostics]() {
+    QMetaObject::invokeMethod(surface, [surface, surfaceFrame, id, weakEventState, beforeDiagnostics, expectsNativeDraw]() {
         if (surface) {
             surface->onFrameReady(surfaceFrame);
 
             auto* window = surface->window();
             if (!window) {
-                const auto afterDiagnostics = surface->diagnosticsSnapshot();
                 dispatchCompletion(weakEventState, {
                     .id = id,
-                    .status = media_sdk::runtime::PresentStatus::Presented,
-                    .detail = {},
-                    .diagnostics = diagnosticsDelta(beforeDiagnostics, afterDiagnostics),
+                    .status = media_sdk::runtime::PresentStatus::Failed,
+                    .detail = "Qt video surface has no QQuickWindow",
+                    .diagnostics = {},
                 });
                 return;
             }
@@ -196,15 +197,28 @@ media_sdk::runtime::PresentResult QtRhiVideoPresenter::present(
                 window,
                 &QQuickWindow::afterRendering,
                 surface,
-                [surface, id, weakEventState, beforeDiagnostics]() {
+                [surface, id, weakEventState, beforeDiagnostics, expectsNativeDraw]() {
                     if (!surface)
                         return;
                     const auto afterDiagnostics = surface->diagnosticsSnapshot();
+                    auto diagnostics = diagnosticsDelta(beforeDiagnostics, afterDiagnostics);
+                    const bool nativeDrawFailed = expectsNativeDraw && diagnostics.nativeTextureDrawn == 0;
+                    if (nativeDrawFailed) {
+                        diagnostics.nativeTextureFailed = 1;
+                        dispatchCompletion(weakEventState, {
+                            .id = id,
+                            .status = media_sdk::runtime::PresentStatus::UnsupportedNativeHandle,
+                            .detail = "Qt scene graph did not draw the native VideoToolbox texture",
+                            .diagnostics = diagnostics,
+                        });
+                        return;
+                    }
+
                     dispatchCompletion(weakEventState, {
                         .id = id,
                         .status = media_sdk::runtime::PresentStatus::Presented,
                         .detail = {},
-                        .diagnostics = diagnosticsDelta(beforeDiagnostics, afterDiagnostics),
+                        .diagnostics = diagnostics,
                     });
                 },
                 static_cast<Qt::ConnectionType>(Qt::DirectConnection | Qt::SingleShotConnection));

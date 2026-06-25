@@ -87,7 +87,7 @@ public:
             .supportsVideoToolboxPixelBuffer = true,
             .supportsCpuYuv = true,
             .asyncPresent = true,
-            .maxPendingFrames = 2,
+            .maxPendingFrames = maxPendingFrames,
         };
     }
 
@@ -158,6 +158,7 @@ public:
     media_sdk::runtime::PresentId lastPresentId = 0;
     std::atomic_int presentCount = 0;
     std::atomic_int clearCount = 0;
+    std::uint32_t maxPendingFrames = 2;
 };
 
 class MockRuntimeEvents final : public media_sdk::runtime::IRuntimePlayerEvents {
@@ -405,6 +406,54 @@ void videoOnlyPlaybackUsesMonotonicClockWhenAudioClockIsDisabled()
     assert(waitUntil([&presenter]() { return presenter.presentCount == 1; }, 100ms));
 }
 
+void presenterBackpressureWaitsForCompletionBeforeSubmittingNextFrame()
+{
+    MockAudioOutput audio;
+    audio.setClock(100ms, 1);
+    MockPresenter presenter;
+    presenter.maxPendingFrames = 1;
+    auto player = makePlayer(audio, presenter);
+    assert(player.open().ok());
+
+    player.enqueueVideo(runtimeVideo(1, 1, 100ms));
+    assert(waitUntil([&presenter]() { return presenter.presentCount == 1; }));
+    const auto firstPresentId = presenter.lastId();
+
+    player.enqueueVideo(runtimeVideo(1, 1, 101ms));
+    std::this_thread::sleep_for(20ms);
+    assert(presenter.presentCount == 1);
+
+    presenter.complete(firstPresentId, media_sdk::runtime::PresentStatus::Presented);
+    assert(waitUntil([&presenter]() { return presenter.presentCount == 2; }));
+}
+
+void presenterBackpressureSeekCancelsWaitingOldGenerationFrame()
+{
+    MockAudioOutput audio;
+    audio.setClock(100ms, 1);
+    MockPresenter presenter;
+    presenter.maxPendingFrames = 1;
+    auto player = makePlayer(audio, presenter);
+    assert(player.open().ok());
+
+    player.enqueueVideo(runtimeVideo(1, 1, 100ms));
+    assert(waitUntil([&presenter]() { return presenter.presentCount == 1; }));
+    const auto firstPresentId = presenter.lastId();
+
+    player.enqueueVideo(runtimeVideo(1, 1, 101ms));
+    std::this_thread::sleep_for(20ms);
+    assert(presenter.presentCount == 1);
+
+    player.seek(500ms);
+    presenter.complete(firstPresentId, media_sdk::runtime::PresentStatus::Presented);
+    std::this_thread::sleep_for(20ms);
+    assert(presenter.presentCount == 1);
+
+    audio.setClock(500ms, 2);
+    player.enqueueVideo(runtimeVideo(1, 2, 500ms));
+    assert(waitUntil([&presenter]() { return presenter.presentCount == 2; }));
+}
+
 void eofCompletesOnlyAfterAudioAndVideoDrain()
 {
     MockAudioOutput audio;
@@ -634,6 +683,8 @@ int main()
     videoFramesAreScheduledAgainstAudioClock();
     videoWaitDecisionDelaysAndEventuallyPresentsSameFrame();
     videoOnlyPlaybackUsesMonotonicClockWhenAudioClockIsDisabled();
+    presenterBackpressureWaitsForCompletionBeforeSubmittingNextFrame();
+    presenterBackpressureSeekCancelsWaitingOldGenerationFrame();
     eofCompletesOnlyAfterAudioAndVideoDrain();
     seekInvalidatesOldGenerationFramesAndCompletions();
     stopAbortsQueuesPausesAudioClearsPresenterAndReturnsIdle();

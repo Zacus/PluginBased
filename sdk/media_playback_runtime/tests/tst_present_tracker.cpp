@@ -82,21 +82,22 @@ void reportsFailureForCurrentNativePresent()
     assert(failed == media_sdk::runtime::PresentCompletionAction::AcceptedFailure);
 }
 
-void capsPendingDepthAndReplacesOlderSameGenerationFrame()
+void rejectsNewPresentWhenPendingCapacityIsFull()
 {
     media_sdk::runtime::PresentTracker tracker;
     tracker.reset(10, 4);
     tracker.setMaxPending(1);
 
     assert(tracker.track(makePresent(1, 10, 4)));
-    assert(tracker.track(makePresent(2, 10, 4)));
+    assert(!tracker.track(makePresent(2, 10, 4)));
     assert(tracker.pendingCount() == 1);
 
-    const auto oldCompletion = tracker.complete(10, 4, completion(1, media_sdk::runtime::PresentStatus::Presented));
-    assert(oldCompletion == media_sdk::runtime::PresentCompletionAction::IgnoredUnknown);
+    const auto rejectedCompletion = tracker.complete(10, 4, completion(2, media_sdk::runtime::PresentStatus::Presented));
+    assert(rejectedCompletion == media_sdk::runtime::PresentCompletionAction::IgnoredUnknown);
+    assert(tracker.pendingCount() == 1);
 
-    const auto currentCompletion = tracker.complete(10, 4, completion(2, media_sdk::runtime::PresentStatus::Presented));
-    assert(currentCompletion == media_sdk::runtime::PresentCompletionAction::AcceptedSuccess);
+    const auto trackedCompletion = tracker.complete(10, 4, completion(1, media_sdk::runtime::PresentStatus::Presented));
+    assert(trackedCompletion == media_sdk::runtime::PresentCompletionAction::AcceptedSuccess);
     assert(tracker.pendingCount() == 0);
 }
 
@@ -123,6 +124,6 @@ int main()
     ignoresCompletionFromOldGeneration();
     ignoresUnknownPresentId();
     reportsFailureForCurrentNativePresent();
-    capsPendingDepthAndReplacesOlderSameGenerationFrame();
+    rejectsNewPresentWhenPendingCapacityIsFull();
     clearCancelsAllPendingPresents();
 }

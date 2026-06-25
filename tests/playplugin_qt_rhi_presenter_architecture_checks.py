@@ -101,6 +101,9 @@ def check_presenter_contract() -> None:
     assert_contains(source, "afterRendering", PRESENTER_CPP)
     assert_contains(source, "Qt::SingleShotConnection", PRESENTER_CPP)
     assert_contains(source, "Qt::BlockingQueuedConnection", PRESENTER_CPP)
+    assert_contains(source, "Qt video surface has no QQuickWindow", PRESENTER_CPP)
+    assert_contains(source, "Qt scene graph did not draw the native VideoToolbox texture", PRESENTER_CPP)
+    assert_contains(source, "diagnostics.nativeTextureFailed = 1", PRESENTER_CPP)
 
     for forbidden in (
         "sws_scale",

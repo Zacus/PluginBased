@@ -30,6 +30,7 @@ public:
     bool track(TrackedPresent present);
     PresentCompletionAction complete(SessionId sessionId, Generation generation, PresentCompletion completion);
     void clear();
+    bool hasCapacity() const;
     std::size_t pendingCount() const;
 
 private:
