@@ -193,10 +193,20 @@ struct PresentResult {
     PresentStatus status = PresentStatus::Failed;
 };
 
+struct PresentDiagnostics {
+    std::uint64_t nativeTextureCreated = 0;
+    std::uint64_t nativeTextureFailed = 0;
+    std::uint64_t nativeTextureDrawn = 0;
+    std::uint64_t cpuCopied = 0;
+    std::uint64_t cpuTransferred = 0;
+    std::uint64_t cpuMemcpy = 0;
+};
+
 struct PresentCompletion {
     PresentId id = 0;
     PresentStatus status = PresentStatus::Failed;
     std::string detail;
+    PresentDiagnostics diagnostics {};
 };
 
 class IVideoPresenterEvents {
@@ -221,6 +231,7 @@ public:
 异步完成规则：
 
 - `present()` 返回 `Queued` 只表示 presenter 接收了提交，不表示 native texture 已创建或已经绘制。
+- Qt presenter 必须在 Scene Graph 渲染完成后通过 `PresentCompletion::diagnostics` 回报 native texture 和 CPU copy 计数，runtime 只累加纯 C++ `PresentDiagnostics`，不依赖 Qt 类型。
 - native texture 创建失败、设备丢失或 Qt surface 销毁必须通过 `IVideoPresenterEvents::onPresentComplete()` 回传给 runtime。
 - `PresentId` 由 presenter 或 runtime 保证单调唯一，用于忽略 stop/open/seek 后迟到的 completion。
 - runtime 必须把 completion 与 session/generation 绑定；旧 generation 的失败不能触发当前 session fallback。
@@ -535,6 +546,75 @@ macOS 真机：
 - seek 前后没有旧帧。
 - EOF 在音视频 drain 后触发。
 - 播放性能不低于 B+ 迁移前 native path。
+
+## 实现结果同步
+
+截至 2026-06-25，阶段 1-15 的实现结果如下。
+
+最终 target 名称：
+
+- `media_sdk_playback_runtime` / `media_sdk::playback_runtime`
+- `media_sdk_platform_audio_macos` / `media_sdk::platform_audio_macos`
+- `PlayPlugin`
+- `MediaSdkPlaybackRuntimeInterfaceContractTest`
+- `MediaSdkPlaybackRuntimeFrameQueueTest`
+- `MediaSdkPlaybackRuntimeAvSyncSchedulerTest`
+- `MediaSdkPlaybackRuntimePresentTrackerTest`
+- `MediaSdkPlaybackRuntimeNativeFallbackControllerTest`
+- `MediaSdkPlaybackRuntimePlayerMockTest`
+- `MediaSdkPlatformAudioMacosContractTest`
+- `MediaSdkPlatformAudioMacosRingBufferTest`
+
+最终所有权规则：
+
+- `RuntimePlayer` 拥有 runtime session 状态、AV runtime queues、A/V scheduler、present tracker、native fallback controller、audio/video worker threads 和 session diagnostics。
+- `RuntimePlayer` 只持有注入的 `IAudioOutput*`、`IVideoPresenter*`、`IRuntimePlayerEvents*` 非拥有观察指针；调用方负责保证它们的生命周期覆盖 runtime open/stop 区间。
+- `CoreAudioAudioOutput` 是 macOS 平台实现，拥有 CoreAudio queue、音频 ring buffer 和 clock state；runtime 只通过 `IAudioOutput` 接口访问。
+- `QtRhiVideoPresenter` 不拥有 `FFmpegSurface`，只用 `QPointer<FFmpegSurface>` 观察；异步 completion 通过 shared event state 解除 presenter 析构和 runtime callback 的悬挂风险。
+- `QtRhiVideoPresenter` 异步持有 SDK `VideoFrame` 值和 shared storage，不能只保存 native handle 裸指针。
+- `FFmpegSurface` / `VideoNode` / `AppleMetalVideoTextureBridge` 负责 Qt Scene Graph 和 Metal native texture 生命周期，SDK runtime 不释放 Qt/Metal 对象。
+
+最终诊断名称：
+
+```text
+nativeDecoded
+nativeAccepted
+nativePresented
+nativeFallbacks
+nativeTextureCreated
+nativeTextureFailed
+nativeTextureDrawn
+cpuDecoded
+cpuPresented
+cpuCopied
+cpuTransferred
+cpuMemcpy
+hardwareTransfers
+audioQueued
+audioWritten
+videoQueued
+videoWaited
+videoDroppedLate
+videoPresented
+eofAccepted
+eofPresented
+queueAbortCount
+```
+
+已验证结果：
+
+- `cmake --build build --parallel` 在 2026-06-25 通过。
+- `ctest --test-dir build --output-on-failure` 在 2026-06-25 通过，31/31 tests passed。
+- `build/app/PluginBasedApp.app/Contents/MacOS/PluginBasedApp` 能启动并加载 `DummyPlugin`、`PlayPlugin`，进入 Qt event loop。
+- GUI 验证日志显示旧链路打开两段 macOS 本地 mov，`VideoRenderer` 启动，`AudioRenderer` 线程启动，`QAudioSink` started。
+- GUI 验证日志显示一段样本达到约 30 fps 渲染，pause/play 不冻结，seek 后旧 generation audio frame 被拒绝，应用正常退出并卸载插件。
+
+未完全验证或仍需后续补齐：
+
+- 本轮没有通过自动化或日志确认 SDK runtime 模式的真实画面可见性和主观声音质量；这些仍需要人工观察。
+- 本轮没有采集到 SDK runtime native zero-copy 运行日志，因此 `nativePresented > 0`、`nativeTextureCreated > 0`、`nativeTextureDrawn > 0`、`cpuCopied == 0`、`cpuTransferred == 0`、`cpuMemcpy == 0` 仍需要用真实 SDK runtime 模式样本复核。
+- 本轮没有在真机上模拟 native device lost 后不中断 fallback；已有 mock/runtime 测试覆盖状态机和回调闭环。
+- Windows D3D11、Linux VAAPI/DRM、OpenGL presenter、跨平台音频输出和第三方稳定 ABI 均不在 macOS 第一版范围内。
 
 ## 实施阶段建议
 
