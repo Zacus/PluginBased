@@ -81,6 +81,7 @@ struct RuntimePlayer::Impl {
             fallbackPending = false;
             audioEofSeen = false;
             videoEofSeen = false;
+            eofNotificationSent = false;
 
             audioQueue.reset(sessionId, generation);
             videoQueue.reset(sessionId, generation);
@@ -93,6 +94,7 @@ struct RuntimePlayer::Impl {
         dependencies.videoPresenter->setEvents(&owner);
         audioThread = std::thread([this]() { audioLoop(); });
         videoThread = std::thread([this]() { videoLoop(); });
+        dependencies.audioOutput->resume();
         return Result<void>::success();
     }
 
@@ -209,6 +211,7 @@ struct RuntimePlayer::Impl {
             fallbackPending = false;
             audioEofSeen = false;
             videoEofSeen = false;
+            eofNotificationSent = false;
             diagnostics.queueAbortCount += 2;
             presentTracker.clear();
             presentTracker.reset(activeSession, nextGeneration);
@@ -259,12 +262,22 @@ struct RuntimePlayer::Impl {
         presentTracker.clear();
         audioEofSeen = false;
         videoEofSeen = false;
+        eofNotificationSent = false;
     }
 
     RuntimeDiagnostics snapshotDiagnostics() const
     {
         std::lock_guard lock(m_mutex);
         return diagnostics;
+    }
+
+    RuntimeTimeline snapshotTimeline() const
+    {
+        std::lock_guard lock(m_mutex);
+        return {
+            .sessionId = running ? sessionId : 0,
+            .generation = running ? generation : 0,
+        };
     }
 
     void onPresentComplete(PresentCompletion completion)
@@ -350,7 +363,9 @@ struct RuntimePlayer::Impl {
             return;
 
         while (true) {
-            const auto clock = dependencies.audioOutput->clock();
+            auto clock = dependencies.audioOutput->clock();
+            if (!config.audioClockEnabled)
+                clock.valid = false;
             const auto decision = decideFrame(queuedFrame.frame.pts(), clock, queuedFrame.generation);
             if (decision.action == VideoScheduleAction::Drop) {
                 std::lock_guard lock(m_mutex);
@@ -436,17 +451,29 @@ struct RuntimePlayer::Impl {
 
     void markEof(bool audio, SessionId checkedSessionId, Generation checkedGeneration)
     {
-        std::lock_guard lock(m_mutex);
-        if (!running || !isCurrentLocked(checkedSessionId, checkedGeneration))
-            return;
+        bool completed = false;
+        {
+            std::lock_guard lock(m_mutex);
+            if (!running || !isCurrentLocked(checkedSessionId, checkedGeneration))
+                return;
 
-        if (audio)
-            audioEofSeen = true;
-        else
-            videoEofSeen = true;
+            if (audio)
+                audioEofSeen = true;
+            else
+                videoEofSeen = true;
 
-        if (audioEofSeen && videoEofSeen)
-            ++diagnostics.eofPresented;
+            if (audioEofSeen && videoEofSeen && !eofNotificationSent) {
+                ++diagnostics.eofPresented;
+                completed = true;
+                eofNotificationSent = true;
+            }
+        }
+        if (completed && dependencies.events) {
+            dependencies.events->onEndOfStreamPresented({
+                .sessionId = checkedSessionId,
+                .generation = checkedGeneration,
+            });
+        }
     }
 
     void accumulatePresentDiagnostics(PresentDiagnostics presentDiagnostics)
@@ -488,6 +515,7 @@ struct RuntimePlayer::Impl {
             fallbackPending = true;
             audioEofSeen = false;
             videoEofSeen = false;
+            eofNotificationSent = false;
             presentTracker.clear();
             presentTracker.reset(activeSession, generation);
             presentTracker.setMaxPending(dependencies.videoPresenter->capabilities().maxPendingFrames);
@@ -573,6 +601,7 @@ struct RuntimePlayer::Impl {
     bool fallbackPending = false;
     bool audioEofSeen = false;
     bool videoEofSeen = false;
+    bool eofNotificationSent = false;
 };
 
 RuntimePlayer::RuntimePlayer(RuntimePlayerConfig config, RuntimePlayerDependencies dependencies)
@@ -630,6 +659,11 @@ void RuntimePlayer::stop()
 RuntimeDiagnostics RuntimePlayer::diagnostics() const
 {
     return m_impl->snapshotDiagnostics();
+}
+
+RuntimeTimeline RuntimePlayer::timeline() const
+{
+    return m_impl->snapshotTimeline();
 }
 
 void RuntimePlayer::onPresentComplete(PresentCompletion completion)

@@ -30,6 +30,7 @@ struct RuntimePlayerConfig {
     };
     VideoOutputPolicy outputPolicy = VideoOutputPolicy::PreferNative;
     RuntimeSyncConfig syncConfig {};
+    bool audioClockEnabled = true;
 };
 
 struct RuntimePlayerDependencies {
@@ -42,6 +43,7 @@ class IRuntimePlayerEvents {
 public:
     virtual ~IRuntimePlayerEvents() = default;
     virtual void onFallbackToCpuRequested(RuntimeFallbackAction action) = 0;
+    virtual void onEndOfStreamPresented(RuntimeTimeline) {}
 };
 
 class RuntimePlayer final : private IVideoPresenterEvents
@@ -63,6 +65,7 @@ public:
     void completeSeek(SessionId sessionId, Generation generation);
     void stop();
     RuntimeDiagnostics diagnostics() const;
+    RuntimeTimeline timeline() const;
 
 private:
     void onPresentComplete(PresentCompletion completion) override;

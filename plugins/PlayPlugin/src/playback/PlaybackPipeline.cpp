@@ -3,7 +3,6 @@
 // 本文件实现播放管线的组件生命周期、信号转发、seek 协调和 Surface 绑定。
 // 这些逻辑从 PlayerEngine 抽出后，可以单独演进而不扩大 QML API 类的职责。
 
-#include "media_sdk/runtime/RuntimePlayer.h"
 #if defined(Q_OS_APPLE)
 #include "media_sdk/platform/macos/CoreAudioAudioOutput.h"
 #endif
@@ -98,7 +97,8 @@ void PlaybackPipeline::openFile(const QUrl& url)
 {
     if (m_runtimeMode == PlaybackRuntimeMode::SdkRuntime) {
         createSdkRuntimeChain();
-        LOG_INFO("PlaybackPipeline: SDK runtime mode selected; decode event bridge is pending");
+        if (m_sdkAdapter)
+            m_sdkAdapter->openFile(url);
         return;
     }
 
@@ -144,12 +144,8 @@ void PlaybackPipeline::startRenderersForMedia(bool hasAudio,
 void PlaybackPipeline::setPaused(bool paused)
 {
     if (m_runtimeMode == PlaybackRuntimeMode::SdkRuntime) {
-        if (m_sdkRuntimePlayer) {
-            if (paused)
-                m_sdkRuntimePlayer->pause();
-            else
-                m_sdkRuntimePlayer->resume();
-        }
+        if (m_sdkAdapter)
+            m_sdkAdapter->setPaused(paused);
         return;
     }
 
@@ -171,8 +167,8 @@ void PlaybackPipeline::setMuted(bool muted)
 void PlaybackPipeline::stopComponents()
 {
     m_adapter->stopDecoding();
-    if (m_sdkRuntimePlayer)
-        m_sdkRuntimePlayer->stop();
+    if (m_sdkAdapter)
+        m_sdkAdapter->stopDecoding();
 
     m_audioRenderer->stopRenderer();
     m_audioRenderer->wait();
@@ -189,9 +185,8 @@ void PlaybackPipeline::stopComponents()
 void PlaybackPipeline::seek(qint64 positionMs, int generation)
 {
     if (m_runtimeMode == PlaybackRuntimeMode::SdkRuntime) {
-        if (m_sdkRuntimePlayer)
-            m_sdkRuntimePlayer->seek(std::chrono::milliseconds(positionMs));
-        Q_UNUSED(generation);
+        if (m_sdkAdapter)
+            m_sdkAdapter->seek(positionMs, generation);
         return;
     }
 
@@ -216,7 +211,12 @@ void PlaybackPipeline::onNativeRenderingFailed()
         return;
 
     m_nativeVideoRenderingEnabled = false;
-    m_adapter->setVideoToolboxDirectRenderingEnabled(false);
+    if (m_runtimeMode == PlaybackRuntimeMode::SdkRuntime) {
+        if (m_sdkAdapter)
+            m_sdkAdapter->setVideoToolboxDirectRenderingEnabled(false);
+    } else {
+        m_adapter->setVideoToolboxDirectRenderingEnabled(false);
+    }
     LOG_WARN("PlaybackPipeline: disabled VideoToolbox native rendering after Surface failure");
     emit nativeRenderingFailed();
 }
@@ -246,7 +246,7 @@ void PlaybackPipeline::disconnectLegacySurface()
 
 void PlaybackPipeline::createSdkRuntimeChain()
 {
-    if (m_sdkRuntimePlayer)
+    if (m_sdkAdapter)
         return;
 
     disconnectLegacySurface();
@@ -256,12 +256,26 @@ void PlaybackPipeline::createSdkRuntimeChain()
 #if defined(Q_OS_APPLE)
     m_sdkAudioOutput = std::make_unique<media_sdk::platform::macos::CoreAudioAudioOutput>();
     m_sdkVideoPresenter = std::make_unique<QtRhiVideoPresenter>(m_surface.data());
-    m_sdkRuntimePlayer = std::make_unique<media_sdk::runtime::RuntimePlayer>(
-        media_sdk::runtime::RuntimePlayerConfig {},
-        media_sdk::runtime::RuntimePlayerDependencies {
-            .audioOutput = m_sdkAudioOutput.get(),
-            .videoPresenter = m_sdkVideoPresenter.get(),
-        });
+    m_sdkAdapter = std::make_unique<SdkPlaybackAdapter>(
+        m_sdkAudioOutput.get(),
+        m_sdkVideoPresenter.get(),
+        this);
+    connect(m_sdkAdapter.get(), &SdkPlaybackAdapter::mediaInfoReady,
+            this, &PlaybackPipeline::mediaInfoReady);
+    connect(m_sdkAdapter.get(), &SdkPlaybackAdapter::errorOccurred,
+            this, &PlaybackPipeline::errorOccurred);
+    connect(m_sdkAdapter.get(), &SdkPlaybackAdapter::endOfFile,
+            this, &PlaybackPipeline::endOfFile);
+    connect(m_sdkAdapter.get(), &SdkPlaybackAdapter::positionChanged,
+            this, &PlaybackPipeline::decoderPositionChanged);
+    connect(m_sdkAdapter.get(), &SdkPlaybackAdapter::seekCompleted,
+            this, &PlaybackPipeline::seekCompleted);
+    connect(m_sdkAdapter.get(), &SdkPlaybackAdapter::endOfAudio,
+            this, &PlaybackPipeline::endOfAudio);
+    connect(m_sdkAdapter.get(), &SdkPlaybackAdapter::endOfVideo,
+            this, &PlaybackPipeline::endOfVideo);
+    connect(m_sdkAdapter.get(), &SdkPlaybackAdapter::nativeRenderingFailed,
+            this, &PlaybackPipeline::onNativeRenderingFailed);
 #else
     LOG_WARN("PlaybackPipeline: SDK runtime mode requires a platform audio output");
 #endif
@@ -269,9 +283,9 @@ void PlaybackPipeline::createSdkRuntimeChain()
 
 void PlaybackPipeline::destroySdkRuntimeChain()
 {
-    if (m_sdkRuntimePlayer)
-        m_sdkRuntimePlayer->stop();
-    m_sdkRuntimePlayer.reset();
+    if (m_sdkAdapter)
+        m_sdkAdapter->stopDecoding();
+    m_sdkAdapter.reset();
     m_sdkVideoPresenter.reset();
 #if defined(Q_OS_APPLE)
     m_sdkAudioOutput.reset();
@@ -280,13 +294,23 @@ void PlaybackPipeline::destroySdkRuntimeChain()
 
 void PlaybackPipeline::updateNativeVideoRenderingEnabled()
 {
+    const bool enabled = m_surface && m_surface->supportsNativeVideoToolboxRendering();
+
     if (m_runtimeMode == PlaybackRuntimeMode::SdkRuntime) {
-        m_nativeVideoRenderingEnabled = false;
+        if (m_nativeVideoRenderingEnabled == enabled) {
+            if (m_sdkAdapter)
+                m_sdkAdapter->setVideoToolboxDirectRenderingEnabled(enabled);
+            return;
+        }
+        m_nativeVideoRenderingEnabled = enabled;
+        if (m_sdkAdapter)
+            m_sdkAdapter->setVideoToolboxDirectRenderingEnabled(enabled);
         m_adapter->setVideoToolboxDirectRenderingEnabled(false);
+        LOG_INFO("PlaybackPipeline: SDK VideoToolbox native rendering {}",
+                 enabled ? "enabled" : "disabled");
         return;
     }
 
-    const bool enabled = m_surface && m_surface->supportsNativeVideoToolboxRendering();
     if (m_nativeVideoRenderingEnabled == enabled)
         return;
 

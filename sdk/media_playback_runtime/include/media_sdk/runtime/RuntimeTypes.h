@@ -63,4 +63,9 @@ struct RuntimeFallbackAction {
     bool preferNativeVideoFrames = false;
 };
 
+struct RuntimeTimeline {
+    SessionId sessionId = 0;
+    Generation generation = 0;
+};
+
 } // namespace media_sdk::runtime

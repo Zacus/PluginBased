@@ -13,6 +13,8 @@ METAL_BRIDGE_MM = PLAYPLUGIN / "src" / "video" / "native" / "AppleMetalVideoText
 PLAYPLUGIN_CMAKE = PLAYPLUGIN / "CMakeLists.txt"
 PLAYBACK_PIPELINE_H = PLAYPLUGIN / "src" / "playback" / "PlaybackPipeline.h"
 PLAYBACK_PIPELINE_CPP = PLAYPLUGIN / "src" / "playback" / "PlaybackPipeline.cpp"
+SDK_PLAYBACK_ADAPTER_H = PLAYPLUGIN / "src" / "playback" / "SdkPlaybackAdapter.h"
+SDK_PLAYBACK_ADAPTER_CPP = PLAYPLUGIN / "src" / "playback" / "SdkPlaybackAdapter.cpp"
 PLAYER_ENGINE_H = PLAYPLUGIN / "src" / "playback" / "PlayerEngine.h"
 PLAYER_ENGINE_CPP = PLAYPLUGIN / "src" / "playback" / "PlayerEngine.cpp"
 ROOT_CMAKE = ROOT / "CMakeLists.txt"
@@ -98,6 +100,7 @@ def check_presenter_contract() -> None:
     assert_contains(source, "media_sdk::runtime::PresentDiagnostics", PRESENTER_CPP)
     assert_contains(source, "afterRendering", PRESENTER_CPP)
     assert_contains(source, "Qt::SingleShotConnection", PRESENTER_CPP)
+    assert_contains(source, "Qt::BlockingQueuedConnection", PRESENTER_CPP)
 
     for forbidden in (
         "sws_scale",
@@ -135,8 +138,46 @@ def check_cmake_registration() -> None:
 
     assert_contains(playplugin_cmake, "src/playback/QtRhiVideoPresenter.h", PLAYPLUGIN_CMAKE)
     assert_contains(playplugin_cmake, "src/playback/QtRhiVideoPresenter.cpp", PLAYPLUGIN_CMAKE)
+    assert_contains(playplugin_cmake, "src/playback/SdkPlaybackAdapter.h", PLAYPLUGIN_CMAKE)
+    assert_contains(playplugin_cmake, "src/playback/SdkPlaybackAdapter.cpp", PLAYPLUGIN_CMAKE)
     assert_contains(playplugin_cmake, "media_sdk::playback_runtime", PLAYPLUGIN_CMAKE)
     assert_contains(root_cmake, "playplugin_qt_rhi_presenter_architecture_checks", ROOT_CMAKE)
+
+
+def check_sdk_playback_adapter_contract() -> None:
+    header = read(SDK_PLAYBACK_ADAPTER_H)
+    source = read(SDK_PLAYBACK_ADAPTER_CPP)
+    pipeline_header = read(PLAYBACK_PIPELINE_H)
+    pipeline_source = read(PLAYBACK_PIPELINE_CPP)
+    combined = "\n".join((header, source))
+
+    assert_contains(header, "class SdkPlaybackAdapter final", SDK_PLAYBACK_ADAPTER_H)
+    assert_contains(header, "media_sdk::IEventSink", SDK_PLAYBACK_ADAPTER_H)
+    assert_contains(header, "media_sdk::runtime::IRuntimePlayerEvents", SDK_PLAYBACK_ADAPTER_H)
+    assert_contains(header, "onFallbackToCpuRequested", SDK_PLAYBACK_ADAPTER_H)
+    assert_contains(header, "media_sdk::Player", SDK_PLAYBACK_ADAPTER_H)
+    assert_contains(header, "media_sdk::runtime::RuntimePlayer", SDK_PLAYBACK_ADAPTER_H)
+
+    for token in (
+        "RuntimePlayerConfig",
+        "runtimePlayer->open()",
+        "runtimePlayer->enqueueAudio",
+        "runtimePlayer->enqueueVideo",
+        "runtimePlayer->enqueueEndOfStream",
+        "m_runtimePlayer->completeSeek",
+        "preferNativeVideoFrames = false",
+        "RuntimeFallbackAction",
+    ):
+        assert_contains(combined, token, SDK_PLAYBACK_ADAPTER_CPP)
+
+    assert_contains(pipeline_header, "SdkPlaybackAdapter", PLAYBACK_PIPELINE_H)
+    assert_contains(pipeline_source, "m_sdkAdapter->openFile(url)", PLAYBACK_PIPELINE_CPP)
+    assert_contains(pipeline_source, "m_sdkAdapter->setPaused(paused)", PLAYBACK_PIPELINE_CPP)
+    assert_contains(pipeline_source, "m_sdkAdapter->seek(positionMs, generation)", PLAYBACK_PIPELINE_CPP)
+    assert_contains(pipeline_source, "m_sdkAdapter->setVideoToolboxDirectRenderingEnabled(enabled)", PLAYBACK_PIPELINE_CPP)
+    assert_contains(pipeline_source, "m_surface && m_surface->supportsNativeVideoToolboxRendering()", PLAYBACK_PIPELINE_CPP)
+    assert_contains(pipeline_source, "&PlaybackPipeline::onNativeRenderingFailed", PLAYBACK_PIPELINE_CPP)
+    assert_not_contains(pipeline_source, "decode event bridge is pending", PLAYBACK_PIPELINE_CPP)
 
 
 def check_runtime_mode_switch_contract() -> None:
@@ -166,8 +207,8 @@ def check_runtime_mode_switch_contract() -> None:
     assert_contains(pipeline_source, "disconnectLegacySurface", PLAYBACK_PIPELINE_CPP)
     assert_contains(pipeline_source, "createSdkRuntimeChain", PLAYBACK_PIPELINE_CPP)
     assert_contains(pipeline_source, "destroySdkRuntimeChain", PLAYBACK_PIPELINE_CPP)
+    assert_contains(pipeline_source, "SdkPlaybackAdapter", PLAYBACK_PIPELINE_CPP)
     assert_contains(pipeline_source, "QtRhiVideoPresenter", PLAYBACK_PIPELINE_CPP)
-    assert_contains(pipeline_source, "media_sdk::runtime::RuntimePlayer", PLAYBACK_PIPELINE_CPP)
     assert_contains(pipeline_source, "media_sdk::platform::macos::CoreAudioAudioOutput", PLAYBACK_PIPELINE_CPP)
     assert_contains(playplugin_cmake, "media_sdk::platform_audio_macos", PLAYPLUGIN_CMAKE)
 
@@ -177,6 +218,7 @@ def main() -> None:
     check_presenter_contract()
     check_scene_graph_dependency_location()
     check_cmake_registration()
+    check_sdk_playback_adapter_contract()
     check_runtime_mode_switch_contract()
 
 

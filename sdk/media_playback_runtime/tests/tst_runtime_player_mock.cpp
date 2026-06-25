@@ -170,9 +170,18 @@ public:
         ++fallbackRequestCount;
     }
 
+    void onEndOfStreamPresented(media_sdk::runtime::RuntimeTimeline timeline) override
+    {
+        std::lock_guard lock(mutex);
+        lastEofTimeline = timeline;
+        ++eofPresentedCount;
+    }
+
     mutable std::mutex mutex;
     media_sdk::runtime::RuntimeFallbackAction lastAction {};
+    media_sdk::runtime::RuntimeTimeline lastEofTimeline {};
     std::atomic_int fallbackRequestCount = 0;
+    std::atomic_int eofPresentedCount = 0;
 };
 
 bool waitUntil(const std::function<bool()>& predicate,
@@ -290,6 +299,9 @@ void openStartsNewSessionAndResetsQueues()
 
     assert(player.open().ok());
     assert(audio.openCount == 1);
+    assert(audio.resumeCount == 1);
+    assert(player.timeline().sessionId == 1);
+    assert(player.timeline().generation == 1);
     player.enqueueAudio(runtimeAudio(0, 0, 0ms));
     std::this_thread::sleep_for(10ms);
     assert(audio.writeCount == 0);
@@ -298,11 +310,27 @@ void openStartsNewSessionAndResetsQueues()
     assert(waitUntil([&audio]() { return audio.writeCount == 1; }));
 
     assert(player.open().ok());
+    assert(audio.resumeCount == 2);
+    assert(player.timeline().sessionId == 2);
+    assert(player.timeline().generation == 1);
     player.enqueueAudio(runtimeAudio(1, 1, 20ms));
     std::this_thread::sleep_for(10ms);
     assert(audio.writeCount == 1);
     player.enqueueAudio(runtimeAudio(2, 1, 20ms));
     assert(waitUntil([&audio]() { return audio.writeCount == 2; }));
+}
+
+void timelineTracksSeekGeneration()
+{
+    MockAudioOutput audio;
+    MockPresenter presenter;
+    auto player = makePlayer(audio, presenter);
+    assert(player.open().ok());
+
+    player.seek(500ms);
+    const auto timeline = player.timeline();
+    assert(timeline.sessionId == 1);
+    assert(timeline.generation == 2);
 }
 
 void audioFramesAreWrittenToInjectedAudioOutput()
@@ -361,12 +389,29 @@ void videoWaitDecisionDelaysAndEventuallyPresentsSameFrame()
     assert(player.diagnostics().videoPresented == 1);
 }
 
+void videoOnlyPlaybackUsesMonotonicClockWhenAudioClockIsDisabled()
+{
+    MockAudioOutput audio;
+    audio.setClock(0ms, 1);
+    MockPresenter presenter;
+    media_sdk::runtime::RuntimePlayerConfig config;
+    config.audioClockEnabled = false;
+    config.syncConfig.submitLeadTime = 0us;
+    config.syncConfig.maxScheduledWait = 2ms;
+    auto player = makePlayer(audio, presenter, config);
+    assert(player.open().ok());
+
+    player.enqueueVideo(runtimeVideo(1, 1, 5ms));
+    assert(waitUntil([&presenter]() { return presenter.presentCount == 1; }, 100ms));
+}
+
 void eofCompletesOnlyAfterAudioAndVideoDrain()
 {
     MockAudioOutput audio;
     audio.setClock(100ms, 1);
     MockPresenter presenter;
-    auto player = makePlayer(audio, presenter);
+    MockRuntimeEvents events;
+    auto player = makePlayer(audio, presenter, events);
     assert(player.open().ok());
 
     player.enqueueAudio(runtimeAudio(1, 1, 10ms));
@@ -375,12 +420,20 @@ void eofCompletesOnlyAfterAudioAndVideoDrain()
     assert(waitUntil([&presenter]() { return presenter.presentCount == 1; }));
     player.enqueueEndOfStream(1, 1);
     assert(waitUntil([&player]() { return player.diagnostics().eofPresented == 1; }));
+    player.enqueueEndOfStream(1, 1);
+    std::this_thread::sleep_for(10ms);
 
     const auto diagnostics = player.diagnostics();
     assert(diagnostics.audioWritten == 1);
     assert(diagnostics.videoPresented == 1);
-    assert(diagnostics.eofAccepted == 1);
+    assert(diagnostics.eofAccepted == 2);
     assert(diagnostics.eofPresented == 1);
+    assert(events.eofPresentedCount == 1);
+    {
+        std::lock_guard lock(events.mutex);
+        assert(events.lastEofTimeline.sessionId == 1);
+        assert(events.lastEofTimeline.generation == 1);
+    }
 }
 
 void seekInvalidatesOldGenerationFramesAndCompletions()
@@ -562,7 +615,7 @@ void fallbackSeekCompletionResumesAudioAndVideoScheduling()
     assert(presenter.presentCount == 1);
 
     player.completeSeek(1, 2);
-    assert(audio.resumeCount == 1);
+    assert(audio.resumeCount == 2);
     player.enqueueVideo(runtimeVideo(1, 2, 100ms));
     assert(waitUntil([&presenter]() { return presenter.presentCount == 2; }));
 
@@ -576,9 +629,11 @@ void fallbackSeekCompletionResumesAudioAndVideoScheduling()
 int main()
 {
     openStartsNewSessionAndResetsQueues();
+    timelineTracksSeekGeneration();
     audioFramesAreWrittenToInjectedAudioOutput();
     videoFramesAreScheduledAgainstAudioClock();
     videoWaitDecisionDelaysAndEventuallyPresentsSameFrame();
+    videoOnlyPlaybackUsesMonotonicClockWhenAudioClockIsDisabled();
     eofCompletesOnlyAfterAudioAndVideoDrain();
     seekInvalidatesOldGenerationFramesAndCompletions();
     stopAbortsQueuesPausesAudioClearsPresenterAndReturnsIdle();

@@ -217,10 +217,21 @@ media_sdk::runtime::PresentResult QtRhiVideoPresenter::present(
 bool QtRhiVideoPresenter::surfaceSupportsNativeRendering(
     const QPointer<FFmpegSurface>& surface) const
 {
-    if (!surface || surface->thread() != QThread::currentThread()) {
+    if (!surface)
         return false;
-    }
-    return surface->supportsNativeVideoToolboxRendering();
+
+    if (surface->thread() == QThread::currentThread())
+        return surface->supportsNativeVideoToolboxRendering();
+
+    bool supported = false;
+    const bool invoked = QMetaObject::invokeMethod(
+        surface,
+        [&surface, &supported]() {
+            if (surface)
+                supported = surface->supportsNativeVideoToolboxRendering();
+        },
+        Qt::BlockingQueuedConnection);
+    return invoked && supported;
 }
 
 VideoFrameDataPtr QtRhiVideoPresenter::makeSurfaceFrame(const media_sdk::VideoFrame& frame) const

@@ -7,6 +7,7 @@
 #include "sync/ClockSync.h"
 #include "common/FrameQueue.h"
 #include "playback/QtPlaybackAdapter.h"
+#include "playback/SdkPlaybackAdapter.h"
 #include "video/VideoRenderer.h"
 
 #include <QObject>
@@ -18,7 +19,7 @@ class FFmpegSurface;
 class QtRhiVideoPresenter;
 
 namespace media_sdk::runtime {
-class RuntimePlayer;
+class IAudioOutput;
 }
 
 namespace media_sdk::platform::macos {
@@ -92,8 +93,8 @@ private:
     std::unique_ptr<QtPlaybackAdapter> m_adapter;
     std::unique_ptr<AudioRenderer> m_audioRenderer;
     std::unique_ptr<VideoRenderer> m_videoRenderer;
+    std::unique_ptr<SdkPlaybackAdapter> m_sdkAdapter;
     std::unique_ptr<QtRhiVideoPresenter> m_sdkVideoPresenter;
-    std::unique_ptr<media_sdk::runtime::RuntimePlayer> m_sdkRuntimePlayer;
 #if defined(Q_OS_APPLE)
     std::unique_ptr<media_sdk::platform::macos::CoreAudioAudioOutput> m_sdkAudioOutput;
 #endif
