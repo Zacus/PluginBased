@@ -1,5 +1,7 @@
 #include "Demuxer.h"
 
+#include "HardwareDecoderFactory.h"
+
 #include <chrono>
 #include <utility>
 
@@ -18,7 +20,8 @@ Result<OpenedMedia> success(OpenedMedia media)
 
 } // namespace
 
-Result<OpenedMedia> Demuxer::open(const std::filesystem::path& path) const
+Result<OpenedMedia> Demuxer::open(const std::filesystem::path& path,
+                                  DemuxerOptions options) const
 {
     OpenedMedia media;
     AVFormatContext* rawFormatContext = nullptr;
@@ -47,7 +50,7 @@ Result<OpenedMedia> Demuxer::open(const std::filesystem::path& path) const
         ? media.formatContext->iformat->long_name
         : "unknown";
 
-    openVideoStream(media);
+    openVideoStream(media, options);
     openAudioStream(media);
 
     if (media.videoStreamIndex < 0 && media.audioStreamIndex < 0)
@@ -59,7 +62,7 @@ Result<OpenedMedia> Demuxer::open(const std::filesystem::path& path) const
     return success(std::move(media));
 }
 
-bool Demuxer::openVideoStream(OpenedMedia& media) const
+bool Demuxer::openVideoStream(OpenedMedia& media, const DemuxerOptions& options) const
 {
     media.videoStreamIndex =
         av_find_best_stream(media.formatContext.get(), AVMEDIA_TYPE_VIDEO, -1, -1, nullptr, 0);
@@ -81,7 +84,26 @@ bool Demuxer::openVideoStream(OpenedMedia& media) const
         return false;
     }
 
-    const int ret = avcodec_open2(context, codec, nullptr);
+    auto hardwareDecoder = options.enableHardwareDecode
+        ? createHardwareDecoderBackend(codec, stream->codecpar->codec_id)
+        : nullptr;
+    if (hardwareDecoder && !hardwareDecoder->configureContext(context))
+        hardwareDecoder.reset();
+
+    int ret = avcodec_open2(context, codec, nullptr);
+    if (ret < 0 && hardwareDecoder)
+    {
+        avcodec_free_context(&context);
+        hardwareDecoder.reset();
+
+        context = createCodecContext(stream, codec);
+        if (!context)
+        {
+            media.videoStreamIndex = -1;
+            return false;
+        }
+        ret = avcodec_open2(context, codec, nullptr);
+    }
     if (ret < 0)
     {
         avcodec_free_context(&context);
@@ -90,11 +112,14 @@ bool Demuxer::openVideoStream(OpenedMedia& media) const
     }
 
     media.videoCodecContext.reset(context);
+    media.hardwareDecoder = std::move(hardwareDecoder);
     media.info.width = context->width;
     media.info.height = context->height;
     const AVRational frameRate = stream->avg_frame_rate;
     media.info.fps = frameRate.den > 0 ? av_q2d(frameRate) : 0.0;
-    media.activeVideoDecoderName = "software";
+    media.activeVideoDecoderName = media.hardwareDecoder
+        ? std::string(media.hardwareDecoder->name())
+        : "software";
     return true;
 }
 

@@ -156,7 +156,9 @@ void DecodeWorker::handleCommand(Command command, WorkerStopToken stopToken)
 void DecodeWorker::handleOpen(const std::filesystem::path& path)
 {
     closeMedia();
-    auto opened = m_demuxer.open(path);
+    auto opened = m_demuxer.open(path, {
+        .enableHardwareDecode = m_config.enableHardwareDecode,
+    });
     if (!opened.ok())
     {
         emitError(opened.error());
@@ -294,7 +296,7 @@ Result<void> DecodeWorker::decodePacket(AVCodecContext* codecContext,
                 auto processed = m_videoFrameProcessor.process(
                     std::move(frame),
                     { .preferNativeVideoFrames = m_config.preferNativeVideoFrames },
-                    nullptr,
+                    m_media.hardwareDecoder.get(),
                     &m_decodeStats);
                 if (!processed.ok())
                 {
@@ -323,7 +325,7 @@ void DecodeWorker::flushDecoders()
                 auto processed = m_videoFrameProcessor.process(
                     std::move(frame),
                     { .preferNativeVideoFrames = m_config.preferNativeVideoFrames },
-                    nullptr,
+                    m_media.hardwareDecoder.get(),
                     &m_decodeStats);
                 return processed.ok() && emitVideoFrame(std::move(processed.value()));
             });

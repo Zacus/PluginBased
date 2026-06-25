@@ -53,6 +53,9 @@ def main() -> None:
             "media_sdk_core should compile phase 4 FFmpeg internal sources")
     require("VideoFrameProcessor.cpp" in sdk_cmake and "HardwareDecoderBackend.h" in sdk_cmake,
             "media_sdk_core should compile phase 5 video processing internals")
+    for token in ["HardwareDecoderFactory.cpp", "VideoToolboxBackend.cpp"]:
+        require(token in sdk_cmake,
+                f"media_sdk_core should compile SDK hardware decode backend source: {token}")
     require("DecodeWorker.cpp" in sdk_cmake and "PlaybackController.cpp" in sdk_cmake and
             "QueuePolicy.h" in sdk_cmake,
             "media_sdk_core should compile phase 6 playback worker internals")
@@ -96,6 +99,10 @@ def main() -> None:
 
     phase5_sources = [
         SDK_ROOT / "src" / "HardwareDecoderBackend.h",
+        SDK_ROOT / "src" / "HardwareDecoderFactory.h",
+        SDK_ROOT / "src" / "HardwareDecoderFactory.cpp",
+        SDK_ROOT / "src" / "VideoToolboxBackend.h",
+        SDK_ROOT / "src" / "VideoToolboxBackend.cpp",
         SDK_ROOT / "src" / "VideoFrameProcessor.h",
         SDK_ROOT / "src" / "VideoFrameProcessor.cpp",
     ]
@@ -117,6 +124,20 @@ def main() -> None:
     hardware_backend_header = read(SDK_ROOT / "src" / "HardwareDecoderBackend.h")
     require("std::string_view name() const" in hardware_backend_header,
             "SDK hardware decoder backend names should use std::string_view, not QString")
+    for token in ["isAvailableForCodec", "configureContext"]:
+        require(token in hardware_backend_header,
+                f"SDK hardware decoder backend should expose codec configuration token: {token}")
+
+    hardware_factory_cpp = read(SDK_ROOT / "src" / "HardwareDecoderFactory.cpp")
+    videotoolbox_cpp = read(SDK_ROOT / "src" / "VideoToolboxBackend.cpp")
+    for token in ["createHardwareDecoderBackend", "VideoToolboxBackend"]:
+        require(token in hardware_factory_cpp,
+                f"HardwareDecoderFactory should create platform backend token: {token}")
+    for token in ["AV_HWDEVICE_TYPE_VIDEOTOOLBOX", "av_hwdevice_ctx_create",
+                  "AV_PIX_FMT_VIDEOTOOLBOX", "get_format", "hw_device_ctx",
+                  "av_hwframe_transfer_data"]:
+        require(token in videotoolbox_cpp,
+                f"VideoToolboxBackend should configure FFmpeg hardware decode token: {token}")
 
     video_processor_cpp = read(SDK_ROOT / "src" / "VideoFrameProcessor.cpp")
     for token in ["AV_PIX_FMT_YUV420P", "AV_PIX_FMT_NV12", "AV_PIX_FMT_VIDEOTOOLBOX",
@@ -126,6 +147,8 @@ def main() -> None:
 
     decode_worker_header = read(SDK_ROOT / "src" / "DecodeWorker.h")
     decode_worker_cpp = read(SDK_ROOT / "src" / "DecodeWorker.cpp")
+    demuxer_header = read(SDK_ROOT / "src" / "Demuxer.h")
+    demuxer_cpp = read(SDK_ROOT / "src" / "Demuxer.cpp")
     playback_controller_header = read(SDK_ROOT / "src" / "PlaybackController.h")
     playback_controller_cpp = read(SDK_ROOT / "src" / "PlaybackController.cpp")
     for token in ["std::jthread", "std::stop_token", "IEventSink&"]:
@@ -156,6 +179,22 @@ def main() -> None:
                 f"DecodeWorker should not own presenter scheduling/clock token: {token}")
     require("emitEvent(makeEvent(VideoFrameEvent { std::move(frame) }))" in decode_worker_cpp,
             "DecodeWorker should emit decoded video frames through metadata-stamped SDK events")
+    require("DemuxerOptions" in demuxer_header and
+            "enableHardwareDecode" in demuxer_header and
+            "enableHardwareDecode" in demuxer_cpp,
+            "Demuxer should expose and honor hardware decode options")
+    require("createHardwareDecoderBackend" in demuxer_cpp and
+            "configureContext" in demuxer_cpp and
+            "hardwareDecoder" in demuxer_header,
+            "Demuxer should configure and retain SDK hardware decode backend")
+    require("avcodec_free_context(&context)" in demuxer_cpp and
+            "hardwareDecoder.reset()" in demuxer_cpp and
+            "avcodec_open2(context, codec, nullptr)" in demuxer_cpp,
+            "Demuxer should rebuild a pure software context when hardware codec open fails")
+    require(".enableHardwareDecode = m_config.enableHardwareDecode" in decode_worker_cpp,
+            "DecodeWorker should pass PlayerConfig::enableHardwareDecode into Demuxer")
+    require("m_media.hardwareDecoder.get()" in decode_worker_cpp,
+            "DecodeWorker should pass retained hardware backend to VideoFrameProcessor")
     require("QueuePolicy::shouldDropVideoWhenFull" not in decode_worker_cpp,
             "DecodeWorker should leave presenter backpressure/drop policy to the Qt adapter layer")
     require("DecodeWorker" in playback_controller_header + playback_controller_cpp and

@@ -38,6 +38,8 @@ class FakeHardwareBackend final : public media_sdk::HardwareDecoderBackend
 {
 public:
     std::string_view name() const override { return "fake-hw"; }
+    bool isAvailableForCodec(const AVCodec*, AVCodecID) const override { return true; }
+    bool configureContext(AVCodecContext*) override { return true; }
     bool isHardwareFrame(const AVFrame* frame) const override
     {
         return frame && frame->format == AV_PIX_FMT_VIDEOTOOLBOX;

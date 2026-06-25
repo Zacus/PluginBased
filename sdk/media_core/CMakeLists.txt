@@ -3,11 +3,15 @@ add_library(media_sdk_core STATIC
     src/Demuxer.cpp
     src/FFmpegUtils.h
     src/HardwareDecoderBackend.h
+    src/HardwareDecoderFactory.cpp
+    src/HardwareDecoderFactory.h
     src/Player.cpp
     src/PlaybackController.cpp
     src/DecodeWorker.cpp
     src/QueuePolicy.h
     src/StreamDecoder.cpp
+    src/VideoToolboxBackend.cpp
+    src/VideoToolboxBackend.h
     src/VideoFrameProcessor.cpp
 )
 
