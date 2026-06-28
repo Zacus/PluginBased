@@ -67,9 +67,9 @@ void PlaybackDataBridge::cancelGeneration()
             m_state.generation = std::numeric_limits<std::uint64_t>::max();
     }
     if (m_videoQueue)
-        m_videoQueue->abort();
+        m_videoQueue->cancelPendingPushes();
     if (m_audioQueue)
-        m_audioQueue->abort();
+        m_audioQueue->cancelPendingPushes();
 }
 
 bool PlaybackDataBridge::pushAudio(AVFramePtr frame,

@@ -48,9 +48,14 @@ public:
         WakeCallback wakeCallback;
         {
             QMutexLocker lk(&m_mutex);
-            while (static_cast<int>(m_queue.size()) >= m_maxSize && !m_abort)
+            const int cancelSerial = m_cancelSerial;
+            while (static_cast<int>(m_queue.size()) >= m_maxSize &&
+                   !m_abort &&
+                   cancelSerial == m_cancelSerial) {
                 m_notFull.wait(&m_mutex);
+            }
             if (m_abort) return false;
+            if (cancelSerial != m_cancelSerial) return false;
 
             m_queue.push_back({ std::move(frame), serial, eof });
             m_notEmpty.wakeOne();
@@ -148,6 +153,23 @@ public:
         m_notEmpty.wakeAll();
     }
 
+    /**
+     * @brief 取消当前 generation 中可能阻塞的生产者，但保持消费者线程存活。
+     *
+     * seek 会废弃旧 generation 的数据路径。此时被满队列卡住的 push() 必须返回
+     * false，让解码线程停止发布旧帧；但 AudioRenderer 这类长期消费者不能像 stop
+     * 一样退出线程。
+     */
+    void cancelPendingPushes()
+    {
+        QMutexLocker lk(&m_mutex);
+        m_queue.clear();
+        ++m_cancelSerial;
+        ++m_flushSerial;
+        m_notFull.wakeAll();
+        m_notEmpty.wakeAll();
+    }
+
     void resetAbort()
     {
         QMutexLocker lk(&m_mutex);
@@ -179,6 +201,7 @@ private:
     WakeCallback m_wakeCallback;
     int  m_maxSize    = 16;
     int  m_flushSerial = 0;
+    int  m_cancelSerial = 0;
     bool m_abort      = false;
 };
 
