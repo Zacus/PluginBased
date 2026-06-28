@@ -33,7 +33,7 @@ void PlaybackCompletionTracker::setStreams(bool hasAudio, bool hasVideo)
 
 bool PlaybackCompletionTracker::resumeAfterFinishedSeek()
 {
-    if (!m_mediaFinished)
+    if (!m_mediaFinished && !m_decoderFinished)
         return false;
 
     m_decoderFinished = false;
