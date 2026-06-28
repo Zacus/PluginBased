@@ -74,11 +74,22 @@ class RecordingSink final : public media_sdk::IEventSink
 public:
     void onEvent(const media_sdk::PlayerEvent& event) override
     {
+        bool shouldBlockAudioFrame = false;
         {
             std::scoped_lock lock(m_mutex);
             m_events.push_back(event);
+            shouldBlockAudioFrame = m_blockAudioFrames
+                && std::holds_alternative<media_sdk::AudioFrameEvent>(event.payload);
+            if (shouldBlockAudioFrame)
+                m_audioFrameBlocked = true;
         }
         m_cv.notify_all();
+
+        if (shouldBlockAudioFrame)
+        {
+            std::unique_lock lock(m_mutex);
+            m_cv.wait(lock, [&]() { return !m_blockAudioFrames; });
+        }
     }
 
     template<typename Predicate>
@@ -96,10 +107,36 @@ public:
         return m_events;
     }
 
+    void blockAudioFrames()
+    {
+        std::scoped_lock lock(m_mutex);
+        m_blockAudioFrames = true;
+        m_audioFrameBlocked = false;
+    }
+
+    bool waitForBlockedAudioFrame(std::chrono::milliseconds timeout = 3s)
+    {
+        std::unique_lock lock(m_mutex);
+        return m_cv.wait_for(lock, timeout, [&]() {
+            return m_audioFrameBlocked;
+        });
+    }
+
+    void releaseAudioFrames()
+    {
+        {
+            std::scoped_lock lock(m_mutex);
+            m_blockAudioFrames = false;
+        }
+        m_cv.notify_all();
+    }
+
 private:
     mutable std::mutex m_mutex;
     std::condition_variable m_cv;
     std::vector<media_sdk::PlayerEvent> m_events;
+    bool m_blockAudioFrames = false;
+    bool m_audioFrameBlocked = false;
 };
 
 bool hasState(const media_sdk::PlayerEvent& event, media_sdk::PlayerState state)
@@ -236,6 +273,49 @@ void testSeekEmitsPositionAndContinuesPlayback()
     std::filesystem::remove(samplePath);
 }
 
+void testBurstSeekCoalescesQueuedRequestsBeforeDecodeResumes()
+{
+    const auto samplePath = writeTinyWav();
+    RecordingSink sink;
+    media_sdk::Player player({}, sink);
+
+    assert(player.open(samplePath).ok());
+    assert(sink.waitFor(hasMediaInfo));
+
+    sink.blockAudioFrames();
+    player.play();
+    assert(sink.waitForBlockedAudioFrame());
+
+    assert(player.seek(100ms).ok());
+    assert(player.seek(150ms).ok());
+    assert(player.seek(200ms).ok());
+
+    sink.releaseAudioFrames();
+
+    assert(sink.waitFor([](const media_sdk::PlayerEvent& event) {
+        return hasSeekCompletedAtOrAfter(event, 200ms);
+    }));
+
+    player.stop();
+
+    const auto events = sink.snapshot();
+    int seekCompletedCount = 0;
+    std::chrono::milliseconds lastSeekPosition { 0 };
+    for (const auto& event : events)
+    {
+        if (const auto* payload = std::get_if<media_sdk::SeekCompletedEvent>(&event.payload))
+        {
+            ++seekCompletedCount;
+            lastSeekPosition = payload->position;
+        }
+    }
+
+    assert(seekCompletedCount == 1);
+    assert(lastSeekPosition == 200ms);
+
+    std::filesystem::remove(samplePath);
+}
+
 void testStopEmitsStoppedState()
 {
     const auto samplePath = writeTinyWav();
@@ -260,6 +340,7 @@ int main()
 {
     testOpenPlayReachesEof();
     testSeekEmitsPositionAndContinuesPlayback();
+    testBurstSeekCoalescesQueuedRequestsBeforeDecodeResumes();
     testStopEmitsStoppedState();
     return 0;
 }

@@ -195,6 +195,9 @@ def main() -> None:
             "DecodeWorker should pass PlayerConfig::enableHardwareDecode into Demuxer")
     require("m_media.hardwareDecoder.get()" in decode_worker_cpp,
             "DecodeWorker should pass retained hardware backend to VideoFrameProcessor")
+    require("coalescedSeekPosition" in decode_worker_header + decode_worker_cpp and
+            "while (!m_commands.empty() && m_commands.front().type == CommandType::Seek)" in decode_worker_cpp,
+            "DecodeWorker should coalesce consecutive queued seek commands before resuming decode")
     require("QueuePolicy::shouldDropVideoWhenFull" not in decode_worker_cpp,
             "DecodeWorker should leave presenter backpressure/drop policy to the Qt adapter layer")
     require("DecodeWorker" in playback_controller_header + playback_controller_cpp and

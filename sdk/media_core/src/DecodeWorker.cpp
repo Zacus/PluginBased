@@ -122,6 +122,17 @@ bool DecodeWorker::tryTakeCommand(Command& command)
     return true;
 }
 
+std::chrono::milliseconds DecodeWorker::coalescedSeekPosition(std::chrono::milliseconds position)
+{
+    std::scoped_lock lock(m_mutex);
+    while (!m_commands.empty() && m_commands.front().type == CommandType::Seek)
+    {
+        position = m_commands.front().position;
+        m_commands.pop_front();
+    }
+    return position;
+}
+
 void DecodeWorker::handleCommand(Command command, WorkerStopToken stopToken)
 {
     switch (command.type)
@@ -146,7 +157,7 @@ void DecodeWorker::handleCommand(Command command, WorkerStopToken stopToken)
         emitState(PlayerState::Stopped);
         break;
     case CommandType::Seek:
-        handleSeek(command.position);
+        handleSeek(coalescedSeekPosition(command.position));
         if (m_playing)
             decodeUntilBlocked(stopToken);
         break;

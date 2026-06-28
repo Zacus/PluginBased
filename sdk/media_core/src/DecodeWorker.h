@@ -122,6 +122,7 @@ private:
     void submit(Command command);
     bool waitForCommand(WorkerStopToken stopToken, Command& command);
     bool tryTakeCommand(Command& command);
+    std::chrono::milliseconds coalescedSeekPosition(std::chrono::milliseconds position);
     void handleCommand(Command command, WorkerStopToken stopToken);
     void handleOpen(const std::filesystem::path& path);
     void decodeUntilBlocked(WorkerStopToken stopToken);
