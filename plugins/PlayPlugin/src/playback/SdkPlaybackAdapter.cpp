@@ -132,19 +132,17 @@ void SdkPlaybackAdapter::seek(qint64 positionMs, int generation)
         std::lock_guard lock(m_mutex);
         m_acceptingRuntimeFrames = false;
         runtimePlayer = m_runtimePlayer;
-        m_pendingSeekRequests.push_back(generation);
     }
 
     media_sdk::runtime::RuntimeTimeline runtimeTimeline;
-    bool hasRuntimeTimeline = false;
     if (runtimePlayer) {
         runtimePlayer->seek(std::chrono::milliseconds(positionMs));
         runtimeTimeline = runtimePlayer->timeline();
-        hasRuntimeTimeline = true;
     }
 
-    if (hasRuntimeTimeline) {
+    {
         std::lock_guard lock(m_mutex);
+        m_pendingSeekRequests.push_back(PendingSeekRequest { generation, runtimeTimeline });
         if (m_runtimePlayer == runtimePlayer)
             m_runtimeTimeline = runtimeTimeline;
     }
@@ -181,13 +179,14 @@ void SdkPlaybackAdapter::setVideoToolboxDirectRenderingEnabled(bool enabled)
 
 void SdkPlaybackAdapter::onEvent(const media_sdk::PlayerEvent& event)
 {
+    const auto seekCompletion = acceptSeekCompletedEvent(event);
     if (handleDataEvent(event))
         return;
 
     auto eventCopy = std::make_shared<media_sdk::PlayerEvent>(event);
     QMetaObject::invokeMethod(this,
-                              [this, eventCopy]() {
-                                  handleControlEvent(*eventCopy);
+                              [this, eventCopy, seekCompletion]() {
+                                  handleControlEvent(*eventCopy, seekCompletion);
                               },
                               Qt::QueuedConnection);
 }
@@ -240,7 +239,9 @@ bool SdkPlaybackAdapter::handleDataEvent(const media_sdk::PlayerEvent& event)
     return false;
 }
 
-void SdkPlaybackAdapter::handleControlEvent(const media_sdk::PlayerEvent& event)
+void SdkPlaybackAdapter::handleControlEvent(
+    const media_sdk::PlayerEvent& event,
+    std::optional<AcceptedSeekCompletion> acceptedSeekCompletion)
 {
     if (const auto* payload = std::get_if<media_sdk::MediaInfoEvent>(&event.payload)) {
         if (!m_pendingFallback && !ensureRuntimeForMedia(payload->info, m_directNativeVideoEnabled))
@@ -266,21 +267,10 @@ void SdkPlaybackAdapter::handleControlEvent(const media_sdk::PlayerEvent& event)
     }
 
     if (std::holds_alternative<media_sdk::SeekCompletedEvent>(event.payload)) {
-        auto runtimeTimeline = currentTimeline();
-        if (m_pendingFallback) {
-            runtimeTimeline = {
-                .sessionId = m_pendingFallback->sessionId,
-                .generation = m_pendingFallback->generation,
-            };
-            if (m_runtimePlayer)
-                m_runtimePlayer->completeSeek(runtimeTimeline.sessionId, runtimeTimeline.generation);
-            m_pendingFallback.reset();
-        }
-        setAcceptedCoreTimeline(event.metadata, runtimeTimeline);
-        if (!m_pendingSeekRequests.empty()) {
-            const int qtGeneration = m_pendingSeekRequests.front();
-            m_pendingSeekRequests.pop_front();
-            emit seekCompleted(qtGeneration, static_cast<int>(runtimeTimeline.generation));
+        if (acceptedSeekCompletion && acceptedSeekCompletion->hasQtGeneration) {
+            emit seekCompleted(
+                acceptedSeekCompletion->qtGeneration,
+                static_cast<int>(acceptedSeekCompletion->runtimeTimeline.generation));
         }
         return;
     }
@@ -303,6 +293,48 @@ void SdkPlaybackAdapter::handleControlEvent(const media_sdk::PlayerEvent& event)
         emit positionChanged(toMilliseconds(payload->position));
         return;
     }
+}
+
+std::optional<SdkPlaybackAdapter::AcceptedSeekCompletion>
+SdkPlaybackAdapter::acceptSeekCompletedEvent(const media_sdk::PlayerEvent& event)
+{
+    if (!std::holds_alternative<media_sdk::SeekCompletedEvent>(event.payload))
+        return std::nullopt;
+
+    std::shared_ptr<media_sdk::runtime::RuntimePlayer> runtimePlayer;
+    AcceptedSeekCompletion completion;
+    bool completeFallbackSeek = false;
+    {
+        std::lock_guard lock(m_mutex);
+        media_sdk::runtime::RuntimeTimeline runtimeTimeline = m_runtimeTimeline;
+
+        if (m_pendingFallback) {
+            runtimeTimeline = {
+                .sessionId = m_pendingFallback->sessionId,
+                .generation = m_pendingFallback->generation,
+            };
+            runtimePlayer = m_runtimePlayer;
+            completeFallbackSeek = true;
+            m_pendingFallback.reset();
+        } else if (!m_pendingSeekRequests.empty()) {
+            const auto pending = m_pendingSeekRequests.front();
+            m_pendingSeekRequests.pop_front();
+            runtimeTimeline = pending.runtimeTimeline;
+            completion.qtGeneration = pending.qtGeneration;
+            completion.hasQtGeneration = true;
+        }
+
+        m_acceptedCoreTimeline = event.metadata;
+        m_runtimeTimeline = runtimeTimeline;
+        m_acceptingRuntimeFrames = true;
+        completion.runtimeTimeline = runtimeTimeline;
+    }
+
+    if (completeFallbackSeek && runtimePlayer)
+        runtimePlayer->completeSeek(completion.runtimeTimeline.sessionId,
+                                    completion.runtimeTimeline.generation);
+
+    return completion;
 }
 
 void SdkPlaybackAdapter::handleFallbackOnObjectThread(

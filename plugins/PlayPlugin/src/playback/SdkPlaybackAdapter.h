@@ -47,12 +47,26 @@ signals:
     void nativeRenderingFailed();
 
 private:
+    struct PendingSeekRequest {
+        int qtGeneration = 0;
+        media_sdk::runtime::RuntimeTimeline runtimeTimeline {};
+    };
+
+    struct AcceptedSeekCompletion {
+        int qtGeneration = 0;
+        bool hasQtGeneration = false;
+        media_sdk::runtime::RuntimeTimeline runtimeTimeline {};
+    };
+
     void onEvent(const media_sdk::PlayerEvent& event) override;
     void onFallbackToCpuRequested(media_sdk::runtime::RuntimeFallbackAction action) override;
     void onEndOfStreamPresented(media_sdk::runtime::RuntimeTimeline timeline) override;
 
     bool handleDataEvent(const media_sdk::PlayerEvent& event);
-    void handleControlEvent(const media_sdk::PlayerEvent& event);
+    void handleControlEvent(
+        const media_sdk::PlayerEvent& event,
+        std::optional<AcceptedSeekCompletion> acceptedSeekCompletion);
+    std::optional<AcceptedSeekCompletion> acceptSeekCompletedEvent(const media_sdk::PlayerEvent& event);
     void handleFallbackOnObjectThread(media_sdk::runtime::RuntimeFallbackAction action);
     void resetPlayer(bool preferNativeVideoFrames);
     bool openCorePlayer(const std::filesystem::path& path);
@@ -78,7 +92,7 @@ private:
     media_sdk::EventMetadata m_acceptedCoreTimeline {};
     media_sdk::runtime::RuntimeTimeline m_runtimeTimeline {};
     std::optional<media_sdk::runtime::RuntimeFallbackAction> m_pendingFallback;
-    std::deque<int> m_pendingSeekRequests;
+    std::deque<PendingSeekRequest> m_pendingSeekRequests;
     bool m_acceptingRuntimeFrames = false;
     bool m_directNativeVideoEnabled = false;
     bool m_paused = false;

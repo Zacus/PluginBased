@@ -55,6 +55,17 @@ def assert_not_contains(text: str, token: str, source: Path) -> None:
         raise AssertionError(f"{source} must not contain {token!r}")
 
 
+def assert_before(text: str, first: str, second: str, source: Path) -> None:
+    first_index = text.find(first)
+    second_index = text.find(second)
+    if first_index < 0:
+        raise AssertionError(f"{source} must contain {first!r}")
+    if second_index < 0:
+        raise AssertionError(f"{source} must contain {second!r}")
+    if first_index > second_index:
+        raise AssertionError(f"{source} must contain {first!r} before {second!r}")
+
+
 def check_runtime_boundary() -> None:
     scanned = list(RUNTIME.rglob("*.h")) + list(RUNTIME.rglob("*.cpp"))
     if not scanned:
@@ -167,7 +178,7 @@ def check_sdk_playback_adapter_contract() -> None:
         "runtimePlayer->enqueueAudio",
         "runtimePlayer->enqueueVideo",
         "runtimePlayer->enqueueEndOfStream",
-        "m_runtimePlayer->completeSeek",
+        "runtimePlayer->completeSeek",
         "preferNativeVideoFrames = false",
         "RuntimeFallbackAction",
     ):
@@ -181,6 +192,20 @@ def check_sdk_playback_adapter_contract() -> None:
     assert_contains(pipeline_source, "m_surface && m_surface->supportsNativeVideoToolboxRendering()", PLAYBACK_PIPELINE_CPP)
     assert_contains(pipeline_source, "&PlaybackPipeline::onNativeRenderingFailed", PLAYBACK_PIPELINE_CPP)
     assert_not_contains(pipeline_source, "decode event bridge is pending", PLAYBACK_PIPELINE_CPP)
+
+    for token in (
+        "struct PendingSeekRequest",
+        "media_sdk::runtime::RuntimeTimeline runtimeTimeline",
+        "acceptSeekCompletedEvent",
+        "PendingSeekRequest { generation, runtimeTimeline }",
+    ):
+        assert_contains(combined, token, SDK_PLAYBACK_ADAPTER_CPP)
+    on_event_body = source[source.find("void SdkPlaybackAdapter::onEvent"):
+                            source.find("void SdkPlaybackAdapter::onFallbackToCpuRequested")]
+    assert_before(on_event_body,
+                  "const auto seekCompletion = acceptSeekCompletedEvent(event);",
+                  "if (handleDataEvent(event))",
+                  SDK_PLAYBACK_ADAPTER_CPP)
 
 
 def check_runtime_mode_switch_contract() -> None:
