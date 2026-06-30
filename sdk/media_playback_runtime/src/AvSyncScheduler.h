@@ -34,6 +34,7 @@ public:
     explicit AvSyncScheduler(AvSyncConfig config = {});
 
     void reset(Generation generation);
+    [[nodiscard("video scheduling decisions must be applied to render, wait, or drop frames")]]
     VideoScheduleDecision decide(
         std::chrono::microseconds framePts,
         ClockSnapshot clock,

@@ -8,7 +8,7 @@
 namespace media_sdk {
 
 template<typename T>
-class Result
+class [[nodiscard("Result must be inspected for success or failure")]] Result
 {
 public:
     static Result success(T value)
@@ -45,7 +45,7 @@ private:
 };
 
 template<>
-class Result<void>
+class [[nodiscard("Result must be inspected for success or failure")]] Result<void>
 {
 public:
     static Result success()

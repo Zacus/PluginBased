@@ -41,12 +41,17 @@ class NativeFallbackController
 {
 public:
     void reset(SessionId sessionId, Generation generation, VideoOutputPolicy policy);
+    [[nodiscard("fallback transition tells runtime which queues, audio, and presenter state to reset")]]
     FallbackTransition beginFallback(FallbackRequest request);
+    [[nodiscard("seek completion result determines whether fallback can resume")]]
     bool completeSeek(SessionId sessionId, Generation generation);
+    [[nodiscard]]
     RuntimePlaybackState state() const;
+    [[nodiscard]]
     VideoOutputPolicy policy() const;
 
 private:
+    [[nodiscard]]
     static bool isFallbackReason(PresentStatus status);
 
     SessionId m_sessionId = 0;

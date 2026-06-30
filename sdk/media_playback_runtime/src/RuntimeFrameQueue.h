@@ -48,11 +48,13 @@ public:
         m_notFull.notify_all();
     }
 
+    [[nodiscard("push result determines whether a frame was accepted, stale, closed, or aborted")]]
     PushResult push(FrameType frame)
     {
         return pushEntry(Entry { std::move(frame), false });
     }
 
+    [[nodiscard("end-of-stream publication can be rejected by stale generations, close, or abort")]]
     PushResult pushEndOfStream(SessionId sessionId, Generation generation)
     {
         FrameType frame;
@@ -62,6 +64,7 @@ public:
         return pushEntry(Entry { std::move(frame), true });
     }
 
+    [[nodiscard("pop result distinguishes frames, EOF, abort, and close")]]
     PopResult waitPop(FrameType& frame)
     {
         std::unique_lock lock(m_mutex);
@@ -112,18 +115,21 @@ public:
         m_notFull.notify_all();
     }
 
+    [[nodiscard]]
     std::size_t size() const
     {
         std::scoped_lock lock(m_mutex);
         return m_queue.size();
     }
 
+    [[nodiscard]]
     Generation generation() const
     {
         std::scoped_lock lock(m_mutex);
         return m_generation;
     }
 
+    [[nodiscard]]
     std::uint64_t abortCount() const
     {
         std::scoped_lock lock(m_mutex);
@@ -136,6 +142,7 @@ private:
         bool endOfStream = false;
     };
 
+    [[nodiscard]]
     PushResult pushEntry(Entry entry)
     {
         std::unique_lock lock(m_mutex);

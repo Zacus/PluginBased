@@ -32,6 +32,8 @@ struct PresentTiming {
 };
 
 struct PresentResult {
+    // Queued results must provide a non-zero PresentId so completions can
+    // release presenter backpressure and be matched to the submitted frame.
     PresentId id = 0;
     PresentStatus status = PresentStatus::Failed;
 };
@@ -62,8 +64,10 @@ class IVideoPresenter {
 public:
     virtual ~IVideoPresenter() = default;
 
+    [[nodiscard("presenter capabilities select native vs CPU frame paths")]]
     virtual VideoPresenterCapabilities capabilities() const = 0;
     virtual void setEvents(IVideoPresenterEvents* events) = 0;
+    [[nodiscard("present result must be tracked for presenter backpressure and completion")]]
     virtual PresentResult present(VideoFrame frame, PresentTiming timing) = 0;
     virtual void clear() = 0;
 };

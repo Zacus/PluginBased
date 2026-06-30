@@ -12,6 +12,7 @@ class MasterClock
 public:
     void reset(Generation generation);
 
+    [[nodiscard("master clock position is required for video scheduling")]]
     std::chrono::microseconds positionForVideoFrame(
         std::chrono::microseconds framePts,
         ClockSnapshot audioClock,

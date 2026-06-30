@@ -27,17 +27,24 @@ class PresentTracker
 public:
     void reset(SessionId sessionId, Generation generation);
     void setMaxPending(std::size_t maxPending);
+    [[nodiscard("track result determines whether presenter backpressure accepted the frame")]]
     bool track(TrackedPresent present);
+    [[nodiscard("completion action drives fallback, stale completion handling, and backpressure release")]]
     PresentCompletionAction complete(SessionId sessionId, Generation generation, PresentCompletion completion);
     void clear();
+    [[nodiscard]]
     bool hasCapacity() const;
+    [[nodiscard]]
     std::size_t pendingCount() const;
 
 private:
     using PendingList = std::deque<TrackedPresent>;
 
+    [[nodiscard]]
     PendingList::iterator findPending(SessionId sessionId, Generation generation, PresentId id);
+    [[nodiscard]]
     bool isCurrent(SessionId sessionId, Generation generation) const;
+    [[nodiscard]]
     static bool isFailureStatus(PresentStatus status);
 
     SessionId m_sessionId = 0;

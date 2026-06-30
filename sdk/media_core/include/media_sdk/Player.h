@@ -29,10 +29,12 @@ public:
     Player(Player&&) noexcept;
     Player& operator=(Player&&) noexcept;
 
+    [[nodiscard("inspect the open result before starting playback")]]
     Result<void> open(const std::filesystem::path& path);
     void play();
     void pause();
     void stop();
+    [[nodiscard("inspect the seek result before assuming the seek was accepted")]]
     Result<void> seek(std::chrono::milliseconds position);
 
 private:

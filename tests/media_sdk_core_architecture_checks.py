@@ -72,6 +72,25 @@ def main() -> None:
         require((PUBLIC_INCLUDE / header).exists(),
                 f"missing public SDK header: {header}")
 
+    result_header = read(PUBLIC_INCLUDE / "Result.h")
+    require(result_header.count("class [[nodiscard") >= 2,
+            "Result.h should mark both Result<T> and Result<void> nodiscard")
+    for token in [
+        "Result",
+        "Result<void>",
+    ]:
+        require(token in result_header,
+                f"Result.h should mark SDK result contracts nodiscard token: {token}")
+
+    player_header = read(PUBLIC_INCLUDE / "Player.h")
+    for token in [
+        "[[nodiscard",
+        "Result<void> open(const std::filesystem::path& path)",
+        "Result<void> seek(std::chrono::milliseconds position)",
+    ]:
+        require(token in player_header,
+                f"Player.h should mark fallible SDK operations nodiscard token: {token}")
+
     frame_header = read(PUBLIC_INCLUDE / "Frame.h")
     for token in ["PlaneView", "NativeHandle", "VideoFrame", "AudioFrame",
                   "std::chrono::microseconds", "std::shared_ptr<void> storage"]:

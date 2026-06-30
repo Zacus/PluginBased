@@ -43,8 +43,11 @@ class IAudioOutput {
 public:
     virtual ~IAudioOutput() = default;
 
+    [[nodiscard("inspect the audio output open result before writing audio")]]
     virtual Result<void> open(const AudioFormat& format) = 0;
+    [[nodiscard("inspect the audio write result because stale generations or closed outputs reject frames")]]
     virtual Result<void> write(AudioBufferView buffer) = 0;
+    [[nodiscard("clock snapshots drive A/V sync decisions")]]
     virtual ClockSnapshot clock() const = 0;
     virtual void pause() = 0;
     virtual void resume() = 0;
