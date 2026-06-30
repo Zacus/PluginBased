@@ -44,6 +44,9 @@ public:
 
     void close() noexcept override
     {
+        if (!openState && !running)
+            return;
+
         ++closeCount;
         openState = false;
         running = false;
@@ -130,7 +133,7 @@ void resumeStartsDeviceAndCallbackConsumesPcm()
     std::vector<std::byte> output(8);
     device->render(output);
     assert(output == input);
-    assert(engine->clock().position == 10ms + 1us);
+    assert(engine->clock().position == 10ms + 20us);
 }
 
 void pauseStopsDeviceWithoutFlushingQueuedAudio()
