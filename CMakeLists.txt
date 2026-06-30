@@ -311,6 +311,20 @@ if(BUILD_TESTING)
         COMMAND $<TARGET_FILE:PlayPluginPlaybackCompletionTest>
         WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
     )
+    add_executable(PlayPluginPendingSeekRequestsTest
+        tests/tst_playplugin_pending_seek_requests.cpp
+    )
+    target_include_directories(PlayPluginPendingSeekRequestsTest PRIVATE
+        "${PLAYPLUGIN_TEST_PLUGIN_ROOT}/PlayPlugin/src"
+    )
+    target_link_libraries(PlayPluginPendingSeekRequestsTest PRIVATE
+        Qt6::Core
+        Qt6::Test
+    )
+    add_test(NAME playplugin_pending_seek_requests
+        COMMAND $<TARGET_FILE:PlayPluginPendingSeekRequestsTest>
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+    )
     add_executable(PlayPluginFrameQueueTest
         tests/tst_playplugin_frame_queue.cpp
     )

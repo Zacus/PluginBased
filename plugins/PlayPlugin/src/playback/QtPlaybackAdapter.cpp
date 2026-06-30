@@ -137,7 +137,7 @@ void QtPlaybackAdapter::seekTo(qint64 positionMs, int generation)
         emit errorOccurred(QString::fromStdString(result.error().message));
         return;
     }
-    m_pendingSeekRequests.push_back(generation);
+    m_pendingSeekRequests.push(std::chrono::milliseconds(positionMs), generation);
 }
 
 void QtPlaybackAdapter::stopDecoding()
@@ -242,18 +242,17 @@ void QtPlaybackAdapter::handleEvent(const media_sdk::PlayerEvent& event)
         return;
     }
 
-    if (std::holds_alternative<media_sdk::SeekCompletedEvent>(event.payload))
+    if (const auto* payload = std::get_if<media_sdk::SeekCompletedEvent>(&event.payload))
     {
-        if (m_pendingSeekRequests.empty())
+        const auto qtGeneration = m_pendingSeekRequests.takeForCompletedPosition(payload->position);
+        if (!qtGeneration)
         {
             LOG_DEBUG("QtPlaybackAdapter: ignored stale seek completion");
             return;
         }
 
-        const int qtGeneration = m_pendingSeekRequests.front();
-        m_pendingSeekRequests.pop_front();
         m_currentSerial = static_cast<int>(event.metadata.generation);
-        emit seekCompleted(qtGeneration, m_currentSerial);
+        emit seekCompleted(*qtGeneration, m_currentSerial);
         return;
     }
 

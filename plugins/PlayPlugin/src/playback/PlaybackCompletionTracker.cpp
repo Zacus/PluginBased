@@ -31,16 +31,18 @@ void PlaybackCompletionTracker::setStreams(bool hasAudio, bool hasVideo)
     m_videoFinished = !hasVideo;
 }
 
-bool PlaybackCompletionTracker::resumeAfterFinishedSeek()
+bool PlaybackCompletionTracker::resumeAfterFinishedSeek(bool playbackWasPlaying)
 {
     if (!m_mediaFinished && !m_decoderFinished)
         return false;
+
+    const bool shouldResume = m_mediaFinished || playbackWasPlaying;
 
     m_decoderFinished = false;
     m_audioFinished = !m_hasAudio;
     m_videoFinished = !m_hasVideo;
     m_mediaFinished = false;
-    return true;
+    return shouldResume;
 }
 
 void PlaybackCompletionTracker::markDecoderFinished()

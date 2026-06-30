@@ -6,6 +6,7 @@
 #include <QWaitCondition>
 #include <deque>
 #include <functional>
+#include <optional>
 
 /**
  * @brief 线程安全帧队列
@@ -45,24 +46,12 @@ public:
      */
     bool push(T frame, int serial = 0, bool eof = false)
     {
-        WakeCallback wakeCallback;
-        {
-            QMutexLocker lk(&m_mutex);
-            const int cancelSerial = m_cancelSerial;
-            while (static_cast<int>(m_queue.size()) >= m_maxSize &&
-                   !m_abort &&
-                   cancelSerial == m_cancelSerial) {
-                m_notFull.wait(&m_mutex);
-            }
-            if (m_abort) return false;
-            if (cancelSerial != m_cancelSerial) return false;
+        return pushWithCancelSerial(std::move(frame), std::nullopt, serial, eof);
+    }
 
-            m_queue.push_back({ std::move(frame), serial, eof });
-            m_notEmpty.wakeOne();
-            wakeCallback = m_wakeCallback;
-        }
-        notifyWakeCallback(wakeCallback);
-        return true;
+    bool pushIfCancelSerial(T frame, int expectedCancelSerial, int serial = 0, bool eof = false)
+    {
+        return pushWithCancelSerial(std::move(frame), expectedCancelSerial, serial, eof);
     }
 
     bool tryPush(T frame, int serial = 0, bool eof = false)
@@ -89,6 +78,11 @@ public:
     bool finish(int serial = 0)
     {
         return push(T {}, serial, true);
+    }
+
+    bool finishIfCancelSerial(int expectedCancelSerial, int serial = 0)
+    {
+        return pushIfCancelSerial(T {}, expectedCancelSerial, serial, true);
     }
 
     bool tryFinish(int serial = 0)
@@ -180,6 +174,7 @@ public:
     int  size()         const { QMutexLocker lk(&m_mutex); return static_cast<int>(m_queue.size()); }
     bool empty()        const { QMutexLocker lk(&m_mutex); return m_queue.empty(); }
     int  flushSerial()  const { QMutexLocker lk(&m_mutex); return m_flushSerial; }
+    int  cancelSerial() const { QMutexLocker lk(&m_mutex); return m_cancelSerial; }
 
     void setWakeCallback(WakeCallback callback)
     {
@@ -188,6 +183,31 @@ public:
     }
 
 private:
+    bool pushWithCancelSerial(T frame,
+                              std::optional<int> expectedCancelSerial,
+                              int serial,
+                              bool eof)
+    {
+        WakeCallback wakeCallback;
+        {
+            QMutexLocker lk(&m_mutex);
+            const int cancelSerial = expectedCancelSerial.value_or(m_cancelSerial);
+            while (static_cast<int>(m_queue.size()) >= m_maxSize &&
+                   !m_abort &&
+                   cancelSerial == m_cancelSerial) {
+                m_notFull.wait(&m_mutex);
+            }
+            if (m_abort) return false;
+            if (cancelSerial != m_cancelSerial) return false;
+
+            m_queue.push_back({ std::move(frame), serial, eof });
+            m_notEmpty.wakeOne();
+            wakeCallback = m_wakeCallback;
+        }
+        notifyWakeCallback(wakeCallback);
+        return true;
+    }
+
     void notifyWakeCallback(const WakeCallback& wakeCallback)
     {
         if (wakeCallback)

@@ -2,12 +2,12 @@
 
 #include "media_sdk/Player.h"
 #include "media_sdk/runtime/RuntimePlayer.h"
+#include "playback/PendingSeekRequests.h"
 
 #include <QObject>
 #include <QUrl>
 
 #include <chrono>
-#include <deque>
 #include <filesystem>
 #include <memory>
 #include <mutex>
@@ -92,7 +92,7 @@ private:
     media_sdk::EventMetadata m_acceptedCoreTimeline {};
     media_sdk::runtime::RuntimeTimeline m_runtimeTimeline {};
     std::optional<media_sdk::runtime::RuntimeFallbackAction> m_pendingFallback;
-    std::deque<PendingSeekRequest> m_pendingSeekRequests;
+    PendingSeekRequests<PendingSeekRequest> m_pendingSeekRequests;
     bool m_acceptingRuntimeFrames = false;
     bool m_directNativeVideoEnabled = false;
     bool m_paused = false;

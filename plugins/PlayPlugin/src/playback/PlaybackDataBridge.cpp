@@ -78,6 +78,7 @@ bool PlaybackDataBridge::pushAudio(AVFramePtr frame,
 {
     if (!frame || !m_audioQueue)
         return false;
+    const int queueCancelSerial = m_audioQueue->cancelSerial();
     {
         std::scoped_lock lock(m_mutex);
         if (!acceptsLocked(sessionId, generation))
@@ -87,7 +88,9 @@ bool PlaybackDataBridge::pushAudio(AVFramePtr frame,
         }
     }
 
-    const bool pushed = m_audioQueue->push(std::move(frame), static_cast<int>(generation));
+    const bool pushed = m_audioQueue->pushIfCancelSerial(std::move(frame),
+                                                         queueCancelSerial,
+                                                         static_cast<int>(generation));
     incrementCounter(sessionId,
                      generation,
                      pushed ? Counter::AudioAccepted : Counter::QueueAbortFailure);
@@ -100,6 +103,7 @@ bool PlaybackDataBridge::pushVideo(AVFramePtr frame,
 {
     if (!frame || !m_videoQueue)
         return false;
+    const int queueCancelSerial = m_videoQueue->cancelSerial();
     {
         std::scoped_lock lock(m_mutex);
         if (!acceptsLocked(sessionId, generation))
@@ -109,7 +113,9 @@ bool PlaybackDataBridge::pushVideo(AVFramePtr frame,
         }
     }
 
-    const bool pushed = m_videoQueue->push(std::move(frame), static_cast<int>(generation));
+    const bool pushed = m_videoQueue->pushIfCancelSerial(std::move(frame),
+                                                         queueCancelSerial,
+                                                         static_cast<int>(generation));
     incrementCounter(sessionId,
                      generation,
                      pushed ? Counter::VideoAccepted : Counter::QueueAbortFailure);
@@ -118,6 +124,8 @@ bool PlaybackDataBridge::pushVideo(AVFramePtr frame,
 
 bool PlaybackDataBridge::finish(std::uint64_t sessionId, std::uint64_t generation)
 {
+    const int videoCancelSerial = m_videoQueue ? m_videoQueue->cancelSerial() : 0;
+    const int audioCancelSerial = m_audioQueue ? m_audioQueue->cancelSerial() : 0;
     const StreamState state = snapshot();
     if (!accepts(state, sessionId, generation))
         return false;
@@ -125,14 +133,16 @@ bool PlaybackDataBridge::finish(std::uint64_t sessionId, std::uint64_t generatio
     bool accepted = true;
     if (state.hasVideo && m_videoQueue)
     {
-        const bool videoFinished = m_videoQueue->finish(static_cast<int>(generation));
+        const bool videoFinished = m_videoQueue->finishIfCancelSerial(videoCancelSerial,
+                                                                       static_cast<int>(generation));
         if (!videoFinished)
             incrementCounter(sessionId, generation, Counter::QueueAbortFailure);
         accepted = videoFinished && accepted;
     }
     if (state.hasAudio && m_audioQueue)
     {
-        const bool audioFinished = m_audioQueue->finish(static_cast<int>(generation));
+        const bool audioFinished = m_audioQueue->finishIfCancelSerial(audioCancelSerial,
+                                                                       static_cast<int>(generation));
         if (!audioFinished)
             incrementCounter(sessionId, generation, Counter::QueueAbortFailure);
         accepted = audioFinished && accepted;

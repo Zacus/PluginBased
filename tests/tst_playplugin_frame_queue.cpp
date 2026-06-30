@@ -46,9 +46,33 @@ void abortStillStopsBlockedConsumer()
     assert(!blockedPop.get());
 }
 
+void pushIfCancelSerialRejectsPushAfterCancel()
+{
+    FrameQueue<int> queue(1);
+    const int cancelSerial = queue.cancelSerial();
+
+    queue.cancelPendingPushes();
+
+    assert(!queue.pushIfCancelSerial(1, cancelSerial, 1));
+    assert(queue.empty());
+}
+
+void finishIfCancelSerialRejectsEofAfterCancel()
+{
+    FrameQueue<int> queue(1);
+    const int cancelSerial = queue.cancelSerial();
+
+    queue.cancelPendingPushes();
+
+    assert(!queue.finishIfCancelSerial(cancelSerial, 1));
+    assert(queue.empty());
+}
+
 int main()
 {
     cancelPendingPushesRejectsBlockedProducerWithoutAbortingConsumer();
     abortStillStopsBlockedConsumer();
+    pushIfCancelSerialRejectsPushAfterCancel();
+    finishIfCancelSerialRejectsEofAfterCancel();
     return 0;
 }

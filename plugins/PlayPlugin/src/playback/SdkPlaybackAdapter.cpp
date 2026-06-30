@@ -142,7 +142,8 @@ void SdkPlaybackAdapter::seek(qint64 positionMs, int generation)
 
     {
         std::lock_guard lock(m_mutex);
-        m_pendingSeekRequests.push_back(PendingSeekRequest { generation, runtimeTimeline });
+        m_pendingSeekRequests.push(std::chrono::milliseconds(positionMs),
+                                   PendingSeekRequest { generation, runtimeTimeline });
         if (m_runtimePlayer == runtimePlayer)
             m_runtimeTimeline = runtimeTimeline;
     }
@@ -298,7 +299,8 @@ void SdkPlaybackAdapter::handleControlEvent(
 std::optional<SdkPlaybackAdapter::AcceptedSeekCompletion>
 SdkPlaybackAdapter::acceptSeekCompletedEvent(const media_sdk::PlayerEvent& event)
 {
-    if (!std::holds_alternative<media_sdk::SeekCompletedEvent>(event.payload))
+    const auto* payload = std::get_if<media_sdk::SeekCompletedEvent>(&event.payload);
+    if (!payload)
         return std::nullopt;
 
     std::shared_ptr<media_sdk::runtime::RuntimePlayer> runtimePlayer;
@@ -316,11 +318,9 @@ SdkPlaybackAdapter::acceptSeekCompletedEvent(const media_sdk::PlayerEvent& event
             runtimePlayer = m_runtimePlayer;
             completeFallbackSeek = true;
             m_pendingFallback.reset();
-        } else if (!m_pendingSeekRequests.empty()) {
-            const auto pending = m_pendingSeekRequests.front();
-            m_pendingSeekRequests.pop_front();
-            runtimeTimeline = pending.runtimeTimeline;
-            completion.qtGeneration = pending.qtGeneration;
+        } else if (auto pending = m_pendingSeekRequests.takeForCompletedPosition(payload->position)) {
+            runtimeTimeline = pending->runtimeTimeline;
+            completion.qtGeneration = pending->qtGeneration;
             completion.hasQtGeneration = true;
         }
 

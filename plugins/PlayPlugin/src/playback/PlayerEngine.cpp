@@ -159,7 +159,7 @@ void PlayerEngine::seek(qint64 positionMs)
         return;
     LOG_INFO("PlayerEngine: seek to {}ms", positionMs);
 
-    const bool resumeAfterSeek = m_completion.resumeAfterFinishedSeek();
+    const bool resumeAfterSeek = m_completion.resumeAfterFinishedSeek(m_state == Playing);
 
     const int seekGeneration = ++m_seekGeneration;
 

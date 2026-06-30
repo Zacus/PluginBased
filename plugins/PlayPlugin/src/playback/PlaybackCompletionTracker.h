@@ -14,7 +14,7 @@ public:
     bool hasVideo() const { return m_hasVideo; }
     bool isMediaFinished() const { return m_mediaFinished; }
 
-    bool resumeAfterFinishedSeek();
+    bool resumeAfterFinishedSeek(bool playbackWasPlaying);
     void markDecoderFinished();
     void markAudioFinished();
     void markVideoFinished();

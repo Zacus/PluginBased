@@ -10,7 +10,19 @@ void seekDuringDrainAfterDecoderEofResumesPlayback()
     completion.markDecoderFinished();
 
     assert(!completion.shouldFinish());
-    assert(completion.resumeAfterFinishedSeek());
+    assert(completion.resumeAfterFinishedSeek(true));
+    assert(!completion.shouldFinish());
+}
+
+void seekDuringPausedDrainAfterDecoderEofDoesNotForceResume()
+{
+    PlaybackCompletionTracker completion;
+    completion.resetForOpen();
+    completion.setStreams(true, true);
+    completion.markDecoderFinished();
+
+    assert(!completion.shouldFinish());
+    assert(!completion.resumeAfterFinishedSeek(false));
     assert(!completion.shouldFinish());
 }
 
@@ -25,7 +37,7 @@ void seekAfterFullyFinishedMediaStillResumesPlayback()
 
     assert(completion.shouldFinish());
     assert(completion.finish());
-    assert(completion.resumeAfterFinishedSeek());
+    assert(completion.resumeAfterFinishedSeek(false));
     assert(!completion.shouldFinish());
 }
 
@@ -35,12 +47,13 @@ void seekDuringActivePlaybackDoesNotForceResumeTransition()
     completion.resetForOpen();
     completion.setStreams(true, true);
 
-    assert(!completion.resumeAfterFinishedSeek());
+    assert(!completion.resumeAfterFinishedSeek(true));
 }
 
 int main()
 {
     seekDuringDrainAfterDecoderEofResumesPlayback();
+    seekDuringPausedDrainAfterDecoderEofDoesNotForceResume();
     seekAfterFullyFinishedMediaStillResumesPlayback();
     seekDuringActivePlaybackDoesNotForceResumeTransition();
     return 0;
