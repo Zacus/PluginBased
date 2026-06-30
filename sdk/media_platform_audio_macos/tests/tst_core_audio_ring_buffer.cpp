@@ -234,7 +234,7 @@ void queuedDurationUsesFormatByteRate()
     assert(snapshot.queuedDuration == 100ms);
 
     std::vector<std::byte> output(48000 * 2 * 4 / 20);
-    buffer.read(output);
+    (void)buffer.read(output);
     snapshot = buffer.clock();
     assert(snapshot.position == 100ms);
     assert(snapshot.queuedDuration == 50ms);

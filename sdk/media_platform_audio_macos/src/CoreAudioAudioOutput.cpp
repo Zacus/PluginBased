@@ -54,7 +54,7 @@ struct CoreAudioAudioOutput::Impl {
             static_cast<std::byte*>(buffer->mAudioData),
             buffer->mAudioDataBytesCapacity,
         };
-        impl->ringBuffer.read(destination);
+        (void)impl->ringBuffer.read(destination);
         buffer->mAudioDataByteSize = buffer->mAudioDataBytesCapacity;
 
         if (impl->acceptingCallbacks.load(std::memory_order_acquire))
@@ -86,7 +86,7 @@ struct CoreAudioAudioOutput::Impl {
                 static_cast<std::byte*>(buffer->mAudioData),
                 buffer->mAudioDataBytesCapacity,
             };
-            ringBuffer.read(destination);
+            (void)ringBuffer.read(destination);
             buffer->mAudioDataByteSize = buffer->mAudioDataBytesCapacity;
             if (AudioQueueEnqueueBuffer(queue, buffer, 0, nullptr) != noErr)
                 return false;
