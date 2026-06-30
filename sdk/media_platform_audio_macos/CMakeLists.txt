@@ -27,6 +27,27 @@ target_link_libraries(media_sdk_platform_audio_macos PRIVATE
 )
 
 if(BUILD_TESTING)
+    add_executable(MediaSdkPlatformAudioMacosEngineTest
+        tests/tst_core_audio_output_engine.cpp
+        src/CoreAudioOutputEngine.cpp
+    )
+    target_compile_features(MediaSdkPlatformAudioMacosEngineTest PRIVATE cxx_std_20)
+    set_target_properties(MediaSdkPlatformAudioMacosEngineTest PROPERTIES
+        CXX_EXTENSIONS OFF
+        AUTOMOC OFF
+        AUTOUIC OFF
+        AUTORCC OFF
+    )
+    target_include_directories(MediaSdkPlatformAudioMacosEngineTest PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/src"
+    )
+    target_link_libraries(MediaSdkPlatformAudioMacosEngineTest PRIVATE
+        media_sdk::playback_runtime
+    )
+    add_test(NAME media_sdk_platform_audio_macos_engine
+        COMMAND $<TARGET_FILE:MediaSdkPlatformAudioMacosEngineTest>
+    )
+
     add_executable(MediaSdkPlatformAudioMacosContractTest
         tests/tst_core_audio_output_contract.cpp
     )
