@@ -148,8 +148,9 @@ void DecodeWorker::submit(Command command)
 bool DecodeWorker::waitForCommand(WorkerStopToken stopToken, Command& command)
 {
     std::unique_lock lock(m_mutex);
-    while (m_commands.empty() && m_acceptingCommands && !stopToken.stop_requested())
-        m_cv.wait_for(lock, std::chrono::milliseconds(10));
+    m_cv.wait(lock, [this, stopToken]() {
+        return !m_commands.empty() || !m_acceptingCommands || stopToken.stop_requested();
+    });
     if (stopToken.stop_requested() || m_commands.empty())
         return false;
 

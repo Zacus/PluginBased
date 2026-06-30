@@ -217,6 +217,16 @@ def main() -> None:
     require("coalescedSeekPosition" in decode_worker_header + decode_worker_cpp and
             "while (!m_commands.empty() && m_commands.front().type == CommandType::Seek)" in decode_worker_cpp,
             "DecodeWorker should coalesce consecutive queued seek commands before resuming decode")
+    wait_command_start = decode_worker_cpp.find("bool DecodeWorker::waitForCommand")
+    wait_command_end = decode_worker_cpp.find("bool DecodeWorker::tryTakeCommand")
+    require(wait_command_start >= 0 and wait_command_end > wait_command_start,
+            "DecodeWorker should define waitForCommand before tryTakeCommand")
+    wait_command_body = decode_worker_cpp[wait_command_start:wait_command_end]
+    require("m_cv.wait(lock" in wait_command_body,
+            "DecodeWorker::waitForCommand should use command/close predicate wakeups")
+    for token in ["wait_for", "std::chrono::milliseconds(10)"]:
+        require(token not in wait_command_body,
+                f"DecodeWorker::waitForCommand should not poll commands with {token}")
     require("QueuePolicy::shouldDropVideoWhenFull" not in decode_worker_cpp,
             "DecodeWorker should leave presenter backpressure/drop policy to the Qt adapter layer")
     require("DecodeWorker" in playback_controller_header + playback_controller_cpp and
