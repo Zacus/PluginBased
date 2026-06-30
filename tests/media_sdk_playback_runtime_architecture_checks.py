@@ -208,6 +208,15 @@ def main() -> None:
     audio_unit_device_source = read(audio_unit_device_path)
     for token in REQUIRED_AUDIO_UNIT_TOKENS:
         assert_contains(audio_unit_device_source, token, audio_unit_device_path)
+    for token in (
+        "std::atomic<AudioRenderCallback::Function> m_callbackFunction",
+        "std::atomic<void*> m_callbackContext",
+    ):
+        assert_contains(audio_unit_device_source, token, audio_unit_device_path)
+    if "AudioRenderCallback m_callback" in audio_unit_device_source:
+        raise AssertionError(
+            f"{audio_unit_device_path} must not share non-atomic callback state with the AudioUnit render callback"
+        )
 
     ring_buffer_header = PLATFORM_AUDIO_MACOS / "src" / "CoreAudioRingBuffer.h"
     ring_buffer = read(ring_buffer_header)

@@ -6,18 +6,32 @@
 #include <cstddef>
 #include <memory>
 #include <span>
+#include <utility>
 #include <vector>
 
 using namespace std::chrono_literals;
 
 namespace {
 
+struct FakeRenderDeviceStats {
+    int openCount = 0;
+    int startCount = 0;
+    int stopCount = 0;
+    int resetCount = 0;
+    int closeCount = 0;
+};
+
 class FakeRenderDevice final : public media_sdk::platform::macos::IAudioRenderDevice {
 public:
+    explicit FakeRenderDevice(std::shared_ptr<FakeRenderDeviceStats> stats)
+        : stats(std::move(stats))
+    {
+    }
+
     media_sdk::Result<void> open(
         const media_sdk::platform::macos::AudioRenderDeviceConfig& config) override
     {
-        ++openCount;
+        ++stats->openCount;
         callback = config.callback;
         format = config.format;
         openState = true;
@@ -26,20 +40,20 @@ public:
 
     media_sdk::Result<void> start() override
     {
-        ++startCount;
+        ++stats->startCount;
         running = true;
         return media_sdk::Result<void>::success();
     }
 
     void stop() noexcept override
     {
-        ++stopCount;
+        ++stats->stopCount;
         running = false;
     }
 
     void reset() noexcept override
     {
-        ++resetCount;
+        ++stats->resetCount;
     }
 
     void close() noexcept override
@@ -47,7 +61,7 @@ public:
         if (!openState && !running)
             return;
 
-        ++closeCount;
+        ++stats->closeCount;
         openState = false;
         running = false;
     }
@@ -68,14 +82,10 @@ public:
             callback.function(callback.context, destination);
     }
 
+    std::shared_ptr<FakeRenderDeviceStats> stats;
     media_sdk::platform::macos::AudioRenderCallback callback {};
     media_sdk::platform::macos::AudioRenderDeviceDiagnostics diagnosticsValue {};
     media_sdk::runtime::AudioFormat format {};
-    int openCount = 0;
-    int startCount = 0;
-    int stopCount = 0;
-    int resetCount = 0;
-    int closeCount = 0;
     bool openState = false;
     bool running = false;
 };
@@ -101,22 +111,25 @@ std::vector<std::byte> bytes(std::initializer_list<unsigned int> values)
 struct EngineFixture {
     std::unique_ptr<media_sdk::platform::macos::CoreAudioOutputEngine> engine;
     FakeRenderDevice* device = nullptr;
+    std::shared_ptr<FakeRenderDeviceStats> stats;
 };
 
 EngineFixture makeEngine()
 {
-    auto device = std::make_unique<FakeRenderDevice>();
+    auto stats = std::make_shared<FakeRenderDeviceStats>();
+    auto device = std::make_unique<FakeRenderDevice>(stats);
     auto* rawDevice = device.get();
     return {
         .engine = std::make_unique<media_sdk::platform::macos::CoreAudioOutputEngine>(
             std::move(device)),
         .device = rawDevice,
+        .stats = stats,
     };
 }
 
 void resumeStartsDeviceAndCallbackConsumesPcm()
 {
-    auto [engine, device] = makeEngine();
+    auto [engine, device, stats] = makeEngine();
     assert(engine->open(audioFormat()).ok());
 
     const auto input = bytes({ 1, 2, 3, 4, 5, 6, 7, 8 });
@@ -127,7 +140,7 @@ void resumeStartsDeviceAndCallbackConsumesPcm()
     }).ok());
 
     engine->resume();
-    assert(device->startCount == 1);
+    assert(stats->startCount == 1);
     assert(device->running);
 
     std::vector<std::byte> output(8);
@@ -138,7 +151,7 @@ void resumeStartsDeviceAndCallbackConsumesPcm()
 
 void pauseStopsDeviceWithoutFlushingQueuedAudio()
 {
-    auto [engine, device] = makeEngine();
+    auto [engine, device, stats] = makeEngine();
     assert(engine->open(audioFormat()).ok());
 
     const auto input = bytes({ 9, 8, 7, 6, 5, 4, 3, 2 });
@@ -150,7 +163,7 @@ void pauseStopsDeviceWithoutFlushingQueuedAudio()
 
     engine->resume();
     engine->pause();
-    assert(device->stopCount == 1);
+    assert(stats->stopCount == 1);
     assert(engine->clock().paused);
 
     std::vector<std::byte> output(8);
@@ -160,7 +173,7 @@ void pauseStopsDeviceWithoutFlushingQueuedAudio()
 
 void flushResetsDeviceAndRejectsOldGeneration()
 {
-    auto [engine, device] = makeEngine();
+    auto [engine, device, stats] = makeEngine();
     assert(engine->open(audioFormat()).ok());
 
     const auto input = bytes({ 1, 1, 1, 1, 2, 2, 2, 2 });
@@ -171,7 +184,7 @@ void flushResetsDeviceAndRejectsOldGeneration()
     }).ok());
 
     engine->flush();
-    assert(device->resetCount == 1);
+    assert(stats->resetCount == 1);
     assert(engine->clock().generation == 2);
     assert(!engine->write({
         .bytes = input,
@@ -187,13 +200,13 @@ void flushResetsDeviceAndRejectsOldGeneration()
 
 void closeStopsAndRejectsWrites()
 {
-    auto [engine, device] = makeEngine();
+    auto [engine, device, stats] = makeEngine();
     assert(engine->open(audioFormat()).ok());
     engine->resume();
     engine->close();
 
-    assert(device->stopCount == 1);
-    assert(device->closeCount == 1);
+    assert(stats->stopCount == 1);
+    assert(stats->closeCount == 1);
     assert(!engine->clock().valid);
 
     const auto input = bytes({ 4, 3, 2, 1, 0, 1, 2, 3 });
@@ -204,6 +217,20 @@ void closeStopsAndRejectsWrites()
     }).ok());
 }
 
+void destructorStopsAndClosesDevice()
+{
+    std::shared_ptr<FakeRenderDeviceStats> stats;
+    {
+        auto fixture = makeEngine();
+        stats = fixture.stats;
+        assert(fixture.engine->open(audioFormat()).ok());
+        fixture.engine->resume();
+    }
+
+    assert(stats->stopCount == 1);
+    assert(stats->closeCount == 1);
+}
+
 } // namespace
 
 int main()
@@ -212,4 +239,5 @@ int main()
     pauseStopsDeviceWithoutFlushingQueuedAudio();
     flushResetsDeviceAndRejectsOldGeneration();
     closeStopsAndRejectsWrites();
+    destructorStopsAndClosesDevice();
 }

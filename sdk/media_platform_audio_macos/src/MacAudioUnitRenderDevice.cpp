@@ -83,7 +83,8 @@ public:
             return stateError("MacAudioUnitRenderDevice failed to create AudioUnit instance", status);
 
         m_unit = newUnit;
-        m_callback = config.callback;
+        m_callbackContext.store(config.callback.context, std::memory_order_release);
+        m_callbackFunction.store(config.callback.function, std::memory_order_release);
         m_acceptingCallbacks.store(false, std::memory_order_release);
 
         AudioStreamBasicDescription streamDescription {};
@@ -184,7 +185,8 @@ public:
     {
         m_acceptingCallbacks.store(false, std::memory_order_release);
         if (!m_unit) {
-            m_callback = {};
+            m_callbackFunction.store(nullptr, std::memory_order_release);
+            m_callbackContext.store(nullptr, std::memory_order_release);
             m_hardwareLatency = 0us;
             return;
         }
@@ -199,7 +201,8 @@ public:
 
         AudioComponentInstanceDispose(m_unit);
         m_unit = nullptr;
-        m_callback = {};
+        m_callbackFunction.store(nullptr, std::memory_order_release);
+        m_callbackContext.store(nullptr, std::memory_order_release);
         m_hardwareLatency = 0us;
     }
 
@@ -222,13 +225,19 @@ private:
                                    AudioBufferList* ioData)
     {
         auto* device = static_cast<MacAudioUnitRenderDevice*>(userData);
+        const auto callbackFunction = device
+            ? device->m_callbackFunction.load(std::memory_order_acquire)
+            : nullptr;
+        void* const callbackContext = device
+            ? device->m_callbackContext.load(std::memory_order_acquire)
+            : nullptr;
         if (!device || !ioData ||
             ioData->mNumberBuffers != 1 ||
             !ioData->mBuffers[0].mData ||
             ioData->mBuffers[0].mDataByteSize == 0 ||
             !device->m_acceptingCallbacks.load(std::memory_order_acquire) ||
-            !device->m_callback.function ||
-            !device->m_callback.context) {
+            !callbackFunction ||
+            !callbackContext) {
             fillSilence(ioData);
             return noErr;
         }
@@ -238,7 +247,7 @@ private:
             static_cast<std::byte*>(buffer.mData),
             static_cast<std::size_t>(buffer.mDataByteSize),
         };
-        device->m_callback.function(device->m_callback.context, destination);
+        callbackFunction(callbackContext, destination);
         return noErr;
     }
 
@@ -265,9 +274,10 @@ private:
     }
 
     AudioUnit m_unit = nullptr;
-    AudioRenderCallback m_callback {};
     AudioRenderDeviceDiagnostics m_diagnostics {};
     std::chrono::microseconds m_hardwareLatency { 0 };
+    std::atomic<AudioRenderCallback::Function> m_callbackFunction { nullptr };
+    std::atomic<void*> m_callbackContext { nullptr };
     std::atomic_bool m_acceptingCallbacks { false };
     bool m_initialized = false;
     bool m_running = false;

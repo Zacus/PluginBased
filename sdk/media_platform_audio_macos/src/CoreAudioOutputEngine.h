@@ -32,8 +32,8 @@ private:
     void render(std::span<std::byte> destination) noexcept;
 
     mutable std::mutex m_mutex;
-    std::unique_ptr<IAudioRenderDevice> m_device;
     CoreAudioRingBuffer m_ringBuffer;
+    std::unique_ptr<IAudioRenderDevice> m_device;
     runtime::AudioFormat m_format {};
     runtime::Generation m_generation = 1;
     bool m_open = false;

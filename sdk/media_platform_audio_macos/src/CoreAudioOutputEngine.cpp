@@ -30,12 +30,15 @@ Result<void> unsupportedFormat(const char* message)
 } // namespace
 
 CoreAudioOutputEngine::CoreAudioOutputEngine(std::unique_ptr<IAudioRenderDevice> device)
-    : m_device(std::move(device))
-    , m_ringBuffer(48000 * 2 * 4)
+    : m_ringBuffer(48000 * 2 * 4)
+    , m_device(std::move(device))
 {
 }
 
-CoreAudioOutputEngine::~CoreAudioOutputEngine() = default;
+CoreAudioOutputEngine::~CoreAudioOutputEngine()
+{
+    close();
+}
 
 Result<void> CoreAudioOutputEngine::open(const runtime::AudioFormat& format)
 {
