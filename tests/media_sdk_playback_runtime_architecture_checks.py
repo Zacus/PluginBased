@@ -19,6 +19,41 @@ FORBIDDEN_RUNTIME_TOKENS = (
     "CoreAudioAudioOutput",
 )
 
+FORBIDDEN_PLATFORM_AUDIO_QUEUE_TOKENS = (
+    "AudioQueue",
+    "AudioQueueRef",
+    "AudioQueueBufferRef",
+    "AudioQueueNewOutput",
+    "AudioQueueEnqueueBuffer",
+    "AudioQueueStart",
+    "AudioQueuePause",
+    "AudioQueueReset",
+    "AudioQueueStop",
+    "AudioQueueDispose",
+)
+
+REQUIRED_AUDIO_UNIT_TOKENS = (
+    "AudioComponentFindNext",
+    "AudioComponentInstanceNew",
+    "AudioUnitSetProperty",
+    "kAudioUnitSubType_DefaultOutput",
+    "kAudioUnitProperty_StreamFormat",
+    "kAudioUnitProperty_SetRenderCallback",
+    "AudioUnitInitialize",
+    "AudioOutputUnitStart",
+    "AudioOutputUnitStop",
+    "AudioUnitReset",
+    "AudioComponentInstanceDispose",
+)
+
+FORBIDDEN_PUBLIC_AUDIO_HEADER_TOKENS = (
+    "<AudioUnit/",
+    "<AudioToolbox/",
+    "<CoreAudio/",
+    "AudioUnit",
+    "AudioQueue",
+)
+
 
 def read(path: Path) -> str:
     return path.read_text(encoding="utf-8")
@@ -147,6 +182,32 @@ def main() -> None:
         "runtime::ClockSnapshot clock() const override",
     ):
         assert_contains(concrete_audio_output, token, concrete_header)
+    for token in FORBIDDEN_PUBLIC_AUDIO_HEADER_TOKENS:
+        if token in concrete_audio_output:
+            raise AssertionError(
+                f"{concrete_header} must not expose macOS audio implementation token {token!r}"
+            )
+
+    platform_audio_sources = []
+    for suffix in ("*.h", "*.cpp"):
+        platform_audio_sources.extend(PLATFORM_AUDIO_MACOS.rglob(suffix))
+    if not platform_audio_sources:
+        raise AssertionError(f"{PLATFORM_AUDIO_MACOS} must contain source/header files")
+
+    for path in platform_audio_sources:
+        text = read(path)
+        for token in FORBIDDEN_PLATFORM_AUDIO_QUEUE_TOKENS:
+            if token in text:
+                raise AssertionError(
+                    f"{path} must not use AudioQueue after AudioUnit migration, found {token!r}"
+                )
+
+    audio_unit_device_path = PLATFORM_AUDIO_MACOS / "src" / "MacAudioUnitRenderDevice.cpp"
+    if not audio_unit_device_path.exists():
+        raise AssertionError(f"{audio_unit_device_path} must exist")
+    audio_unit_device_source = read(audio_unit_device_path)
+    for token in REQUIRED_AUDIO_UNIT_TOKENS:
+        assert_contains(audio_unit_device_source, token, audio_unit_device_path)
 
     ring_buffer_header = PLATFORM_AUDIO_MACOS / "src" / "CoreAudioRingBuffer.h"
     ring_buffer = read(ring_buffer_header)
