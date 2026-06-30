@@ -104,6 +104,33 @@ def main() -> None:
     if not concrete_header.exists():
         raise AssertionError(f"{concrete_header} must exist")
 
+    ring_buffer_header = PLATFORM_AUDIO_MACOS / "src" / "CoreAudioRingBuffer.h"
+    ring_buffer = read(ring_buffer_header)
+    for token in (
+        "Mutex-protected SPSC PCM ring buffer",
+        "read() never waits",
+        "complete PCM frames",
+        "std::vector<std::byte> m_buffer",
+        "m_readOffset",
+        "m_writeOffset",
+        "m_size",
+        "bytesPerFrame",
+        "completeFrameBytes",
+        "copyIntoRing",
+        "copyFromRing",
+    ):
+        assert_contains(ring_buffer, token, ring_buffer_header)
+    for token in (
+        "#include <deque>",
+        "std::deque",
+        ".push_back(",
+        ".pop_front(",
+    ):
+        if token in ring_buffer:
+            raise AssertionError(
+                f"{ring_buffer_header} should use fixed-capacity vector ring operations, found {token!r}"
+            )
+
     concrete_include = '#include "media_sdk/platform/macos/CoreAudioAudioOutput.h"'
     for path in scanned:
         text = read(path)

@@ -1,5 +1,6 @@
 #include "DecodeWorker.h"
 
+#include <cstring>
 #include <utility>
 #include <vector>
 
@@ -9,6 +10,52 @@ namespace {
 MediaError makeError(MediaErrorCode code, std::string message, std::string detail = {})
 {
     return { code, std::move(message), std::move(detail) };
+}
+
+std::vector<std::byte> makeInterleavedAudioSamples(const AVFrame* frame, AVSampleFormat format)
+{
+    if (!frame)
+        return {};
+
+    const int bytesPerSample = av_get_bytes_per_sample(format);
+    const int channels = frame->ch_layout.nb_channels;
+    if (bytesPerSample <= 0 || channels <= 0 || frame->nb_samples <= 0)
+        return {};
+
+    const auto totalBytes = static_cast<std::size_t>(frame->nb_samples)
+        * static_cast<std::size_t>(channels)
+        * static_cast<std::size_t>(bytesPerSample);
+    std::vector<std::byte> samples(totalBytes);
+
+    if (av_sample_fmt_is_planar(format) != 0)
+    {
+        auto* out = samples.data();
+        for (int sample = 0; sample < frame->nb_samples; ++sample)
+        {
+            for (int channel = 0; channel < channels; ++channel)
+            {
+                const auto* planeData = reinterpret_cast<const std::byte*>(
+                    frame->extended_data ? frame->extended_data[channel] : nullptr);
+                if (!planeData)
+                    return {};
+
+                std::memcpy(out,
+                            planeData + static_cast<std::size_t>(sample) * bytesPerSample,
+                            static_cast<std::size_t>(bytesPerSample));
+                out += bytesPerSample;
+            }
+        }
+        return samples;
+    }
+
+    const auto* begin = reinterpret_cast<const std::byte*>(frame->extended_data
+        ? frame->extended_data[0]
+        : nullptr);
+    if (!begin)
+        return {};
+
+    std::memcpy(samples.data(), begin, totalBytes);
+    return samples;
 }
 
 } // namespace
@@ -386,48 +433,21 @@ bool DecodeWorker::emitVideoFrame(VideoFrame frame)
 AudioFrame DecodeWorker::makeAudioFrame(AVFramePtr frame) const
 {
     const auto format = static_cast<AVSampleFormat>(frame->format);
-    const int bytesPerSample = std::max(0, av_get_bytes_per_sample(format));
-    const bool planar = av_sample_fmt_is_planar(format) != 0;
     const int channels = frame->ch_layout.nb_channels;
-    const int totalBytes = frame->nb_samples * channels * bytesPerSample;
-
-    std::vector<std::byte> samples;
-    samples.reserve(static_cast<std::size_t>(std::max(0, totalBytes)));
-    if (planar)
-    {
-        for (int sample = 0; sample < frame->nb_samples; ++sample)
-        {
-            for (int channel = 0; channel < channels; ++channel)
-            {
-                const auto* planeData = reinterpret_cast<const std::byte*>(frame->extended_data[channel]);
-                if (!planeData || bytesPerSample <= 0)
-                    continue;
-                const auto* begin = planeData + sample * bytesPerSample;
-                samples.insert(samples.end(), begin, begin + bytesPerSample);
-            }
-        }
-    }
-    else
-    {
-        const auto* begin = reinterpret_cast<const std::byte*>(frame->extended_data[0]);
-        if (begin && totalBytes > 0)
-            samples.insert(samples.end(), begin, begin + totalBytes);
-    }
-
-    auto storage = std::make_shared<std::vector<std::byte>>(std::move(samples));
-    return AudioFrame({
-        .sampleFormat = mapAudioSampleFormat(format),
-        .sampleRate = frame->sample_rate,
-        .channels = channels,
-        .pts = frame->pts == AV_NOPTS_VALUE
+    auto samples = makeInterleavedAudioSamples(frame.get(), format);
+    // Planar FFmpeg formats are published as interleaved SDK audio frames after
+    // makeInterleavedAudioSamples() has reordered the per-channel planes.
+    return AudioFrame::fromOwnedSamples(
+        publishedInterleavedAudioSampleFormat(format),
+        frame->sample_rate,
+        channels,
+        frame->pts == AV_NOPTS_VALUE
             ? std::chrono::microseconds { 0 }
             : std::chrono::microseconds { frame->pts },
-        .samples = std::span<const std::byte>(*storage),
-        .storage = storage,
-    });
+        std::move(samples));
 }
 
-AudioSampleFormat DecodeWorker::mapAudioSampleFormat(AVSampleFormat format) const
+AudioSampleFormat DecodeWorker::publishedInterleavedAudioSampleFormat(AVSampleFormat format) const
 {
     switch (format)
     {

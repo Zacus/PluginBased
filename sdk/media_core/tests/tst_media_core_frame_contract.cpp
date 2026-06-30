@@ -152,6 +152,31 @@ void testAudioFrameAndEvents()
     assert(mediaInfo.channelLayoutMask == 3);
 }
 
+void testAudioFrameCanOwnMovedSamples()
+{
+    std::vector<std::byte> samples {
+        std::byte { 0x01 },
+        std::byte { 0x02 },
+        std::byte { 0x03 },
+        std::byte { 0x04 },
+    };
+
+    media_sdk::AudioFrame frame = media_sdk::AudioFrame::fromOwnedSamples(
+        media_sdk::AudioSampleFormat::Signed16Interleaved,
+        44'100,
+        2,
+        1234us,
+        std::move(samples));
+
+    assert(frame.sampleFormat() == media_sdk::AudioSampleFormat::Signed16Interleaved);
+    assert(frame.sampleRate() == 44'100);
+    assert(frame.channels() == 2);
+    assert(frame.pts() == 1234us);
+    assert(frame.samples().size() == 4);
+    assert(frame.samples()[0] == std::byte { 0x01 });
+    assert(frame.samples()[3] == std::byte { 0x04 });
+}
+
 }
 
 int main()
@@ -159,5 +184,6 @@ int main()
     testVideoFrameMetadataAndStorage();
     testNativeHandleMetadata();
     testAudioFrameAndEvents();
+    testAudioFrameCanOwnMovedSamples();
     return 0;
 }

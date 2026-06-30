@@ -140,7 +140,7 @@ private:
     void emitError(MediaError error);
     bool emitVideoFrame(VideoFrame frame);
     AudioFrame makeAudioFrame(AVFramePtr frame) const;
-    AudioSampleFormat mapAudioSampleFormat(AVSampleFormat format) const;
+    AudioSampleFormat publishedInterleavedAudioSampleFormat(AVSampleFormat format) const;
 
     PlayerConfig m_config;
     IEventSink& m_events;

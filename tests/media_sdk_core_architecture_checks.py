@@ -203,9 +203,16 @@ def main() -> None:
     require("DecodeWorker" in playback_controller_header + playback_controller_cpp and
             "submit" in playback_controller_cpp,
             "PlaybackController should submit commands to DecodeWorker")
-    require("for (int sample = 0; sample < frame->nb_samples; ++sample)" in decode_worker_cpp and
-            "planeData + sample * bytesPerSample" in decode_worker_cpp,
-            "DecodeWorker should interleave planar audio samples before publishing SDK AudioFrame")
+    for token in ["makeInterleavedAudioSamples", "std::vector<std::byte> samples(totalBytes)",
+                  "std::memcpy", "AudioFrame::fromOwnedSamples",
+                  "publishedInterleavedAudioSampleFormat"]:
+        require(token in decode_worker_cpp,
+                f"DecodeWorker should use the optimized audio frame construction token: {token}")
+    require("mapAudioSampleFormat" not in decode_worker_cpp + decode_worker_header,
+            "DecodeWorker should not hide planar-to-interleaved publication behind a generic format mapper name")
+    require("samples.insert(" not in decode_worker_cpp and
+            "std::make_shared<std::vector<std::byte>>(std::move(samples))" not in decode_worker_cpp,
+            "DecodeWorker should not rebuild audio frames through per-sample vector inserts or shared vector copies")
 
     forbidden_tokens = [
         "#include <Q",

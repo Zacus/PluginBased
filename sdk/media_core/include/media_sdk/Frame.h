@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <memory>
 #include <span>
+#include <utility>
 #include <vector>
 
 namespace media_sdk {
@@ -131,6 +132,21 @@ public:
         , m_samples(desc.samples.begin(), desc.samples.end())
         , m_storage(desc.storage)
     {
+    }
+
+    static AudioFrame fromOwnedSamples(AudioSampleFormat sampleFormat,
+                                       int sampleRate,
+                                       int channels,
+                                       std::chrono::microseconds pts,
+                                       std::vector<std::byte> samples)
+    {
+        AudioFrame frame;
+        frame.m_sampleFormat = sampleFormat;
+        frame.m_sampleRate = sampleRate;
+        frame.m_channels = channels;
+        frame.m_pts = pts;
+        frame.m_samples = std::move(samples);
+        return frame;
     }
 
     AudioSampleFormat sampleFormat() const { return m_sampleFormat; }
