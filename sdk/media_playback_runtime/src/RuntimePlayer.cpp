@@ -408,24 +408,31 @@ struct RuntimePlayer::Impl {
                 return;
             }
 
-            std::lock_guard lock(m_mutex);
-            if (!isCurrentLocked(frameSessionId, frameGeneration))
-                return;
+            bool trackFailed = false;
+            {
+                std::lock_guard lock(m_mutex);
+                if (!isCurrentLocked(frameSessionId, frameGeneration))
+                    return;
 
-            ++diagnostics.videoPresented;
-            if (presentedNativeFrame)
-                ++diagnostics.nativePresented;
-            else
-                ++diagnostics.cpuPresented;
+                if (result.status == PresentStatus::Queued) {
+                    trackFailed = !presentTracker.track({
+                        .id = result.id,
+                        .sessionId = frameSessionId,
+                        .generation = frameGeneration,
+                        .nativeFrame = presentedNativeFrame,
+                    });
+                }
 
-            if (result.status == PresentStatus::Queued && result.id != 0) {
-                presentTracker.track({
-                    .id = result.id,
-                    .sessionId = frameSessionId,
-                    .generation = frameGeneration,
-                    .nativeFrame = presentedNativeFrame,
-                });
+                if (!trackFailed) {
+                    ++diagnostics.videoPresented;
+                    if (presentedNativeFrame)
+                        ++diagnostics.nativePresented;
+                    else
+                        ++diagnostics.cpuPresented;
+                }
             }
+            if (trackFailed)
+                handlePresentFailure(PresentStatus::Failed);
             return;
         }
     }

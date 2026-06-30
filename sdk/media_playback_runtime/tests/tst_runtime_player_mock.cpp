@@ -105,7 +105,7 @@ public:
         ++presentCount;
         lastFrame = std::move(frame);
         lastTiming = timing;
-        lastPresentId = ++nextPresentId;
+        lastPresentId = returnZeroPresentId ? 0 : ++nextPresentId;
         return {
             .id = lastPresentId,
             .status = nextStatus,
@@ -156,6 +156,7 @@ public:
     media_sdk::runtime::PresentTiming lastTiming {};
     media_sdk::runtime::PresentId nextPresentId = 0;
     media_sdk::runtime::PresentId lastPresentId = 0;
+    bool returnZeroPresentId = false;
     std::atomic_int presentCount = 0;
     std::atomic_int clearCount = 0;
     std::uint32_t maxPendingFrames = 2;
@@ -621,6 +622,29 @@ void currentGenerationDeviceLostPausesAudioFlushesQueuesClearsPresenterAndReques
     assert(!events.lastAction.preferNativeVideoFrames);
 }
 
+void queuedPresenterResultWithZeroIdTriggersFallback()
+{
+    MockAudioOutput audio;
+    audio.setClock(100ms, 1);
+    MockPresenter presenter;
+    presenter.returnZeroPresentId = true;
+    MockRuntimeEvents events;
+    auto player = makePlayer(audio, presenter, events);
+    assert(player.open().ok());
+
+    player.enqueueVideo(runtimeVideo(1, 1, 100ms, media_sdk::PixelFormat::Native));
+
+    assert(waitUntil([&player]() { return player.diagnostics().nativeFallbacks == 1; }));
+    assert(waitUntil([&events]() { return events.fallbackRequestCount == 1; }));
+    const auto diagnostics = player.diagnostics();
+    assert(diagnostics.videoPresented == 0);
+    assert(diagnostics.nativePresented == 0);
+    assert(diagnostics.queueAbortCount == 2);
+    assert(audio.pauseCount == 1);
+    assert(audio.flushCount == 1);
+    assert(presenter.clearCount == 1);
+}
+
 void oldGenerationDeviceLostDoesNotInterruptCurrentPlayback()
 {
     MockAudioOutput audio;
@@ -691,6 +715,7 @@ int main()
     nativePresenterFailureRunsFullFallbackTransition();
     nativeDiagnosticsTrackZeroCopySuccessWithoutCpuCopy();
     currentGenerationDeviceLostPausesAudioFlushesQueuesClearsPresenterAndRequestsCpuOnlyDecode();
+    queuedPresenterResultWithZeroIdTriggersFallback();
     oldGenerationDeviceLostDoesNotInterruptCurrentPlayback();
     fallbackSeekCompletionResumesAudioAndVideoScheduling();
 }
