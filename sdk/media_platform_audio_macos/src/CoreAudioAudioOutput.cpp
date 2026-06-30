@@ -36,9 +36,9 @@ void CoreAudioAudioOutput::pause()
     m_impl->engine.pause();
 }
 
-void CoreAudioAudioOutput::resume()
+Result<void> CoreAudioAudioOutput::resume()
 {
-    m_impl->engine.resume();
+    return m_impl->engine.resume();
 }
 
 void CoreAudioAudioOutput::flush()

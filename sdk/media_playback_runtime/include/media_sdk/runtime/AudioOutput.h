@@ -50,7 +50,8 @@ public:
     [[nodiscard("clock snapshots drive A/V sync decisions")]]
     virtual ClockSnapshot clock() const = 0;
     virtual void pause() = 0;
-    virtual void resume() = 0;
+    [[nodiscard("resume can fail when the native audio device cannot start")]]
+    virtual Result<void> resume() = 0;
     virtual void flush() = 0;
     virtual void close() = 0;
 };

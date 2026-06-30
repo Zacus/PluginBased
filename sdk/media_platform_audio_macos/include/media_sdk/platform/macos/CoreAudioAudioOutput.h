@@ -22,7 +22,8 @@ public:
     [[nodiscard("CoreAudio clock snapshots drive runtime A/V sync")]]
     runtime::ClockSnapshot clock() const override;
     void pause() override;
-    void resume() override;
+    [[nodiscard("CoreAudio resume starts the native audio device and can fail")]]
+    Result<void> resume() override;
     void flush() override;
     void close() override;
 

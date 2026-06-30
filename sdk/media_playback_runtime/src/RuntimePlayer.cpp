@@ -70,6 +70,11 @@ struct RuntimePlayer::Impl {
         auto audioOpen = dependencies.audioOutput->open(config.audioFormat);
         if (!audioOpen.ok())
             return audioOpen;
+        auto audioResume = dependencies.audioOutput->resume();
+        if (!audioResume.ok()) {
+            dependencies.audioOutput->close();
+            return audioResume;
+        }
 
         {
             std::lock_guard lock(m_mutex);
@@ -94,7 +99,6 @@ struct RuntimePlayer::Impl {
         dependencies.videoPresenter->setEvents(&owner);
         audioThread = std::thread([this]() { audioLoop(); });
         videoThread = std::thread([this]() { videoLoop(); });
-        dependencies.audioOutput->resume();
         return Result<void>::success();
     }
 
@@ -171,8 +175,14 @@ struct RuntimePlayer::Impl {
             shouldResume = true;
         }
 
-        if (shouldResume)
-            dependencies.audioOutput->resume();
+        if (shouldResume) {
+            auto resumeResult = dependencies.audioOutput->resume();
+            if (!resumeResult.ok()) {
+                std::lock_guard lock(m_mutex);
+                if (running)
+                    paused = true;
+            }
+        }
         m_controlChanged.notify_all();
         m_presentCapacityChanged.notify_all();
     }
@@ -193,8 +203,14 @@ struct RuntimePlayer::Impl {
             shouldResume = true;
         }
 
-        if (shouldResume)
-            dependencies.audioOutput->resume();
+        if (shouldResume) {
+            auto resumeResult = dependencies.audioOutput->resume();
+            if (!resumeResult.ok()) {
+                std::lock_guard lock(m_mutex);
+                if (running && isCurrentLocked(completedSessionId, completedGeneration))
+                    paused = true;
+            }
+        }
         m_controlChanged.notify_all();
     }
 

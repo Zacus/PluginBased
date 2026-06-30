@@ -98,6 +98,7 @@ def main() -> None:
         "[[nodiscard",
         "Result<void> open(const AudioFormat& format)",
         "Result<void> write(AudioBufferView buffer)",
+        "Result<void> resume()",
         "ClockSnapshot clock() const",
     ):
         assert_contains(audio_output, token, audio_output_header)

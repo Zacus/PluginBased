@@ -39,7 +39,11 @@ public:
     }
 
     void pause() override { m_paused = true; }
-    void resume() override { m_paused = false; }
+    media_sdk::Result<void> resume() override
+    {
+        m_paused = false;
+        return media_sdk::Result<void>::success();
+    }
     void flush() override { ++m_flushCount; }
     void close() override { m_closed = true; }
 

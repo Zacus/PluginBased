@@ -41,7 +41,18 @@ public:
     }
 
     void pause() override { ++pauseCount; }
-    void resume() override { ++resumeCount; }
+    media_sdk::Result<void> resume() override
+    {
+        ++resumeCount;
+        if (failResume) {
+            return media_sdk::Result<void>::failure({
+                .code = media_sdk::MediaErrorCode::InternalStateError,
+                .message = "audio resume failed",
+                .detail = {},
+            });
+        }
+        return media_sdk::Result<void>::success();
+    }
     void flush() override
     {
         std::lock_guard lock(mutex);
@@ -77,6 +88,7 @@ public:
     std::size_t writtenBytes = 0;
     std::chrono::microseconds lastWritePts { 0 };
     media_sdk::runtime::Generation lastWriteGeneration = 0;
+    bool failResume = false;
 };
 
 class MockPresenter final : public media_sdk::runtime::IVideoPresenter {
@@ -320,6 +332,24 @@ void openStartsNewSessionAndResetsQueues()
     assert(audio.writeCount == 1);
     player.enqueueAudio(runtimeAudio(2, 1, 20ms));
     assert(waitUntil([&audio]() { return audio.writeCount == 2; }));
+}
+
+void openFailsAndClosesAudioWhenResumeFails()
+{
+    MockAudioOutput audio;
+    audio.failResume = true;
+    MockPresenter presenter;
+    auto player = makePlayer(audio, presenter);
+
+    const auto openResult = player.open();
+
+    assert(!openResult.ok());
+    assert(audio.openCount == 1);
+    assert(audio.resumeCount == 1);
+    assert(audio.closeCount == 1);
+    assert(player.timeline().sessionId == 0);
+    assert(player.timeline().generation == 0);
+    assert(presenter.events == nullptr);
 }
 
 void timelineTracksSeekGeneration()
@@ -702,6 +732,7 @@ void fallbackSeekCompletionResumesAudioAndVideoScheduling()
 int main()
 {
     openStartsNewSessionAndResetsQueues();
+    openFailsAndClosesAudioWhenResumeFails();
     timelineTracksSeekGeneration();
     audioFramesAreWrittenToInjectedAudioOutput();
     videoFramesAreScheduledAgainstAudioClock();

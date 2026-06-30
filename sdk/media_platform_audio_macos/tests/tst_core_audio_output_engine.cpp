@@ -1,5 +1,7 @@
 #include "CoreAudioOutputEngine.h"
 
+#include "media_sdk/Error.h"
+
 #include <algorithm>
 #include <cassert>
 #include <chrono>
@@ -41,6 +43,13 @@ public:
     media_sdk::Result<void> start() override
     {
         ++stats->startCount;
+        if (failStart) {
+            return media_sdk::Result<void>::failure({
+                .code = media_sdk::MediaErrorCode::InternalStateError,
+                .message = "fake start failure",
+                .detail = {},
+            });
+        }
         running = true;
         return media_sdk::Result<void>::success();
     }
@@ -86,6 +95,7 @@ public:
     media_sdk::platform::macos::AudioRenderCallback callback {};
     media_sdk::platform::macos::AudioRenderDeviceDiagnostics diagnosticsValue {};
     media_sdk::runtime::AudioFormat format {};
+    bool failStart = false;
     bool openState = false;
     bool running = false;
 };
@@ -139,7 +149,7 @@ void resumeStartsDeviceAndCallbackConsumesPcm()
         .generation = 1,
     }).ok());
 
-    engine->resume();
+    assert(engine->resume().ok());
     assert(stats->startCount == 1);
     assert(device->running);
 
@@ -161,7 +171,7 @@ void pauseStopsDeviceWithoutFlushingQueuedAudio()
         .generation = 1,
     }).ok());
 
-    engine->resume();
+    assert(engine->resume().ok());
     engine->pause();
     assert(stats->stopCount == 1);
     assert(engine->clock().paused);
@@ -202,7 +212,7 @@ void closeStopsAndRejectsWrites()
 {
     auto [engine, device, stats] = makeEngine();
     assert(engine->open(audioFormat()).ok());
-    engine->resume();
+    assert(engine->resume().ok());
     engine->close();
 
     assert(stats->stopCount == 1);
@@ -224,11 +234,26 @@ void destructorStopsAndClosesDevice()
         auto fixture = makeEngine();
         stats = fixture.stats;
         assert(fixture.engine->open(audioFormat()).ok());
-        fixture.engine->resume();
+        assert(fixture.engine->resume().ok());
     }
 
     assert(stats->stopCount == 1);
     assert(stats->closeCount == 1);
+}
+
+void resumeReportsDeviceStartFailure()
+{
+    auto [engine, device, stats] = makeEngine();
+    assert(engine->open(audioFormat()).ok());
+    device->failStart = true;
+
+    const auto resumeResult = engine->resume();
+
+    assert(!resumeResult.ok());
+    assert(stats->startCount == 1);
+    assert(!device->running);
+    assert(engine->clock().valid);
+    assert(!engine->clock().paused);
 }
 
 } // namespace
@@ -240,4 +265,5 @@ int main()
     flushResetsDeviceAndRejectsOldGeneration();
     closeStopsAndRejectsWrites();
     destructorStopsAndClosesDevice();
+    resumeReportsDeviceStartFailure();
 }

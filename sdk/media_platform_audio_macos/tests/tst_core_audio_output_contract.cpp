@@ -49,7 +49,7 @@ void openWriteClockPauseResumeFlushAndCloseAreDeterministic()
 
     output.pause();
     assert(output.clock().paused);
-    output.resume();
+    assert(output.resume().ok());
     assert(!output.clock().paused);
 
     output.flush();

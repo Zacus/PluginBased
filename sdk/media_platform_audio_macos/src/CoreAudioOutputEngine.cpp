@@ -115,17 +115,18 @@ void CoreAudioOutputEngine::pause()
     m_paused = true;
 }
 
-void CoreAudioOutputEngine::resume()
+Result<void> CoreAudioOutputEngine::resume()
 {
     std::scoped_lock lock(m_mutex);
     if (!m_open || m_running || !m_device)
-        return;
+        return Result<void>::success();
 
     auto result = m_device->start();
     if (result.ok()) {
         m_running = true;
         m_paused = false;
     }
+    return result;
 }
 
 void CoreAudioOutputEngine::flush()
