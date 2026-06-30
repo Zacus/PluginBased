@@ -1,5 +1,7 @@
 add_library(media_sdk_platform_audio_macos STATIC
     src/CoreAudioAudioOutput.cpp
+    src/CoreAudioOutputEngine.cpp
+    src/MacAudioUnitRenderDevice.cpp
 )
 
 add_library(media_sdk::platform_audio_macos ALIAS media_sdk_platform_audio_macos)
@@ -23,6 +25,7 @@ target_link_libraries(media_sdk_platform_audio_macos PUBLIC
 
 target_link_libraries(media_sdk_platform_audio_macos PRIVATE
     "-framework CoreAudio"
+    "-framework AudioUnit"
     "-framework AudioToolbox"
 )
 
