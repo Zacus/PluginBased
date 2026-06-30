@@ -236,13 +236,35 @@ def main() -> None:
         assert_contains(ring_buffer, token, ring_buffer_header)
     for token in (
         "#include <deque>",
+        "#include <condition_variable>",
         "std::deque",
         ".push_back(",
         ".pop_front(",
+        "m_notFull",
     ):
         if token in ring_buffer:
             raise AssertionError(
                 f"{ring_buffer_header} should use fixed-capacity vector ring operations, found {token!r}"
+            )
+    write_start = ring_buffer.find("inline bool CoreAudioRingBuffer::write")
+    write_end = ring_buffer.find("inline CoreAudioRingBufferReadResult CoreAudioRingBuffer::read")
+    if write_start < 0 or write_end < 0:
+        raise AssertionError(f"{ring_buffer_header} should define write() before read()")
+    write_body = ring_buffer[write_start:write_end]
+    for token in (
+        "std::atomic_wait_explicit",
+        "m_wakeupSequence",
+    ):
+        assert_contains(write_body, token, ring_buffer_header)
+    for token in (
+        "wait_for",
+        "std::chrono::milliseconds { 1 }",
+        "std::condition_variable",
+        "m_notFull",
+    ):
+        if token in write_body:
+            raise AssertionError(
+                f"{ring_buffer_header} write() must not poll for producer wakeups, found {token!r}"
             )
     read_start = ring_buffer.find("inline CoreAudioRingBufferReadResult CoreAudioRingBuffer::read")
     read_end = ring_buffer.find("inline void CoreAudioRingBuffer::flush")

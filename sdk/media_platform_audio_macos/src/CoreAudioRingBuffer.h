@@ -5,7 +5,6 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
-#include <condition_variable>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -48,17 +47,19 @@ private:
     std::chrono::microseconds durationForBytes(std::size_t bytes) const;
     void copyIntoRing(std::span<const std::byte> source, std::uint64_t writeCursor);
     void copyFromRing(std::span<std::byte> destination, std::uint64_t readCursor) const;
+    void wakeOneWriter();
+    void wakeAllWriters();
     void beginControlUpdate();
     void endControlUpdate();
     void resetCursors();
 
     const std::size_t m_capacityBytes;
     mutable std::mutex m_writerMutex;
-    std::condition_variable m_notFull;
     std::vector<std::byte> m_buffer;
     std::atomic<std::uint64_t> m_readCursor { 0 };
     std::atomic<std::uint64_t> m_writeCursor { 0 };
     std::atomic<std::uint64_t> m_epoch { 1 };
+    std::atomic<std::uint64_t> m_wakeupSequence { 0 };
     std::atomic<std::size_t> m_bytesPerFrame { 0 };
     std::atomic<int> m_sampleRate { 0 };
     std::atomic<runtime::Generation> m_generation { 1 };
@@ -87,7 +88,7 @@ inline void CoreAudioRingBuffer::configure(runtime::AudioFormat format, runtime:
         m_closed.store(false, std::memory_order_release);
         endControlUpdate();
     }
-    m_notFull.notify_all();
+    wakeAllWriters();
 }
 
 inline bool CoreAudioRingBuffer::write(runtime::AudioBufferView buffer)
@@ -115,20 +116,25 @@ inline bool CoreAudioRingBuffer::write(runtime::AudioBufferView buffer)
 
     std::size_t copied = 0;
     while (copied < buffer.bytes.size()) {
-        m_notFull.wait_for(lock, std::chrono::milliseconds { 1 }, [this, generation, epoch]()
-        {
-            return m_closed.load(std::memory_order_acquire) ||
+        std::size_t available = 0;
+        while (true) {
+            if (m_closed.load(std::memory_order_acquire) ||
                 epoch != m_epoch.load(std::memory_order_acquire) ||
-                generation != m_generation.load(std::memory_order_acquire) ||
-                completeFrameBytes(m_capacityBytes - queuedBytes()) > 0;
-        });
+                generation != m_generation.load(std::memory_order_acquire))
+                return false;
 
-        if (m_closed.load(std::memory_order_acquire) ||
-            epoch != m_epoch.load(std::memory_order_acquire) ||
-            generation != m_generation.load(std::memory_order_acquire))
-            return false;
+            available = completeFrameBytes(m_capacityBytes - queuedBytes());
+            if (available > 0)
+                break;
 
-        const auto available = completeFrameBytes(m_capacityBytes - queuedBytes());
+            const auto wakeupSequence = m_wakeupSequence.load(std::memory_order_acquire);
+            lock.unlock();
+            std::atomic_wait_explicit(&m_wakeupSequence,
+                                      wakeupSequence,
+                                      std::memory_order_acquire);
+            lock.lock();
+        }
+
         if (available == 0)
             continue;
 
@@ -186,6 +192,8 @@ inline CoreAudioRingBufferReadResult CoreAudioRingBuffer::read(std::span<std::by
     m_readCursor.store(readCursor + result.copiedBytes, std::memory_order_release);
     m_playbackPositionUs.fetch_add(durationForBytes(result.copiedBytes).count(),
                                    std::memory_order_acq_rel);
+    if (result.copiedBytes > 0)
+        wakeOneWriter();
     return result;
 }
 
@@ -199,7 +207,7 @@ inline void CoreAudioRingBuffer::flush()
         m_playbackPositionUs.store(0, std::memory_order_release);
         endControlUpdate();
     }
-    m_notFull.notify_all();
+    wakeAllWriters();
 }
 
 inline void CoreAudioRingBuffer::close()
@@ -211,7 +219,7 @@ inline void CoreAudioRingBuffer::close()
         resetCursors();
         endControlUpdate();
     }
-    m_notFull.notify_all();
+    wakeAllWriters();
 }
 
 inline runtime::ClockSnapshot CoreAudioRingBuffer::clock() const
@@ -358,6 +366,18 @@ inline void CoreAudioRingBuffer::resetCursors()
 {
     m_readCursor.store(0, std::memory_order_release);
     m_writeCursor.store(0, std::memory_order_release);
+}
+
+inline void CoreAudioRingBuffer::wakeOneWriter()
+{
+    m_wakeupSequence.fetch_add(1, std::memory_order_release);
+    std::atomic_notify_one(&m_wakeupSequence);
+}
+
+inline void CoreAudioRingBuffer::wakeAllWriters()
+{
+    m_wakeupSequence.fetch_add(1, std::memory_order_release);
+    std::atomic_notify_all(&m_wakeupSequence);
 }
 
 } // namespace media_sdk::platform::macos

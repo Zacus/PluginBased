@@ -329,6 +329,37 @@ void closeWakesBlockedWriters()
     assert(!result.get());
 }
 
+void readWakesBlockedWriterWithoutTimerPolling()
+{
+    media_sdk::platform::macos::CoreAudioRingBuffer buffer(8);
+    buffer.configure(audioFormat(), 1);
+
+    const auto initial = bytes({ 1, 2, 3, 4, 5, 6, 7, 8 });
+    assert(buffer.write({
+        .bytes = initial,
+        .pts = 60ms,
+        .generation = 1,
+    }));
+
+    const auto blocked = bytes({ 9, 10, 11, 12, 13, 14, 15, 16 });
+    auto result = std::async(std::launch::async, [&buffer, blocked]() {
+        return buffer.write({
+            .bytes = blocked,
+            .pts = 70ms,
+            .generation = 1,
+        });
+    });
+
+    assert(result.wait_for(20ms) == std::future_status::timeout);
+
+    std::vector<std::byte> output(8);
+    const auto read = buffer.read(output);
+    assert(read.copiedBytes == 8);
+    assert(read.silenceBytes == 0);
+    assert(result.wait_for(1s) == std::future_status::ready);
+    assert(result.get());
+}
+
 } // namespace
 
 int main()
@@ -344,4 +375,5 @@ int main()
     writeRejectsNonFrameAlignedBuffers();
     readConsumesOnlyCompletePcmFrames();
     closeWakesBlockedWriters();
+    readWakesBlockedWriterWithoutTimerPolling();
 }
