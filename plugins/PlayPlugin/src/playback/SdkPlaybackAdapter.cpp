@@ -498,9 +498,15 @@ bool SdkPlaybackAdapter::ensureRuntimeForMedia(
     }
 
     const auto runtimeTimeline = runtimePlayer->timeline();
-    std::lock_guard lock(m_mutex);
-    m_runtimePlayer = std::move(runtimePlayer);
-    m_runtimeTimeline = runtimeTimeline;
+    std::shared_ptr<media_sdk::runtime::RuntimePlayer> previousRuntimePlayer;
+    {
+        std::lock_guard lock(m_mutex);
+        previousRuntimePlayer = std::move(m_runtimePlayer);
+        m_runtimePlayer = std::move(runtimePlayer);
+        m_runtimeTimeline = runtimeTimeline;
+    }
+    if (previousRuntimePlayer)
+        previousRuntimePlayer->stop();
     return true;
 }
 

@@ -232,6 +232,20 @@ def check_sdk_playback_adapter_contract() -> None:
                       source.find("bool SdkPlaybackAdapter::handleDataEvent")]
     assert_contains(eos_body, "acceptsRuntimeTimeline(timeline)", SDK_PLAYBACK_ADAPTER_CPP)
 
+    ensure_runtime_body = source[source.find("bool SdkPlaybackAdapter::ensureRuntimeForMedia"):
+                                 source.find("media_sdk::runtime::RuntimeTimeline SdkPlaybackAdapter::currentTimeline")]
+    assert_contains(ensure_runtime_body,
+                    "previousRuntimePlayer = std::move(m_runtimePlayer);",
+                    SDK_PLAYBACK_ADAPTER_CPP)
+    assert_before(ensure_runtime_body,
+                  "previousRuntimePlayer = std::move(m_runtimePlayer);",
+                  "m_runtimePlayer = std::move(runtimePlayer);",
+                  SDK_PLAYBACK_ADAPTER_CPP)
+    assert_before(ensure_runtime_body,
+                  "m_runtimePlayer = std::move(runtimePlayer);",
+                  "previousRuntimePlayer->stop();",
+                  SDK_PLAYBACK_ADAPTER_CPP)
+
 
 def check_runtime_mode_switch_contract() -> None:
     pipeline_header = read(PLAYBACK_PIPELINE_H)
