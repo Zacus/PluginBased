@@ -369,8 +369,7 @@ Result<void> DecodeWorker::decodePacket(AVCodecContext* codecContext,
             AudioFrame audioFrame = makeAudioFrame(std::move(frame));
             emitEvent(makeEvent(PositionChangedEvent {
                 std::chrono::duration_cast<std::chrono::milliseconds>(audioFrame.pts()) }));
-            emitEvent(makeEvent(AudioFrameEvent { std::move(audioFrame) }));
-            return true;
+            return handleFramePushResult(m_frames.pushAudio(std::move(audioFrame), frameMetadata()));
         });
 }
 
@@ -397,8 +396,7 @@ void DecodeWorker::flushDecoders()
             m_media.formatContext->streams[m_media.audioStreamIndex]->time_base,
             [this](AVFramePtr frame) {
                 AudioFrame audioFrame = makeAudioFrame(std::move(frame));
-                emitEvent(makeEvent(AudioFrameEvent { std::move(audioFrame) }));
-                return true;
+                return handleFramePushResult(m_frames.pushAudio(std::move(audioFrame), frameMetadata()));
             });
     }
 }
@@ -428,8 +426,30 @@ void DecodeWorker::emitError(MediaError error)
 
 bool DecodeWorker::emitVideoFrame(VideoFrame frame)
 {
-    emitEvent(makeEvent(VideoFrameEvent { std::move(frame) }));
-    return true;
+    return handleFramePushResult(m_frames.pushVideo(std::move(frame), frameMetadata()));
+}
+
+DecodeFrameMetadata DecodeWorker::frameMetadata() const
+{
+    return {
+        .sessionId = m_sessionId,
+        .generation = m_generation,
+    };
+}
+
+bool DecodeWorker::handleFramePushResult(DecodeFramePushResult result) const
+{
+    switch (result.status)
+    {
+    case DecodeFramePushStatus::Accepted:
+    case DecodeFramePushStatus::Backpressured:
+    case DecodeFramePushStatus::StaleGeneration:
+        return true;
+    case DecodeFramePushStatus::Cancelled:
+    case DecodeFramePushStatus::Closed:
+        return false;
+    }
+    return false;
 }
 
 AudioFrame DecodeWorker::makeAudioFrame(AVFramePtr frame) const

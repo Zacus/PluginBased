@@ -79,6 +79,10 @@ public:
         {
             std::scoped_lock lock(m_mutex);
             m_events.push_back(event);
+            if (std::holds_alternative<media_sdk::AudioFrameEvent>(event.payload))
+                ++m_audioFrameEvents;
+            if (std::holds_alternative<media_sdk::VideoFrameEvent>(event.payload))
+                ++m_videoFrameEvents;
             shouldBlockAudioFrame = m_blockAudioFrames
                 && std::holds_alternative<media_sdk::AudioFrameEvent>(event.payload);
             if (shouldBlockAudioFrame)
@@ -100,6 +104,18 @@ public:
         return m_cv.wait_for(lock, timeout, [&]() {
             return std::ranges::any_of(m_events, predicate);
         });
+    }
+
+    int audioFrameEvents() const
+    {
+        std::scoped_lock lock(m_mutex);
+        return m_audioFrameEvents;
+    }
+
+    int videoFrameEvents() const
+    {
+        std::scoped_lock lock(m_mutex);
+        return m_videoFrameEvents;
     }
 
     std::vector<media_sdk::PlayerEvent> snapshot() const
@@ -136,6 +152,8 @@ private:
     mutable std::mutex m_mutex;
     std::condition_variable m_cv;
     std::vector<media_sdk::PlayerEvent> m_events;
+    int m_audioFrameEvents = 0;
+    int m_videoFrameEvents = 0;
     bool m_blockAudioFrames = false;
     bool m_audioFrameBlocked = false;
 };
@@ -146,11 +164,27 @@ public:
         media_sdk::AudioFrame frame,
         media_sdk::DecodeFrameMetadata metadata) override
     {
+        bool shouldBlock = false;
+        {
+            std::scoped_lock lock(m_mutex);
+            shouldBlock = m_blockAudioFrames;
+            if (shouldBlock)
+                m_audioFrameBlocked = true;
+        }
+        m_cv.notify_all();
+
+        if (shouldBlock)
+        {
+            std::unique_lock lock(m_mutex);
+            m_cv.wait(lock, [&]() { return !m_blockAudioFrames; });
+        }
+
         std::scoped_lock lock(m_mutex);
         ++m_audioFrames;
         m_lastSessionId = metadata.sessionId;
         m_lastGeneration = metadata.generation;
         m_lastAudioPts = frame.pts();
+        m_cv.notify_all();
         return { .status = media_sdk::DecodeFramePushStatus::Accepted };
     }
 
@@ -163,7 +197,40 @@ public:
         m_lastSessionId = metadata.sessionId;
         m_lastGeneration = metadata.generation;
         m_lastVideoPts = frame.pts();
+        m_cv.notify_all();
         return { .status = media_sdk::DecodeFramePushStatus::Accepted };
+    }
+
+    bool waitForAudioFrame(std::chrono::milliseconds timeout = 3s)
+    {
+        std::unique_lock lock(m_mutex);
+        return m_cv.wait_for(lock, timeout, [&]() {
+            return m_audioFrames > 0;
+        });
+    }
+
+    void blockAudioFrames()
+    {
+        std::scoped_lock lock(m_mutex);
+        m_blockAudioFrames = true;
+        m_audioFrameBlocked = false;
+    }
+
+    bool waitForBlockedAudioFrame(std::chrono::milliseconds timeout = 3s)
+    {
+        std::unique_lock lock(m_mutex);
+        return m_cv.wait_for(lock, timeout, [&]() {
+            return m_audioFrameBlocked;
+        });
+    }
+
+    void releaseAudioFrames()
+    {
+        {
+            std::scoped_lock lock(m_mutex);
+            m_blockAudioFrames = false;
+        }
+        m_cv.notify_all();
     }
 
     int audioFrames() const
@@ -180,12 +247,15 @@ public:
 
 private:
     mutable std::mutex m_mutex;
+    std::condition_variable m_cv;
     int m_audioFrames = 0;
     int m_videoFrames = 0;
     std::uint64_t m_lastSessionId = 0;
     std::uint64_t m_lastGeneration = 0;
     std::chrono::microseconds m_lastAudioPts { 0 };
     std::chrono::microseconds m_lastVideoPts { 0 };
+    bool m_blockAudioFrames = false;
+    bool m_audioFrameBlocked = false;
 };
 
 bool hasState(const media_sdk::PlayerEvent& event, media_sdk::PlayerState state)
@@ -253,7 +323,9 @@ void testOpenPlayReachesEof()
     assert(sink.waitFor(hasMediaInfo));
     player.play();
 
-    assert(sink.waitFor(hasAudioFrame));
+    assert(frames.waitForAudioFrame());
+    assert(sink.audioFrameEvents() == 0);
+    assert(sink.videoFrameEvents() == 0);
     assert(sink.waitFor(hasEof));
     assert(sink.waitFor([](const media_sdk::PlayerEvent& event) {
         return hasState(event, media_sdk::PlayerState::Finished);
@@ -297,7 +369,9 @@ void testSeekEmitsPositionAndContinuesPlayback()
     assert(sink.waitFor([](const media_sdk::PlayerEvent& event) {
         return hasPositionAtOrAfter(event, 100ms);
     }));
-    assert(sink.waitFor(hasAudioFrame));
+    assert(frames.waitForAudioFrame());
+    assert(sink.audioFrameEvents() == 0);
+    assert(sink.videoFrameEvents() == 0);
 
     const auto events = sink.snapshot();
     const auto* mediaInfo = firstEventMatching(events, hasMediaInfo);
@@ -334,15 +408,15 @@ void testBurstSeekCoalescesQueuedRequestsBeforeDecodeResumes()
     assert(player.open(samplePath).ok());
     assert(sink.waitFor(hasMediaInfo));
 
-    sink.blockAudioFrames();
+    frames.blockAudioFrames();
     player.play();
-    assert(sink.waitForBlockedAudioFrame());
+    assert(frames.waitForBlockedAudioFrame());
 
     assert(player.seek(100ms).ok());
     assert(player.seek(150ms).ok());
     assert(player.seek(200ms).ok());
 
-    sink.releaseAudioFrames();
+    frames.releaseAudioFrames();
 
     assert(sink.waitFor([](const media_sdk::PlayerEvent& event) {
         return hasSeekCompletedAtOrAfter(event, 200ms);

@@ -205,8 +205,9 @@ def main() -> None:
     for token in forbidden_worker_scheduling_tokens:
         require(token not in decode_worker_text,
                 f"DecodeWorker should not own presenter scheduling/clock token: {token}")
-    require("emitEvent(makeEvent(VideoFrameEvent { std::move(frame) }))" in decode_worker_cpp,
-            "DecodeWorker should emit decoded video frames through metadata-stamped SDK events")
+    for token in ["makeEvent(AudioFrameEvent", "makeEvent(VideoFrameEvent"]:
+        require(token not in decode_worker_cpp,
+                f"DecodeWorker should not emit decoded frames through IEventSink: {token}")
     require("DemuxerOptions" in demuxer_header and
             "enableHardwareDecode" in demuxer_header and
             "enableHardwareDecode" in demuxer_cpp,

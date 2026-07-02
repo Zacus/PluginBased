@@ -140,6 +140,8 @@ private:
     void emitState(PlayerState state);
     void emitError(MediaError error);
     bool emitVideoFrame(VideoFrame frame);
+    DecodeFrameMetadata frameMetadata() const;
+    bool handleFramePushResult(DecodeFramePushResult result) const;
     AudioFrame makeAudioFrame(AVFramePtr frame) const;
     AudioSampleFormat publishedInterleavedAudioSampleFormat(AVSampleFormat format) const;
 
