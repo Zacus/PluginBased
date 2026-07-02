@@ -340,6 +340,22 @@ if(BUILD_TESTING)
         COMMAND $<TARGET_FILE:PlayPluginFrameQueueTest>
         WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
     )
+    add_executable(PlayPluginPlaybackDataBridgeTest
+        tests/tst_playplugin_playback_data_bridge.cpp
+        "${PLAYPLUGIN_TEST_PLUGIN_ROOT}/PlayPlugin/src/playback/PlaybackDataBridge.cpp"
+    )
+    target_include_directories(PlayPluginPlaybackDataBridgeTest PRIVATE
+        "${PLAYPLUGIN_TEST_PLUGIN_ROOT}/PlayPlugin/src"
+    )
+    target_link_libraries(PlayPluginPlaybackDataBridgeTest PRIVATE
+        Qt6::Core
+        FFmpeg::all
+        PluginBasedLogger
+    )
+    add_test(NAME playplugin_playback_data_bridge
+        COMMAND $<TARGET_FILE:PlayPluginPlaybackDataBridgeTest>
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+    )
     add_test(NAME app_theme_service_checks
         COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tests/app_theme_service_checks.py"
         WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"

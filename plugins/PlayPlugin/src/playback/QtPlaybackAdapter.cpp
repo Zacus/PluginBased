@@ -57,6 +57,22 @@ int videoRowBytes(media_sdk::PixelFormat format, int width)
     }
 }
 
+media_sdk::DecodeFramePushResult mapBridgePushResult(PlaybackDataBridge::PushResult result)
+{
+    switch (result.status)
+    {
+    case PlaybackDataBridge::PushStatus::Accepted:
+        return { .status = media_sdk::DecodeFramePushStatus::Accepted };
+    case PlaybackDataBridge::PushStatus::StaleGeneration:
+        return { .status = media_sdk::DecodeFramePushStatus::StaleGeneration };
+    case PlaybackDataBridge::PushStatus::Cancelled:
+        return { .status = media_sdk::DecodeFramePushStatus::Cancelled };
+    case PlaybackDataBridge::PushStatus::Closed:
+        return { .status = media_sdk::DecodeFramePushStatus::Closed };
+    }
+    return { .status = media_sdk::DecodeFramePushStatus::Closed };
+}
+
 } // namespace
 
 QtPlaybackAdapter::QtPlaybackAdapter(VideoFrameQueue* videoQueue,
@@ -175,10 +191,9 @@ media_sdk::DecodeFramePushResult QtPlaybackAdapter::pushAudio(
     if (!avFrame)
         return { .status = media_sdk::DecodeFramePushStatus::Closed };
 
-    if (!m_dataBridge.pushAudio(std::move(avFrame), metadata.sessionId, metadata.generation))
-        return { .status = media_sdk::DecodeFramePushStatus::StaleGeneration };
-
-    return { .status = media_sdk::DecodeFramePushStatus::Accepted };
+    return mapBridgePushResult(m_dataBridge.pushAudio(std::move(avFrame),
+                                                      metadata.sessionId,
+                                                      metadata.generation));
 }
 
 media_sdk::DecodeFramePushResult QtPlaybackAdapter::pushVideo(
@@ -189,10 +204,9 @@ media_sdk::DecodeFramePushResult QtPlaybackAdapter::pushVideo(
     if (!avFrame)
         return { .status = media_sdk::DecodeFramePushStatus::Closed };
 
-    if (!m_dataBridge.pushVideo(std::move(avFrame), metadata.sessionId, metadata.generation))
-        return { .status = media_sdk::DecodeFramePushStatus::StaleGeneration };
-
-    return { .status = media_sdk::DecodeFramePushStatus::Accepted };
+    return mapBridgePushResult(m_dataBridge.pushVideo(std::move(avFrame),
+                                                      metadata.sessionId,
+                                                      metadata.generation));
 }
 
 bool QtPlaybackAdapter::handleDataEvent(const media_sdk::PlayerEvent& event)

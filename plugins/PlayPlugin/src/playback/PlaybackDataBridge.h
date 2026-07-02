@@ -25,6 +25,17 @@ public:
         std::uint64_t queueAbortFailures = 0;
     };
 
+    enum class PushStatus {
+        Accepted,
+        StaleGeneration,
+        Cancelled,
+        Closed
+    };
+
+    struct PushResult {
+        PushStatus status = PushStatus::Closed;
+    };
+
     PlaybackDataBridge(VideoFrameQueue* videoQueue, AudioFrameQueue* audioQueue);
 
     void reset(StreamState state);
@@ -32,8 +43,10 @@ public:
     void cancel();
     void cancelGeneration();
 
-    bool pushAudio(AVFramePtr frame, std::uint64_t sessionId, std::uint64_t generation);
-    bool pushVideo(AVFramePtr frame, std::uint64_t sessionId, std::uint64_t generation);
+    [[nodiscard("push result distinguishes accepted, stale generation, cancellation, and closed bridge")]]
+    PushResult pushAudio(AVFramePtr frame, std::uint64_t sessionId, std::uint64_t generation);
+    [[nodiscard("push result distinguishes accepted, stale generation, cancellation, and closed bridge")]]
+    PushResult pushVideo(AVFramePtr frame, std::uint64_t sessionId, std::uint64_t generation);
     bool finish(std::uint64_t sessionId, std::uint64_t generation);
 
 private:

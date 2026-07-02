@@ -72,19 +72,20 @@ void PlaybackDataBridge::cancelGeneration()
         m_audioQueue->cancelPendingPushes();
 }
 
-bool PlaybackDataBridge::pushAudio(AVFramePtr frame,
-                                   std::uint64_t sessionId,
-                                   std::uint64_t generation)
+PlaybackDataBridge::PushResult PlaybackDataBridge::pushAudio(
+    AVFramePtr frame,
+    std::uint64_t sessionId,
+    std::uint64_t generation)
 {
     if (!frame || !m_audioQueue)
-        return false;
+        return { .status = PushStatus::Closed };
     const int queueCancelSerial = m_audioQueue->cancelSerial();
     {
         std::scoped_lock lock(m_mutex);
         if (!acceptsLocked(sessionId, generation))
         {
             incrementCounterLocked(sessionId, generation, Counter::AudioRejectedStale);
-            return false;
+            return { .status = PushStatus::StaleGeneration };
         }
     }
 
@@ -94,22 +95,23 @@ bool PlaybackDataBridge::pushAudio(AVFramePtr frame,
     incrementCounter(sessionId,
                      generation,
                      pushed ? Counter::AudioAccepted : Counter::QueueAbortFailure);
-    return pushed;
+    return { .status = pushed ? PushStatus::Accepted : PushStatus::Cancelled };
 }
 
-bool PlaybackDataBridge::pushVideo(AVFramePtr frame,
-                                   std::uint64_t sessionId,
-                                   std::uint64_t generation)
+PlaybackDataBridge::PushResult PlaybackDataBridge::pushVideo(
+    AVFramePtr frame,
+    std::uint64_t sessionId,
+    std::uint64_t generation)
 {
     if (!frame || !m_videoQueue)
-        return false;
+        return { .status = PushStatus::Closed };
     const int queueCancelSerial = m_videoQueue->cancelSerial();
     {
         std::scoped_lock lock(m_mutex);
         if (!acceptsLocked(sessionId, generation))
         {
             incrementCounterLocked(sessionId, generation, Counter::VideoRejectedStale);
-            return false;
+            return { .status = PushStatus::StaleGeneration };
         }
     }
 
@@ -119,7 +121,7 @@ bool PlaybackDataBridge::pushVideo(AVFramePtr frame,
     incrementCounter(sessionId,
                      generation,
                      pushed ? Counter::VideoAccepted : Counter::QueueAbortFailure);
-    return pushed;
+    return { .status = pushed ? PushStatus::Accepted : PushStatus::Cancelled };
 }
 
 bool PlaybackDataBridge::finish(std::uint64_t sessionId, std::uint64_t generation)
