@@ -27,6 +27,8 @@ def main() -> None:
     pipeline_h = read("plugins/PlayPlugin/src/playback/PlaybackPipeline.h")
     pipeline_cpp = read("plugins/PlayPlugin/src/playback/PlaybackPipeline.cpp")
     cmake = read("plugins/PlayPlugin/CMakeLists.txt")
+    sdk_adapter_h = read("plugins/PlayPlugin/src/playback/SdkPlaybackAdapter.h")
+    sdk_adapter_cpp = read("plugins/PlayPlugin/src/playback/SdkPlaybackAdapter.cpp")
 
     require("media_sdk::IEventSink" in adapter_h,
             "QtPlaybackAdapter should implement the SDK IEventSink boundary")
@@ -87,6 +89,20 @@ def main() -> None:
             "QtPlaybackAdapter should copy each SDK plane using that plane's byte width")
     require("mediaInfoReady" in adapter_h and "endOfFile" in adapter_h and "seekCompleted" in adapter_h,
             "QtPlaybackAdapter should expose decoder-compatible Qt signals")
+
+    require("public media_sdk::IDecodeFrameSink" in sdk_adapter_h,
+            "SdkPlaybackAdapter must implement IDecodeFrameSink")
+    require("pushAudio(" in sdk_adapter_h and "pushVideo(" in sdk_adapter_h,
+            "SdkPlaybackAdapter must expose frame sink methods")
+    require("ensureRuntimeForMedia" in sdk_adapter_cpp,
+            "MediaInfoEvent must synchronously ensure runtime before queued UI handling")
+    require("RuntimeFramePushStatus" in sdk_adapter_cpp,
+            "SdkPlaybackAdapter must map runtime frame push results")
+    sdk_handle_data_start = sdk_adapter_cpp.find("bool SdkPlaybackAdapter::handleDataEvent")
+    sdk_handle_control_start = sdk_adapter_cpp.find("void SdkPlaybackAdapter::handleControlEvent")
+    sdk_handle_data_body = sdk_adapter_cpp[sdk_handle_data_start:sdk_handle_control_start]
+    require("AudioFrameEvent" not in sdk_handle_data_body and "VideoFrameEvent" not in sdk_handle_data_body,
+            "SdkPlaybackAdapter must not route decoded frames through PlayerEvent data handling")
 
     require("src/playback/PlaybackDataBridge.h" in cmake and
             "src/playback/PlaybackDataBridge.cpp" in cmake,

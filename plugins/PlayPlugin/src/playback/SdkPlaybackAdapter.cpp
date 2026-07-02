@@ -44,6 +44,27 @@ media_sdk::runtime::AudioSampleFormat runtimeAudioFormat(media_sdk::AudioSampleF
     }
 }
 
+media_sdk::DecodeFramePushResult mapRuntimePushResult(
+    media_sdk::runtime::RuntimeFramePushResult result)
+{
+    using DecodeStatus = media_sdk::DecodeFramePushStatus;
+    using RuntimeStatus = media_sdk::runtime::RuntimeFramePushStatus;
+
+    switch (result.status) {
+    case RuntimeStatus::Accepted:
+        return { .status = DecodeStatus::Accepted, .waitTime = result.waitTime };
+    case RuntimeStatus::Backpressured:
+        return { .status = DecodeStatus::Backpressured, .waitTime = result.waitTime };
+    case RuntimeStatus::RejectedGeneration:
+        return { .status = DecodeStatus::StaleGeneration, .waitTime = result.waitTime };
+    case RuntimeStatus::Cancelled:
+        return { .status = DecodeStatus::Cancelled, .waitTime = result.waitTime };
+    case RuntimeStatus::Closed:
+        return { .status = DecodeStatus::Closed, .waitTime = result.waitTime };
+    }
+    return { .status = DecodeStatus::Closed, .waitTime = result.waitTime };
+}
+
 std::vector<std::byte> float32InterleavedSamples(const media_sdk::AudioFrame& frame)
 {
     const auto samples = frame.samples();
@@ -175,12 +196,28 @@ void SdkPlaybackAdapter::stopDecoding()
 
 void SdkPlaybackAdapter::setVideoToolboxDirectRenderingEnabled(bool enabled)
 {
+    std::lock_guard lock(m_mutex);
     m_directNativeVideoEnabled = enabled;
 }
 
 void SdkPlaybackAdapter::onEvent(const media_sdk::PlayerEvent& event)
 {
     const auto seekCompletion = acceptSeekCompletedEvent(event);
+    if (const auto* mediaInfo = std::get_if<media_sdk::MediaInfoEvent>(&event.payload)) {
+        bool pendingFallback = false;
+        bool preferNativeVideoFrames = true;
+        {
+            std::lock_guard lock(m_mutex);
+            pendingFallback = m_pendingFallback.has_value();
+            preferNativeVideoFrames = m_directNativeVideoEnabled;
+        }
+
+        if (!pendingFallback && !ensureRuntimeForMedia(mediaInfo->info, preferNativeVideoFrames))
+            return;
+        if (!pendingFallback)
+            setAcceptedCoreTimeline(event.metadata, currentTimeline());
+    }
+
     if (handleDataEvent(event))
         return;
 
@@ -196,18 +233,44 @@ media_sdk::DecodeFramePushResult SdkPlaybackAdapter::pushAudio(
     media_sdk::AudioFrame frame,
     media_sdk::DecodeFrameMetadata metadata)
 {
-    Q_UNUSED(frame);
-    Q_UNUSED(metadata);
-    return { .status = media_sdk::DecodeFramePushStatus::Closed };
+    std::shared_ptr<media_sdk::runtime::RuntimePlayer> runtimePlayer;
+    media_sdk::runtime::RuntimeTimeline runtimeTimeline;
+    {
+        std::lock_guard lock(m_mutex);
+        const media_sdk::EventMetadata eventMetadata {
+            .sessionId = metadata.sessionId,
+            .generation = metadata.generation,
+        };
+        if (!m_acceptingRuntimeFrames || !m_runtimePlayer || !acceptsCoreEvent(eventMetadata))
+            return { .status = media_sdk::DecodeFramePushStatus::StaleGeneration };
+
+        runtimePlayer = m_runtimePlayer;
+        runtimeTimeline = m_runtimeTimeline;
+    }
+
+    return mapRuntimePushResult(runtimePlayer->enqueueAudio(runtimeAudioFrame(frame, runtimeTimeline)));
 }
 
 media_sdk::DecodeFramePushResult SdkPlaybackAdapter::pushVideo(
     media_sdk::VideoFrame frame,
     media_sdk::DecodeFrameMetadata metadata)
 {
-    Q_UNUSED(frame);
-    Q_UNUSED(metadata);
-    return { .status = media_sdk::DecodeFramePushStatus::Closed };
+    std::shared_ptr<media_sdk::runtime::RuntimePlayer> runtimePlayer;
+    media_sdk::runtime::RuntimeTimeline runtimeTimeline;
+    {
+        std::lock_guard lock(m_mutex);
+        const media_sdk::EventMetadata eventMetadata {
+            .sessionId = metadata.sessionId,
+            .generation = metadata.generation,
+        };
+        if (!m_acceptingRuntimeFrames || !m_runtimePlayer || !acceptsCoreEvent(eventMetadata))
+            return { .status = media_sdk::DecodeFramePushStatus::StaleGeneration };
+
+        runtimePlayer = m_runtimePlayer;
+        runtimeTimeline = m_runtimeTimeline;
+    }
+
+    return mapRuntimePushResult(runtimePlayer->enqueueVideo(runtimeVideoFrame(std::move(frame), runtimeTimeline)));
 }
 
 void SdkPlaybackAdapter::onFallbackToCpuRequested(
@@ -234,27 +297,7 @@ void SdkPlaybackAdapter::onEndOfStreamPresented(
 
 bool SdkPlaybackAdapter::handleDataEvent(const media_sdk::PlayerEvent& event)
 {
-    std::shared_ptr<media_sdk::runtime::RuntimePlayer> runtimePlayer;
-    media_sdk::runtime::RuntimeTimeline runtimeTimeline;
-    {
-        std::lock_guard lock(m_mutex);
-        if (!m_acceptingRuntimeFrames || !m_runtimePlayer || !acceptsCoreEvent(event.metadata))
-            return std::holds_alternative<media_sdk::AudioFrameEvent>(event.payload)
-                || std::holds_alternative<media_sdk::VideoFrameEvent>(event.payload);
-        runtimePlayer = m_runtimePlayer;
-        runtimeTimeline = m_runtimeTimeline;
-    }
-
-    if (const auto* payload = std::get_if<media_sdk::AudioFrameEvent>(&event.payload)) {
-        runtimePlayer->enqueueAudio(runtimeAudioFrame(payload->frame, runtimeTimeline));
-        return true;
-    }
-
-    if (auto* payload = std::get_if<media_sdk::VideoFrameEvent>(&event.payload)) {
-        runtimePlayer->enqueueVideo(runtimeVideoFrame(std::move(payload->frame), runtimeTimeline));
-        return true;
-    }
-
+    Q_UNUSED(event);
     return false;
 }
 
@@ -263,10 +306,12 @@ void SdkPlaybackAdapter::handleControlEvent(
     std::optional<AcceptedSeekCompletion> acceptedSeekCompletion)
 {
     if (const auto* payload = std::get_if<media_sdk::MediaInfoEvent>(&event.payload)) {
-        if (!m_pendingFallback && !ensureRuntimeForMedia(payload->info, m_directNativeVideoEnabled))
-            return;
-        if (!m_pendingFallback) {
-            setAcceptedCoreTimeline(event.metadata, currentTimeline());
+        bool pendingFallback = false;
+        {
+            std::lock_guard lock(m_mutex);
+            pendingFallback = m_pendingFallback.has_value();
+        }
+        if (!pendingFallback) {
             emit mediaInfoReady(toMilliseconds(payload->info.duration),
                                 payload->info.width,
                                 payload->info.height,
@@ -359,7 +404,10 @@ void SdkPlaybackAdapter::handleFallbackOnObjectThread(
     media_sdk::runtime::RuntimeFallbackAction action)
 {
     LOG_WARN("SdkPlaybackAdapter: native presenter failed, switching current session to CPU decode");
-    m_pendingFallback = action;
+    {
+        std::lock_guard lock(m_mutex);
+        m_pendingFallback = action;
+    }
     m_config.preferNativeVideoFrames = false;
     resetPlayer(false);
     if (!openCorePlayer(m_currentPath))
