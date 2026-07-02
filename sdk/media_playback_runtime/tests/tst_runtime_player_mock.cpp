@@ -3,8 +3,10 @@
 #include <cassert>
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <cstddef>
 #include <functional>
+#include <future>
 #include <mutex>
 #include <thread>
 #include <utility>
@@ -26,7 +28,12 @@ public:
 
     media_sdk::Result<void> write(media_sdk::runtime::AudioBufferView buffer) override
     {
-        std::lock_guard lock(mutex);
+        std::unique_lock lock(mutex);
+        if (blockWrites) {
+            writeBlocked = true;
+            cv.notify_all();
+            cv.wait(lock, [this]() { return !blockWrites; });
+        }
         ++writeCount;
         writtenBytes += buffer.bytes.size();
         lastWritePts = buffer.pts;
@@ -69,7 +76,30 @@ public:
         snapshot.valid = true;
     }
 
+    void blockAudioWrites()
+    {
+        std::lock_guard lock(mutex);
+        blockWrites = true;
+        writeBlocked = false;
+    }
+
+    bool waitForBlockedWrite(std::chrono::milliseconds timeout = 500ms)
+    {
+        std::unique_lock lock(mutex);
+        return cv.wait_for(lock, timeout, [this]() { return writeBlocked; });
+    }
+
+    void releaseAudioWrites()
+    {
+        {
+            std::lock_guard lock(mutex);
+            blockWrites = false;
+        }
+        cv.notify_all();
+    }
+
     mutable std::mutex mutex;
+    std::condition_variable cv;
     media_sdk::runtime::AudioFormat lastFormat {};
     media_sdk::runtime::ClockSnapshot snapshot {
         .position = 0us,
@@ -89,6 +119,8 @@ public:
     std::chrono::microseconds lastWritePts { 0 };
     media_sdk::runtime::Generation lastWriteGeneration = 0;
     bool failResume = false;
+    bool blockWrites = false;
+    bool writeBlocked = false;
 };
 
 class MockPresenter final : public media_sdk::runtime::IVideoPresenter {
@@ -391,6 +423,42 @@ void audioFramesAreWrittenToInjectedAudioOutput()
     assert(player.diagnostics().audioQueueHighWatermark >= 1);
     assert(player.diagnostics().audioBackpressureCount == 0);
     assert(player.diagnostics().audioWritten == 1);
+}
+
+void audioQueueBackpressureIsReportedInDiagnostics()
+{
+    MockAudioOutput audio;
+    audio.blockAudioWrites();
+    MockPresenter presenter;
+    media_sdk::runtime::RuntimePlayerConfig config;
+    config.audioQueueCapacity = 1;
+    auto player = makePlayer(audio, presenter, config);
+    assert(player.open().ok());
+
+    const auto first = player.enqueueAudio(runtimeAudio(1, 1, 10ms));
+    assert(first.status == media_sdk::runtime::RuntimeFramePushStatus::Accepted);
+    assert(audio.waitForBlockedWrite());
+
+    const auto second = player.enqueueAudio(runtimeAudio(1, 1, 20ms));
+    assert(second.status == media_sdk::runtime::RuntimeFramePushStatus::Accepted);
+
+    auto future = std::async(std::launch::async, [&player]() {
+        return player.enqueueAudio(runtimeAudio(1, 1, 30ms));
+    });
+    std::this_thread::sleep_for(20ms);
+    assert(future.wait_for(0ms) == std::future_status::timeout);
+
+    audio.releaseAudioWrites();
+    assert(future.wait_for(500ms) == std::future_status::ready);
+    const auto third = future.get();
+    assert(third.status == media_sdk::runtime::RuntimeFramePushStatus::Backpressured);
+    assert(third.waitTime > 0us);
+    assert(waitUntil([&audio]() { return audio.writeCount >= 3; }));
+
+    const auto diagnostics = player.diagnostics();
+    assert(diagnostics.audioBackpressureCount >= 1);
+    assert(diagnostics.decodeFramePushWaitUs > 0);
+    assert(diagnostics.audioQueueHighWatermark >= 1);
 }
 
 void videoFramesAreScheduledAgainstAudioClock()
@@ -757,6 +825,7 @@ int main()
     openFailsAndClosesAudioWhenResumeFails();
     timelineTracksSeekGeneration();
     audioFramesAreWrittenToInjectedAudioOutput();
+    audioQueueBackpressureIsReportedInDiagnostics();
     videoFramesAreScheduledAgainstAudioClock();
     videoWaitDecisionDelaysAndEventuallyPresentsSameFrame();
     videoOnlyPlaybackUsesMonotonicClockWhenAudioClockIsDisabled();

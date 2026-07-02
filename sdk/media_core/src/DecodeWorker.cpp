@@ -1,5 +1,6 @@
 #include "DecodeWorker.h"
 
+#include <algorithm>
 #include <cstring>
 #include <utility>
 #include <vector>
@@ -338,6 +339,7 @@ void DecodeWorker::closeMedia()
     m_hasMedia = false;
     m_playing = false;
     m_decodeStats = {};
+    m_framePushDiagnostics = {};
 }
 
 Result<void> DecodeWorker::decodePacket(AVCodecContext* codecContext,
@@ -437,8 +439,10 @@ DecodeFrameMetadata DecodeWorker::frameMetadata() const
     };
 }
 
-bool DecodeWorker::handleFramePushResult(DecodeFramePushResult result) const
+bool DecodeWorker::handleFramePushResult(DecodeFramePushResult result)
 {
+    recordFramePushResult(result);
+
     switch (result.status)
     {
     case DecodeFramePushStatus::Accepted:
@@ -450,6 +454,32 @@ bool DecodeWorker::handleFramePushResult(DecodeFramePushResult result) const
         return false;
     }
     return false;
+}
+
+void DecodeWorker::recordFramePushResult(DecodeFramePushResult result)
+{
+    const auto waitUs = result.waitTime.count();
+    m_framePushDiagnostics.waitUs += waitUs;
+    m_framePushDiagnostics.maxWaitUs = std::max(m_framePushDiagnostics.maxWaitUs, waitUs);
+
+    switch (result.status)
+    {
+    case DecodeFramePushStatus::Accepted:
+        ++m_framePushDiagnostics.accepted;
+        break;
+    case DecodeFramePushStatus::Backpressured:
+        ++m_framePushDiagnostics.backpressured;
+        break;
+    case DecodeFramePushStatus::StaleGeneration:
+        ++m_framePushDiagnostics.stale;
+        break;
+    case DecodeFramePushStatus::Cancelled:
+        ++m_framePushDiagnostics.cancelled;
+        break;
+    case DecodeFramePushStatus::Closed:
+        ++m_framePushDiagnostics.closed;
+        break;
+    }
 }
 
 AudioFrame DecodeWorker::makeAudioFrame(AVFramePtr frame) const
