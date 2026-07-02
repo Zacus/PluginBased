@@ -17,13 +17,6 @@ template<typename FrameType>
 class RuntimeFrameQueue
 {
 public:
-    enum class PushResult {
-        Accepted,
-        RejectedGeneration,
-        Closed,
-        Aborted
-    };
-
     enum class PopResult {
         Frame,
         EndOfStream,
@@ -58,13 +51,13 @@ public:
     }
 
     [[nodiscard("end-of-stream publication can be rejected by stale generations, close, or abort")]]
-    PushResult pushEndOfStream(SessionId sessionId, Generation generation)
+    RuntimeFramePushResult pushEndOfStream(SessionId sessionId, Generation generation)
     {
         FrameType frame;
         frame.sessionId = sessionId;
         frame.generation = generation;
         frame.endOfStream = true;
-        return pushEntry(Entry { std::move(frame), true });
+        return pushFrameEntry(Entry { std::move(frame), true });
     }
 
     [[nodiscard("pop result distinguishes frames, EOF, abort, and close")]]
@@ -153,12 +146,6 @@ private:
     };
 
     [[nodiscard]]
-    PushResult pushEntry(Entry entry)
-    {
-        return toPushResult(pushFrameEntry(std::move(entry)).status);
-    }
-
-    [[nodiscard]]
     RuntimeFramePushResult pushFrameEntry(Entry entry)
     {
         std::unique_lock lock(m_mutex);
@@ -197,23 +184,6 @@ private:
                 : RuntimeFramePushStatus::Accepted,
             .waitTime = waitTime,
         };
-    }
-
-    [[nodiscard]]
-    static PushResult toPushResult(RuntimeFramePushStatus status)
-    {
-        switch (status) {
-        case RuntimeFramePushStatus::Accepted:
-        case RuntimeFramePushStatus::Backpressured:
-            return PushResult::Accepted;
-        case RuntimeFramePushStatus::RejectedGeneration:
-            return PushResult::RejectedGeneration;
-        case RuntimeFramePushStatus::Cancelled:
-            return PushResult::Aborted;
-        case RuntimeFramePushStatus::Closed:
-            return PushResult::Closed;
-        }
-        return PushResult::Closed;
     }
 
     const std::size_t m_capacity;

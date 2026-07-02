@@ -163,15 +163,33 @@ struct RuntimePlayer::Impl {
         if (!isCurrent(eofSessionId, eofGeneration))
             return;
 
-        const auto audioAccepted = audioQueue.pushEndOfStream(eofSessionId, eofGeneration)
-            == RuntimeFrameQueue<RuntimeAudioFrame>::PushResult::Accepted;
-        const auto videoAccepted = videoQueue.pushEndOfStream(eofSessionId, eofGeneration)
-            == RuntimeFrameQueue<RuntimeVideoFrame>::PushResult::Accepted;
+        const auto audioResult = audioQueue.pushEndOfStream(eofSessionId, eofGeneration);
+        const auto videoResult = videoQueue.pushEndOfStream(eofSessionId, eofGeneration);
+        const auto audioAccepted = audioResult.status == RuntimeFramePushStatus::Accepted
+            || audioResult.status == RuntimeFramePushStatus::Backpressured;
+        const auto videoAccepted = videoResult.status == RuntimeFramePushStatus::Accepted
+            || videoResult.status == RuntimeFramePushStatus::Backpressured;
 
         if (!audioAccepted || !videoAccepted)
             return;
 
+        const auto audioHighWatermark = static_cast<std::uint64_t>(audioQueue.highWatermark());
+        const auto videoHighWatermark = static_cast<std::uint64_t>(videoQueue.highWatermark());
         std::lock_guard lock(m_mutex);
+        if (audioResult.status == RuntimeFramePushStatus::Backpressured) {
+            ++diagnostics.audioBackpressureCount;
+            diagnostics.decodeFramePushWaitUs += static_cast<std::uint64_t>(audioResult.waitTime.count());
+        }
+        if (videoResult.status == RuntimeFramePushStatus::Backpressured) {
+            ++diagnostics.videoBackpressureCount;
+            diagnostics.decodeFramePushWaitUs += static_cast<std::uint64_t>(videoResult.waitTime.count());
+        }
+        diagnostics.audioQueueHighWatermark = std::max(
+            diagnostics.audioQueueHighWatermark,
+            audioHighWatermark);
+        diagnostics.videoQueueHighWatermark = std::max(
+            diagnostics.videoQueueHighWatermark,
+            videoHighWatermark);
         ++diagnostics.eofAccepted;
     }
 

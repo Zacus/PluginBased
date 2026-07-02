@@ -606,6 +606,35 @@ void eofCompletesOnlyAfterAudioAndVideoDrain()
     }
 }
 
+void eofBackpressureIsReportedInDiagnostics()
+{
+    MockAudioOutput audio;
+    audio.blockAudioWrites();
+    MockPresenter presenter;
+    media_sdk::runtime::RuntimePlayerConfig config;
+    config.audioQueueCapacity = 1;
+    auto player = makePlayer(audio, presenter, config);
+    assert(player.open().ok());
+
+    discardFramePushResult(player.enqueueAudio(runtimeAudio(1, 1, 10ms)));
+    assert(audio.waitForBlockedWrite());
+    discardFramePushResult(player.enqueueAudio(runtimeAudio(1, 1, 20ms)));
+
+    auto future = std::async(std::launch::async, [&player]() {
+        player.enqueueEndOfStream(1, 1);
+    });
+    std::this_thread::sleep_for(20ms);
+    assert(future.wait_for(0ms) == std::future_status::timeout);
+
+    audio.releaseAudioWrites();
+    assert(future.wait_for(500ms) == std::future_status::ready);
+
+    const auto diagnostics = player.diagnostics();
+    assert(diagnostics.eofAccepted == 1);
+    assert(diagnostics.audioBackpressureCount >= 1);
+    assert(diagnostics.decodeFramePushWaitUs > 0);
+}
+
 void seekInvalidatesOldGenerationFramesAndCompletions()
 {
     MockAudioOutput audio;
@@ -832,6 +861,7 @@ int main()
     presenterBackpressureWaitsForCompletionBeforeSubmittingNextFrame();
     presenterBackpressureSeekCancelsWaitingOldGenerationFrame();
     eofCompletesOnlyAfterAudioAndVideoDrain();
+    eofBackpressureIsReportedInDiagnostics();
     seekInvalidatesOldGenerationFramesAndCompletions();
     stopAbortsQueuesPausesAudioClearsPresenterAndReturnsIdle();
     nativePresenterFailureRunsFullFallbackTransition();

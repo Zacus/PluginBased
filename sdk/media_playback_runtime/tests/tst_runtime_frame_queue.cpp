@@ -66,7 +66,7 @@ void testEofIsDeliveredAfterAcceptedFrames()
 
     assert(queue.push(makeFrame(10, 4, 100)).status == media_sdk::runtime::RuntimeFramePushStatus::Accepted);
     assert(queue.push(makeFrame(10, 4, 200)).status == media_sdk::runtime::RuntimeFramePushStatus::Accepted);
-    assert(queue.pushEndOfStream(10, 4) == media_sdk::runtime::RuntimeFrameQueue<media_sdk::runtime::RuntimeVideoFrame>::PushResult::Accepted);
+    assert(queue.pushEndOfStream(10, 4).status == media_sdk::runtime::RuntimeFramePushStatus::Accepted);
 
     media_sdk::runtime::RuntimeVideoFrame popped;
     assert(queue.waitPop(popped) == media_sdk::runtime::RuntimeFrameQueue<media_sdk::runtime::RuntimeVideoFrame>::PopResult::Frame);
@@ -158,6 +158,44 @@ void pushReportsBackpressureWhenItWaited()
     assert(queue.highWatermark() == 1);
 }
 
+void eofPushReportsBackpressureWhenItWaited()
+{
+    media_sdk::runtime::RuntimeFrameQueue<media_sdk::runtime::RuntimeVideoFrame> queue(1);
+    queue.reset(10, 2);
+    assert(queue.push(makeFrame(10, 2, 100)).status
+        == media_sdk::runtime::RuntimeFramePushStatus::Accepted);
+
+    auto future = std::async(std::launch::async, [&queue]() {
+        return queue.pushEndOfStream(10, 2);
+    });
+
+    std::this_thread::sleep_for(20ms);
+    media_sdk::runtime::RuntimeVideoFrame popped;
+    assert(queue.waitPop(popped) == media_sdk::runtime::RuntimeFrameQueue<media_sdk::runtime::RuntimeVideoFrame>::PopResult::Frame);
+
+    const auto result = future.get();
+    assert(result.status == media_sdk::runtime::RuntimeFramePushStatus::Backpressured);
+    assert(result.waitTime > std::chrono::microseconds { 0 });
+}
+
+void eofPushWaitIsCancelledByAbort()
+{
+    media_sdk::runtime::RuntimeFrameQueue<media_sdk::runtime::RuntimeVideoFrame> queue(1);
+    queue.reset(10, 2);
+    assert(queue.push(makeFrame(10, 2, 100)).status
+        == media_sdk::runtime::RuntimeFramePushStatus::Accepted);
+
+    auto future = std::async(std::launch::async, [&queue]() {
+        return queue.pushEndOfStream(10, 2);
+    });
+
+    std::this_thread::sleep_for(20ms);
+    queue.abort();
+    const auto result = future.get();
+    assert(result.status == media_sdk::runtime::RuntimeFramePushStatus::Cancelled);
+    assert(result.waitTime > std::chrono::microseconds { 0 });
+}
+
 void blockedPushRejectsFrameWhenResetChangesGeneration()
 {
     media_sdk::runtime::RuntimeFrameQueue<media_sdk::runtime::RuntimeVideoFrame> queue(1);
@@ -188,5 +226,7 @@ int main()
     testFinishDoesNotAcceptMoreFrames();
     pushWaitIsCancelledByAbort();
     pushReportsBackpressureWhenItWaited();
+    eofPushReportsBackpressureWhenItWaited();
+    eofPushWaitIsCancelledByAbort();
     blockedPushRejectsFrameWhenResetChangesGeneration();
 }
