@@ -198,6 +198,8 @@ def check_sdk_playback_adapter_contract() -> None:
         "media_sdk::runtime::RuntimeTimeline runtimeTimeline",
         "acceptSeekCompletedEvent",
         "PendingSeekRequest { generation, runtimeTimeline }",
+        "acceptedRuntimeTimelineForCoreEvent(event.metadata)",
+        "acceptsRuntimeTimeline(timeline)",
     ):
         assert_contains(combined, token, SDK_PLAYBACK_ADAPTER_CPP)
     on_event_body = source[source.find("void SdkPlaybackAdapter::onEvent"):
@@ -206,6 +208,29 @@ def check_sdk_playback_adapter_contract() -> None:
                   "const auto seekCompletion = acceptSeekCompletedEvent(event);",
                   "if (handleDataEvent(event))",
                   SDK_PLAYBACK_ADAPTER_CPP)
+
+    seek_completion_body = source[source.find("SdkPlaybackAdapter::acceptSeekCompletedEvent"):
+                                  source.find("void SdkPlaybackAdapter::handleFallbackOnObjectThread")]
+    assert_contains(seek_completion_body,
+                    "return std::nullopt;",
+                    SDK_PLAYBACK_ADAPTER_CPP)
+    assert_before(seek_completion_body,
+                  "return std::nullopt;",
+                  "m_acceptedCoreTimeline = event.metadata;",
+                  SDK_PLAYBACK_ADAPTER_CPP)
+
+    eof_body = source[source.find("if (std::holds_alternative<media_sdk::EndOfFileEvent>"):
+                      source.find("if (const auto* payload = std::get_if<media_sdk::PositionChangedEvent>")]
+    assert_contains(eof_body,
+                    "acceptedRuntimeTimelineForCoreEvent(event.metadata)",
+                    SDK_PLAYBACK_ADAPTER_CPP)
+    assert_not_contains(eof_body,
+                        "runtimeTimeline = m_runtimeTimeline;",
+                        SDK_PLAYBACK_ADAPTER_CPP)
+
+    eos_body = source[source.find("void SdkPlaybackAdapter::onEndOfStreamPresented"):
+                      source.find("bool SdkPlaybackAdapter::handleDataEvent")]
+    assert_contains(eos_body, "acceptsRuntimeTimeline(timeline)", SDK_PLAYBACK_ADAPTER_CPP)
 
 
 def check_runtime_mode_switch_contract() -> None:

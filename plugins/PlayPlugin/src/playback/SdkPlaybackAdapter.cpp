@@ -288,7 +288,10 @@ void SdkPlaybackAdapter::onEndOfStreamPresented(
 {
     QMetaObject::invokeMethod(this,
                               [this, timeline]() {
-                                  Q_UNUSED(timeline);
+                                  if (!acceptsRuntimeTimeline(timeline)) {
+                                      LOG_DEBUG("SdkPlaybackAdapter: ignored stale runtime EOS callback");
+                                      return;
+                                  }
                                   emit endOfAudio();
                                   emit endOfVideo();
                               },
@@ -340,20 +343,36 @@ void SdkPlaybackAdapter::handleControlEvent(
     }
 
     if (std::holds_alternative<media_sdk::EndOfFileEvent>(event.payload)) {
+        const auto runtimeTimeline = acceptedRuntimeTimelineForCoreEvent(event.metadata);
+        if (!runtimeTimeline) {
+            LOG_DEBUG("SdkPlaybackAdapter: ignored stale EOF event");
+            return;
+        }
+
         std::shared_ptr<media_sdk::runtime::RuntimePlayer> runtimePlayer;
-        media_sdk::runtime::RuntimeTimeline runtimeTimeline;
         {
             std::lock_guard lock(m_mutex);
-            runtimePlayer = m_runtimePlayer;
-            runtimeTimeline = m_runtimeTimeline;
+            if (m_runtimePlayer
+                && m_runtimeTimeline.sessionId == runtimeTimeline->sessionId
+                && m_runtimeTimeline.generation == runtimeTimeline->generation) {
+                runtimePlayer = m_runtimePlayer;
+            }
         }
-        if (runtimePlayer)
-            runtimePlayer->enqueueEndOfStream(runtimeTimeline.sessionId, runtimeTimeline.generation);
+        if (!runtimePlayer) {
+            LOG_DEBUG("SdkPlaybackAdapter: skipped EOF for replaced runtime timeline");
+            return;
+        }
+
+        runtimePlayer->enqueueEndOfStream(runtimeTimeline->sessionId, runtimeTimeline->generation);
         emit endOfFile();
         return;
     }
 
     if (const auto* payload = std::get_if<media_sdk::PositionChangedEvent>(&event.payload)) {
+        if (!acceptedRuntimeTimelineForCoreEvent(event.metadata)) {
+            LOG_DEBUG("SdkPlaybackAdapter: ignored stale position event");
+            return;
+        }
         emit positionChanged(toMilliseconds(payload->position));
         return;
     }
@@ -385,6 +404,9 @@ SdkPlaybackAdapter::acceptSeekCompletedEvent(const media_sdk::PlayerEvent& event
             runtimeTimeline = pending->runtimeTimeline;
             completion.qtGeneration = pending->qtGeneration;
             completion.hasQtGeneration = true;
+        } else {
+            LOG_DEBUG("SdkPlaybackAdapter: ignored stale seek completion");
+            return std::nullopt;
         }
 
         m_acceptedCoreTimeline = event.metadata;
@@ -528,6 +550,25 @@ bool SdkPlaybackAdapter::acceptsCoreEvent(const media_sdk::EventMetadata& metada
 {
     return metadata.sessionId == m_acceptedCoreTimeline.sessionId
         && metadata.generation == m_acceptedCoreTimeline.generation;
+}
+
+std::optional<media_sdk::runtime::RuntimeTimeline>
+SdkPlaybackAdapter::acceptedRuntimeTimelineForCoreEvent(
+    const media_sdk::EventMetadata& metadata) const
+{
+    std::lock_guard lock(m_mutex);
+    if (!m_acceptingRuntimeFrames || !m_runtimePlayer || !acceptsCoreEvent(metadata))
+        return std::nullopt;
+    return m_runtimeTimeline;
+}
+
+bool SdkPlaybackAdapter::acceptsRuntimeTimeline(
+    media_sdk::runtime::RuntimeTimeline timeline) const
+{
+    std::lock_guard lock(m_mutex);
+    return m_runtimePlayer
+        && m_runtimeTimeline.sessionId == timeline.sessionId
+        && m_runtimeTimeline.generation == timeline.generation;
 }
 
 void SdkPlaybackAdapter::setAcceptedCoreTimeline(

@@ -87,6 +87,9 @@ private:
         media_sdk::VideoFrame frame,
         media_sdk::runtime::RuntimeTimeline timeline) const;
     bool acceptsCoreEvent(const media_sdk::EventMetadata& metadata) const;
+    std::optional<media_sdk::runtime::RuntimeTimeline> acceptedRuntimeTimelineForCoreEvent(
+        const media_sdk::EventMetadata& metadata) const;
+    bool acceptsRuntimeTimeline(media_sdk::runtime::RuntimeTimeline timeline) const;
     void setAcceptedCoreTimeline(const media_sdk::EventMetadata& metadata,
                                  media_sdk::runtime::RuntimeTimeline runtimeTimeline);
 
