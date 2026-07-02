@@ -33,8 +33,8 @@ void testPushPopPreservesAcceptedOrder()
     media_sdk::runtime::RuntimeFrameQueue<media_sdk::runtime::RuntimeVideoFrame> queue(3);
     queue.reset(10, 2);
 
-    assert(queue.push(makeFrame(10, 2, 100)) == media_sdk::runtime::RuntimeFrameQueue<media_sdk::runtime::RuntimeVideoFrame>::PushResult::Accepted);
-    assert(queue.push(makeFrame(10, 2, 200)) == media_sdk::runtime::RuntimeFrameQueue<media_sdk::runtime::RuntimeVideoFrame>::PushResult::Accepted);
+    assert(queue.push(makeFrame(10, 2, 100)).status == media_sdk::runtime::RuntimeFramePushStatus::Accepted);
+    assert(queue.push(makeFrame(10, 2, 200)).status == media_sdk::runtime::RuntimeFramePushStatus::Accepted);
     assert(queue.size() == 2);
 
     media_sdk::runtime::RuntimeVideoFrame popped;
@@ -51,11 +51,11 @@ void testQueueRejectsOldGeneration()
     queue.reset(10, 3);
 
     const auto staleResult = queue.push(makeFrame(10, 2, 100));
-    assert(staleResult == media_sdk::runtime::RuntimeFrameQueue<media_sdk::runtime::RuntimeVideoFrame>::PushResult::RejectedGeneration);
+    assert(staleResult.status == media_sdk::runtime::RuntimeFramePushStatus::RejectedGeneration);
     assert(queue.size() == 0);
 
     const auto wrongSessionResult = queue.push(makeFrame(11, 3, 100));
-    assert(wrongSessionResult == media_sdk::runtime::RuntimeFrameQueue<media_sdk::runtime::RuntimeVideoFrame>::PushResult::RejectedGeneration);
+    assert(wrongSessionResult.status == media_sdk::runtime::RuntimeFramePushStatus::RejectedGeneration);
     assert(queue.size() == 0);
 }
 
@@ -64,8 +64,8 @@ void testEofIsDeliveredAfterAcceptedFrames()
     media_sdk::runtime::RuntimeFrameQueue<media_sdk::runtime::RuntimeVideoFrame> queue(4);
     queue.reset(10, 4);
 
-    assert(queue.push(makeFrame(10, 4, 100)) == media_sdk::runtime::RuntimeFrameQueue<media_sdk::runtime::RuntimeVideoFrame>::PushResult::Accepted);
-    assert(queue.push(makeFrame(10, 4, 200)) == media_sdk::runtime::RuntimeFrameQueue<media_sdk::runtime::RuntimeVideoFrame>::PushResult::Accepted);
+    assert(queue.push(makeFrame(10, 4, 100)).status == media_sdk::runtime::RuntimeFramePushStatus::Accepted);
+    assert(queue.push(makeFrame(10, 4, 200)).status == media_sdk::runtime::RuntimeFramePushStatus::Accepted);
     assert(queue.pushEndOfStream(10, 4) == media_sdk::runtime::RuntimeFrameQueue<media_sdk::runtime::RuntimeVideoFrame>::PushResult::Accepted);
 
     media_sdk::runtime::RuntimeVideoFrame popped;
@@ -80,7 +80,7 @@ void testAbortWakesWaitersAndClearsPendingFrames()
 {
     media_sdk::runtime::RuntimeFrameQueue<media_sdk::runtime::RuntimeVideoFrame> queue(3);
     queue.reset(10, 5);
-    assert(queue.push(makeFrame(10, 5, 100)) == media_sdk::runtime::RuntimeFrameQueue<media_sdk::runtime::RuntimeVideoFrame>::PushResult::Accepted);
+    assert(queue.push(makeFrame(10, 5, 100)).status == media_sdk::runtime::RuntimeFramePushStatus::Accepted);
     assert(queue.size() == 1);
 
     queue.abort();
@@ -111,13 +111,70 @@ void testFinishDoesNotAcceptMoreFrames()
 
     media_sdk::runtime::RuntimeVideoFrame popped;
     assert(queue.waitPop(popped) == media_sdk::runtime::RuntimeFrameQueue<media_sdk::runtime::RuntimeVideoFrame>::PopResult::Closed);
-    assert(queue.push(makeFrame(10, 6, 100)) == media_sdk::runtime::RuntimeFrameQueue<media_sdk::runtime::RuntimeVideoFrame>::PushResult::Closed);
+    assert(queue.push(makeFrame(10, 6, 100)).status == media_sdk::runtime::RuntimeFramePushStatus::Closed);
 
     queue.reset(10, 7);
     assert(queue.generation() == 7);
-    assert(queue.push(makeFrame(10, 7, 200)) == media_sdk::runtime::RuntimeFrameQueue<media_sdk::runtime::RuntimeVideoFrame>::PushResult::Accepted);
+    assert(queue.push(makeFrame(10, 7, 200)).status == media_sdk::runtime::RuntimeFramePushStatus::Accepted);
     assert(queue.waitPop(popped) == media_sdk::runtime::RuntimeFrameQueue<media_sdk::runtime::RuntimeVideoFrame>::PopResult::Frame);
     assert(popped.generation == 7);
+}
+
+void pushWaitIsCancelledByAbort()
+{
+    media_sdk::runtime::RuntimeFrameQueue<media_sdk::runtime::RuntimeVideoFrame> queue(1);
+    queue.reset(10, 2);
+    assert(queue.push(makeFrame(10, 2, 100)).status
+        == media_sdk::runtime::RuntimeFramePushStatus::Accepted);
+
+    auto future = std::async(std::launch::async, [&queue]() {
+        return queue.push(makeFrame(10, 2, 200));
+    });
+
+    std::this_thread::sleep_for(20ms);
+    queue.abort();
+    const auto result = future.get();
+    assert(result.status == media_sdk::runtime::RuntimeFramePushStatus::Cancelled);
+}
+
+void pushReportsBackpressureWhenItWaited()
+{
+    media_sdk::runtime::RuntimeFrameQueue<media_sdk::runtime::RuntimeVideoFrame> queue(1);
+    queue.reset(10, 2);
+    assert(queue.push(makeFrame(10, 2, 100)).status
+        == media_sdk::runtime::RuntimeFramePushStatus::Accepted);
+
+    auto future = std::async(std::launch::async, [&queue]() {
+        return queue.push(makeFrame(10, 2, 200));
+    });
+
+    std::this_thread::sleep_for(20ms);
+    media_sdk::runtime::RuntimeVideoFrame popped;
+    assert(queue.waitPop(popped) == media_sdk::runtime::RuntimeFrameQueue<media_sdk::runtime::RuntimeVideoFrame>::PopResult::Frame);
+
+    const auto result = future.get();
+    assert(result.status == media_sdk::runtime::RuntimeFramePushStatus::Backpressured);
+    assert(result.waitTime > std::chrono::microseconds { 0 });
+    assert(queue.highWatermark() == 1);
+}
+
+void blockedPushRejectsFrameWhenResetChangesGeneration()
+{
+    media_sdk::runtime::RuntimeFrameQueue<media_sdk::runtime::RuntimeVideoFrame> queue(1);
+    queue.reset(10, 2);
+    assert(queue.push(makeFrame(10, 2, 100)).status
+        == media_sdk::runtime::RuntimeFramePushStatus::Accepted);
+
+    auto future = std::async(std::launch::async, [&queue]() {
+        return queue.push(makeFrame(10, 2, 200));
+    });
+
+    std::this_thread::sleep_for(20ms);
+    queue.reset(10, 3);
+
+    const auto result = future.get();
+    assert(result.status == media_sdk::runtime::RuntimeFramePushStatus::RejectedGeneration);
+    assert(queue.size() == 0);
 }
 
 } // namespace
@@ -129,4 +186,7 @@ int main()
     testEofIsDeliveredAfterAcceptedFrames();
     testAbortWakesWaitersAndClearsPendingFrames();
     testFinishDoesNotAcceptMoreFrames();
+    pushWaitIsCancelledByAbort();
+    pushReportsBackpressureWhenItWaited();
+    blockedPushRejectsFrameWhenResetChangesGeneration();
 }

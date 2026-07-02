@@ -58,13 +58,18 @@ struct RuntimeDiagnostics {
     std::uint64_t cpuMemcpy = 0;
     std::uint64_t hardwareTransfers = 0;
     std::uint64_t audioQueued = 0;
+    std::uint64_t audioBackpressureCount = 0;
+    std::uint64_t audioQueueHighWatermark = 0;
     std::uint64_t audioWritten = 0;
     std::uint64_t videoQueued = 0;
+    std::uint64_t videoBackpressureCount = 0;
+    std::uint64_t videoQueueHighWatermark = 0;
     std::uint64_t videoWaited = 0;
     std::uint64_t videoDroppedLate = 0;
     std::uint64_t videoPresented = 0;
     std::uint64_t eofAccepted = 0;
     std::uint64_t eofPresented = 0;
+    std::uint64_t decodeFramePushWaitUs = 0;
     std::uint64_t queueAbortCount = 0;
 };
 

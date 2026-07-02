@@ -388,6 +388,8 @@ void audioFramesAreWrittenToInjectedAudioOutput()
     assert(audio.lastWritePts == 42ms);
     assert(audio.lastWriteGeneration == 1);
     assert(player.diagnostics().audioQueued == 1);
+    assert(player.diagnostics().audioQueueHighWatermark >= 1);
+    assert(player.diagnostics().audioBackpressureCount == 0);
     assert(player.diagnostics().audioWritten == 1);
 }
 
@@ -414,6 +416,9 @@ void videoFramesAreScheduledAgainstAudioClock()
     assert(lateVideoResult.status == media_sdk::runtime::RuntimeFramePushStatus::Accepted);
     std::this_thread::sleep_for(10ms);
     assert(presenter.presentCount == 1);
+    assert(player.diagnostics().videoQueued == 2);
+    assert(player.diagnostics().videoQueueHighWatermark >= 1);
+    assert(player.diagnostics().videoBackpressureCount == 0);
     assert(player.diagnostics().videoDroppedLate == 1);
 }
 

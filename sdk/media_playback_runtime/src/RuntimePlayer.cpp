@@ -6,6 +6,7 @@
 #include "RuntimeFrameQueue.h"
 #include "media_sdk/Error.h"
 
+#include <algorithm>
 #include <condition_variable>
 #include <mutex>
 #include <thread>
@@ -38,23 +39,6 @@ Result<void> dependencyError(const char* message)
         .message = message,
         .detail = {},
     });
-}
-
-template<typename FrameType>
-RuntimeFramePushStatus toRuntimePushStatus(typename RuntimeFrameQueue<FrameType>::PushResult result)
-{
-    using PushResult = typename RuntimeFrameQueue<FrameType>::PushResult;
-    switch (result) {
-    case PushResult::Accepted:
-        return RuntimeFramePushStatus::Accepted;
-    case PushResult::RejectedGeneration:
-        return RuntimeFramePushStatus::RejectedGeneration;
-    case PushResult::Aborted:
-        return RuntimeFramePushStatus::Cancelled;
-    case PushResult::Closed:
-        return RuntimeFramePushStatus::Closed;
-    }
-    return RuntimeFramePushStatus::Closed;
 }
 
 } // namespace
@@ -124,24 +108,25 @@ struct RuntimePlayer::Impl {
         if (!isRunning())
             return { .status = RuntimeFramePushStatus::Closed };
 
-        const auto start = std::chrono::steady_clock::now();
         const auto pushResult = audioQueue.push(std::move(frame));
-        const auto waitTime = std::chrono::duration_cast<std::chrono::microseconds>(
-            std::chrono::steady_clock::now() - start);
-        if (pushResult != RuntimeFrameQueue<RuntimeAudioFrame>::PushResult::Accepted)
-            return {
-                .status = toRuntimePushStatus<RuntimeAudioFrame>(pushResult),
-                .waitTime = waitTime,
-            };
+        if (pushResult.status != RuntimeFramePushStatus::Accepted
+            && pushResult.status != RuntimeFramePushStatus::Backpressured) {
+            return pushResult;
+        }
 
+        const auto highWatermark = static_cast<std::uint64_t>(audioQueue.highWatermark());
         {
             std::lock_guard lock(m_mutex);
             ++diagnostics.audioQueued;
+            if (pushResult.status == RuntimeFramePushStatus::Backpressured) {
+                ++diagnostics.audioBackpressureCount;
+                diagnostics.decodeFramePushWaitUs += static_cast<std::uint64_t>(pushResult.waitTime.count());
+            }
+            diagnostics.audioQueueHighWatermark = std::max<std::uint64_t>(
+                diagnostics.audioQueueHighWatermark,
+                highWatermark);
         }
-        return {
-            .status = RuntimeFramePushStatus::Accepted,
-            .waitTime = waitTime,
-        };
+        return pushResult;
     }
 
     RuntimeFramePushResult enqueueVideo(RuntimeVideoFrame frame)
@@ -150,26 +135,27 @@ struct RuntimePlayer::Impl {
             return { .status = RuntimeFramePushStatus::Closed };
 
         const bool nativeFrame = frame.frame.pixelFormat() == PixelFormat::Native;
-        const auto start = std::chrono::steady_clock::now();
         const auto pushResult = videoQueue.push(std::move(frame));
-        const auto waitTime = std::chrono::duration_cast<std::chrono::microseconds>(
-            std::chrono::steady_clock::now() - start);
-        if (pushResult != RuntimeFrameQueue<RuntimeVideoFrame>::PushResult::Accepted)
-            return {
-                .status = toRuntimePushStatus<RuntimeVideoFrame>(pushResult),
-                .waitTime = waitTime,
-            };
+        if (pushResult.status != RuntimeFramePushStatus::Accepted
+            && pushResult.status != RuntimeFramePushStatus::Backpressured) {
+            return pushResult;
+        }
 
+        const auto highWatermark = static_cast<std::uint64_t>(videoQueue.highWatermark());
         {
             std::lock_guard lock(m_mutex);
             ++diagnostics.videoQueued;
+            if (pushResult.status == RuntimeFramePushStatus::Backpressured) {
+                ++diagnostics.videoBackpressureCount;
+                diagnostics.decodeFramePushWaitUs += static_cast<std::uint64_t>(pushResult.waitTime.count());
+            }
+            diagnostics.videoQueueHighWatermark = std::max<std::uint64_t>(
+                diagnostics.videoQueueHighWatermark,
+                highWatermark);
             if (nativeFrame)
                 ++diagnostics.nativeAccepted;
         }
-        return {
-            .status = RuntimeFramePushStatus::Accepted,
-            .waitTime = waitTime,
-        };
+        return pushResult;
     }
 
     void enqueueEndOfStream(SessionId eofSessionId, Generation eofGeneration)
