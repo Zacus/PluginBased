@@ -30,6 +30,19 @@ struct RuntimeVideoFrame {
     bool endOfStream = false;
 };
 
+enum class RuntimeFramePushStatus {
+    Accepted,
+    Backpressured,
+    RejectedGeneration,
+    Cancelled,
+    Closed
+};
+
+struct RuntimeFramePushResult {
+    RuntimeFramePushStatus status = RuntimeFramePushStatus::Closed;
+    std::chrono::microseconds waitTime { 0 };
+};
+
 struct RuntimeDiagnostics {
     std::uint64_t nativeDecoded = 0;
     std::uint64_t nativeAccepted = 0;

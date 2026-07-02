@@ -139,6 +139,14 @@ def main() -> None:
     ):
         assert_contains(frame_queue, token, frame_queue_header)
 
+    runtime_player_header = runtime_include / "RuntimePlayer.h"
+    runtime_player = read(runtime_player_header)
+    for token in (
+        "RuntimeFramePushResult enqueueAudio",
+        "RuntimeFramePushResult enqueueVideo",
+    ):
+        assert_contains(runtime_player, token, runtime_player_header)
+
     present_tracker_header = RUNTIME / "src" / "PresentTracker.h"
     present_tracker = read(present_tracker_header)
     for token in (

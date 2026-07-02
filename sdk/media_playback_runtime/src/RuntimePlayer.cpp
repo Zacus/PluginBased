@@ -40,6 +40,23 @@ Result<void> dependencyError(const char* message)
     });
 }
 
+template<typename FrameType>
+RuntimeFramePushStatus toRuntimePushStatus(typename RuntimeFrameQueue<FrameType>::PushResult result)
+{
+    using PushResult = typename RuntimeFrameQueue<FrameType>::PushResult;
+    switch (result) {
+    case PushResult::Accepted:
+        return RuntimeFramePushStatus::Accepted;
+    case PushResult::RejectedGeneration:
+        return RuntimeFramePushStatus::RejectedGeneration;
+    case PushResult::Aborted:
+        return RuntimeFramePushStatus::Cancelled;
+    case PushResult::Closed:
+        return RuntimeFramePushStatus::Closed;
+    }
+    return RuntimeFramePushStatus::Closed;
+}
+
 } // namespace
 
 struct RuntimePlayer::Impl {
@@ -102,33 +119,57 @@ struct RuntimePlayer::Impl {
         return Result<void>::success();
     }
 
-    void enqueueAudio(RuntimeAudioFrame frame)
+    RuntimeFramePushResult enqueueAudio(RuntimeAudioFrame frame)
     {
         if (!isRunning())
-            return;
+            return { .status = RuntimeFramePushStatus::Closed };
 
+        const auto start = std::chrono::steady_clock::now();
         const auto pushResult = audioQueue.push(std::move(frame));
+        const auto waitTime = std::chrono::duration_cast<std::chrono::microseconds>(
+            std::chrono::steady_clock::now() - start);
         if (pushResult != RuntimeFrameQueue<RuntimeAudioFrame>::PushResult::Accepted)
-            return;
+            return {
+                .status = toRuntimePushStatus<RuntimeAudioFrame>(pushResult),
+                .waitTime = waitTime,
+            };
 
-        std::lock_guard lock(m_mutex);
-        ++diagnostics.audioQueued;
+        {
+            std::lock_guard lock(m_mutex);
+            ++diagnostics.audioQueued;
+        }
+        return {
+            .status = RuntimeFramePushStatus::Accepted,
+            .waitTime = waitTime,
+        };
     }
 
-    void enqueueVideo(RuntimeVideoFrame frame)
+    RuntimeFramePushResult enqueueVideo(RuntimeVideoFrame frame)
     {
         if (!isAcceptingVideo())
-            return;
+            return { .status = RuntimeFramePushStatus::Closed };
 
         const bool nativeFrame = frame.frame.pixelFormat() == PixelFormat::Native;
+        const auto start = std::chrono::steady_clock::now();
         const auto pushResult = videoQueue.push(std::move(frame));
+        const auto waitTime = std::chrono::duration_cast<std::chrono::microseconds>(
+            std::chrono::steady_clock::now() - start);
         if (pushResult != RuntimeFrameQueue<RuntimeVideoFrame>::PushResult::Accepted)
-            return;
+            return {
+                .status = toRuntimePushStatus<RuntimeVideoFrame>(pushResult),
+                .waitTime = waitTime,
+            };
 
-        std::lock_guard lock(m_mutex);
-        ++diagnostics.videoQueued;
-        if (nativeFrame)
-            ++diagnostics.nativeAccepted;
+        {
+            std::lock_guard lock(m_mutex);
+            ++diagnostics.videoQueued;
+            if (nativeFrame)
+                ++diagnostics.nativeAccepted;
+        }
+        return {
+            .status = RuntimeFramePushStatus::Accepted,
+            .waitTime = waitTime,
+        };
     }
 
     void enqueueEndOfStream(SessionId eofSessionId, Generation eofGeneration)
@@ -665,14 +706,14 @@ Result<void> RuntimePlayer::open()
     return m_impl->open();
 }
 
-void RuntimePlayer::enqueueAudio(RuntimeAudioFrame frame)
+RuntimeFramePushResult RuntimePlayer::enqueueAudio(RuntimeAudioFrame frame)
 {
-    m_impl->enqueueAudio(std::move(frame));
+    return m_impl->enqueueAudio(std::move(frame));
 }
 
-void RuntimePlayer::enqueueVideo(RuntimeVideoFrame frame)
+RuntimeFramePushResult RuntimePlayer::enqueueVideo(RuntimeVideoFrame frame)
 {
-    m_impl->enqueueVideo(std::move(frame));
+    return m_impl->enqueueVideo(std::move(frame));
 }
 
 void RuntimePlayer::enqueueEndOfStream(SessionId sessionId, Generation generation)

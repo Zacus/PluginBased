@@ -305,6 +305,11 @@ media_sdk::runtime::RuntimePlayer makePlayer(
         });
 }
 
+void discardFramePushResult(media_sdk::runtime::RuntimeFramePushResult result)
+{
+    (void)result;
+}
+
 void openStartsNewSessionAndResetsQueues()
 {
     MockAudioOutput audio;
@@ -316,21 +321,25 @@ void openStartsNewSessionAndResetsQueues()
     assert(audio.resumeCount == 1);
     assert(player.timeline().sessionId == 1);
     assert(player.timeline().generation == 1);
-    player.enqueueAudio(runtimeAudio(0, 0, 0ms));
+    const auto staleBeforeSession = player.enqueueAudio(runtimeAudio(0, 0, 0ms));
+    assert(staleBeforeSession.status == media_sdk::runtime::RuntimeFramePushStatus::RejectedGeneration);
     std::this_thread::sleep_for(10ms);
     assert(audio.writeCount == 0);
 
-    player.enqueueAudio(runtimeAudio(1, 1, 10ms));
+    const auto firstAudio = player.enqueueAudio(runtimeAudio(1, 1, 10ms));
+    assert(firstAudio.status == media_sdk::runtime::RuntimeFramePushStatus::Accepted);
     assert(waitUntil([&audio]() { return audio.writeCount == 1; }));
 
     assert(player.open().ok());
     assert(audio.resumeCount == 2);
     assert(player.timeline().sessionId == 2);
     assert(player.timeline().generation == 1);
-    player.enqueueAudio(runtimeAudio(1, 1, 20ms));
+    const auto staleAfterReopen = player.enqueueAudio(runtimeAudio(1, 1, 20ms));
+    assert(staleAfterReopen.status == media_sdk::runtime::RuntimeFramePushStatus::RejectedGeneration);
     std::this_thread::sleep_for(10ms);
     assert(audio.writeCount == 1);
-    player.enqueueAudio(runtimeAudio(2, 1, 20ms));
+    const auto secondAudio = player.enqueueAudio(runtimeAudio(2, 1, 20ms));
+    assert(secondAudio.status == media_sdk::runtime::RuntimeFramePushStatus::Accepted);
     assert(waitUntil([&audio]() { return audio.writeCount == 2; }));
 }
 
@@ -372,7 +381,8 @@ void audioFramesAreWrittenToInjectedAudioOutput()
     auto player = makePlayer(audio, presenter);
     assert(player.open().ok());
 
-    player.enqueueAudio(runtimeAudio(1, 1, 42ms));
+    const auto audioResult = player.enqueueAudio(runtimeAudio(1, 1, 42ms));
+    assert(audioResult.status == media_sdk::runtime::RuntimeFramePushStatus::Accepted);
     assert(waitUntil([&audio]() { return audio.writeCount == 1; }));
     assert(audio.writtenBytes == 128);
     assert(audio.lastWritePts == 42ms);
@@ -389,12 +399,19 @@ void videoFramesAreScheduledAgainstAudioClock()
     auto player = makePlayer(audio, presenter);
     assert(player.open().ok());
 
-    player.enqueueVideo(runtimeVideo(1, 1, 101ms));
+    const auto staleVideoResult = player.enqueueVideo(runtimeVideo(1, 99, 101ms));
+    assert(staleVideoResult.status == media_sdk::runtime::RuntimeFramePushStatus::RejectedGeneration);
+    std::this_thread::sleep_for(10ms);
+    assert(presenter.presentCount == 0);
+
+    const auto videoResult = player.enqueueVideo(runtimeVideo(1, 1, 101ms));
+    assert(videoResult.status == media_sdk::runtime::RuntimeFramePushStatus::Accepted);
     assert(waitUntil([&presenter]() { return presenter.presentCount == 1; }));
     assert(presenter.timing().clock == 100ms);
 
     audio.setClock(250ms, 1);
-    player.enqueueVideo(runtimeVideo(1, 1, 1ms));
+    const auto lateVideoResult = player.enqueueVideo(runtimeVideo(1, 1, 1ms));
+    assert(lateVideoResult.status == media_sdk::runtime::RuntimeFramePushStatus::Accepted);
     std::this_thread::sleep_for(10ms);
     assert(presenter.presentCount == 1);
     assert(player.diagnostics().videoDroppedLate == 1);
@@ -411,7 +428,7 @@ void videoWaitDecisionDelaysAndEventuallyPresentsSameFrame()
     auto player = makePlayer(audio, presenter, config);
     assert(player.open().ok());
 
-    player.enqueueVideo(runtimeVideo(1, 1, 5ms));
+    discardFramePushResult(player.enqueueVideo(runtimeVideo(1, 1, 5ms)));
     std::this_thread::sleep_for(2ms);
     assert(presenter.presentCount == 0);
 
@@ -433,7 +450,7 @@ void videoOnlyPlaybackUsesMonotonicClockWhenAudioClockIsDisabled()
     auto player = makePlayer(audio, presenter, config);
     assert(player.open().ok());
 
-    player.enqueueVideo(runtimeVideo(1, 1, 5ms));
+    discardFramePushResult(player.enqueueVideo(runtimeVideo(1, 1, 5ms)));
     assert(waitUntil([&presenter]() { return presenter.presentCount == 1; }, 100ms));
 }
 
@@ -446,11 +463,11 @@ void presenterBackpressureWaitsForCompletionBeforeSubmittingNextFrame()
     auto player = makePlayer(audio, presenter);
     assert(player.open().ok());
 
-    player.enqueueVideo(runtimeVideo(1, 1, 100ms));
+    discardFramePushResult(player.enqueueVideo(runtimeVideo(1, 1, 100ms)));
     assert(waitUntil([&presenter]() { return presenter.presentCount == 1; }));
     const auto firstPresentId = presenter.lastId();
 
-    player.enqueueVideo(runtimeVideo(1, 1, 101ms));
+    discardFramePushResult(player.enqueueVideo(runtimeVideo(1, 1, 101ms)));
     std::this_thread::sleep_for(20ms);
     assert(presenter.presentCount == 1);
 
@@ -467,11 +484,11 @@ void presenterBackpressureSeekCancelsWaitingOldGenerationFrame()
     auto player = makePlayer(audio, presenter);
     assert(player.open().ok());
 
-    player.enqueueVideo(runtimeVideo(1, 1, 100ms));
+    discardFramePushResult(player.enqueueVideo(runtimeVideo(1, 1, 100ms)));
     assert(waitUntil([&presenter]() { return presenter.presentCount == 1; }));
     const auto firstPresentId = presenter.lastId();
 
-    player.enqueueVideo(runtimeVideo(1, 1, 101ms));
+    discardFramePushResult(player.enqueueVideo(runtimeVideo(1, 1, 101ms)));
     std::this_thread::sleep_for(20ms);
     assert(presenter.presentCount == 1);
 
@@ -481,7 +498,7 @@ void presenterBackpressureSeekCancelsWaitingOldGenerationFrame()
     assert(presenter.presentCount == 1);
 
     audio.setClock(500ms, 2);
-    player.enqueueVideo(runtimeVideo(1, 2, 500ms));
+    discardFramePushResult(player.enqueueVideo(runtimeVideo(1, 2, 500ms)));
     assert(waitUntil([&presenter]() { return presenter.presentCount == 2; }));
 }
 
@@ -494,8 +511,8 @@ void eofCompletesOnlyAfterAudioAndVideoDrain()
     auto player = makePlayer(audio, presenter, events);
     assert(player.open().ok());
 
-    player.enqueueAudio(runtimeAudio(1, 1, 10ms));
-    player.enqueueVideo(runtimeVideo(1, 1, 100ms));
+    discardFramePushResult(player.enqueueAudio(runtimeAudio(1, 1, 10ms)));
+    discardFramePushResult(player.enqueueVideo(runtimeVideo(1, 1, 100ms)));
     assert(waitUntil([&audio]() { return audio.writeCount == 1; }));
     assert(waitUntil([&presenter]() { return presenter.presentCount == 1; }));
     player.enqueueEndOfStream(1, 1);
@@ -524,7 +541,7 @@ void seekInvalidatesOldGenerationFramesAndCompletions()
     auto player = makePlayer(audio, presenter);
     assert(player.open().ok());
 
-    player.enqueueVideo(runtimeVideo(1, 1, 100ms, media_sdk::PixelFormat::Native));
+    discardFramePushResult(player.enqueueVideo(runtimeVideo(1, 1, 100ms, media_sdk::PixelFormat::Native)));
     assert(waitUntil([&presenter]() { return presenter.presentCount == 1; }));
     const auto oldPresentId = presenter.lastId();
 
@@ -532,11 +549,11 @@ void seekInvalidatesOldGenerationFramesAndCompletions()
     presenter.complete(oldPresentId, media_sdk::runtime::PresentStatus::DeviceLost);
     assert(player.diagnostics().nativeFallbacks == 0);
 
-    player.enqueueVideo(runtimeVideo(1, 1, 500ms));
+    discardFramePushResult(player.enqueueVideo(runtimeVideo(1, 1, 500ms)));
     assert(presenter.presentCount == 1);
 
     audio.setClock(500ms, 2);
-    player.enqueueVideo(runtimeVideo(1, 2, 500ms));
+    discardFramePushResult(player.enqueueVideo(runtimeVideo(1, 2, 500ms)));
     assert(waitUntil([&presenter]() { return presenter.presentCount == 2; }));
 }
 
@@ -554,7 +571,7 @@ void stopAbortsQueuesPausesAudioClearsPresenterAndReturnsIdle()
     assert(presenter.clearCount == 1);
     assert(player.diagnostics().queueAbortCount == 2);
 
-    player.enqueueAudio(runtimeAudio(1, 1, 10ms));
+    discardFramePushResult(player.enqueueAudio(runtimeAudio(1, 1, 10ms)));
     assert(audio.writeCount == 0);
 }
 
@@ -566,7 +583,7 @@ void nativePresenterFailureRunsFullFallbackTransition()
     auto player = makePlayer(audio, presenter);
     assert(player.open().ok());
 
-    player.enqueueVideo(runtimeVideo(1, 1, 100ms, media_sdk::PixelFormat::Native));
+    discardFramePushResult(player.enqueueVideo(runtimeVideo(1, 1, 100ms, media_sdk::PixelFormat::Native)));
     assert(waitUntil([&presenter]() { return presenter.presentCount == 1; }));
 
     presenter.complete(presenter.lastId(), media_sdk::runtime::PresentStatus::DeviceLost);
@@ -578,13 +595,13 @@ void nativePresenterFailureRunsFullFallbackTransition()
     assert(audio.flushCount == 1);
     assert(presenter.clearCount == 1);
 
-    player.enqueueVideo(runtimeVideo(1, 1, 100ms));
+    discardFramePushResult(player.enqueueVideo(runtimeVideo(1, 1, 100ms)));
     std::this_thread::sleep_for(10ms);
     assert(presenter.presentCount == 1);
 
     audio.setClock(100ms, 2);
     player.completeSeek(1, 2);
-    player.enqueueVideo(runtimeVideo(1, 2, 100ms));
+    discardFramePushResult(player.enqueueVideo(runtimeVideo(1, 2, 100ms)));
     assert(waitUntil([&presenter]() { return presenter.presentCount == 2; }));
 }
 
@@ -596,7 +613,7 @@ void nativeDiagnosticsTrackZeroCopySuccessWithoutCpuCopy()
     auto player = makePlayer(audio, presenter);
     assert(player.open().ok());
 
-    player.enqueueVideo(runtimeVideo(1, 1, 100ms, media_sdk::PixelFormat::Native));
+    discardFramePushResult(player.enqueueVideo(runtimeVideo(1, 1, 100ms, media_sdk::PixelFormat::Native)));
     assert(waitUntil([&presenter]() { return presenter.presentCount == 1; }));
     presenter.complete(
         presenter.lastId(),
@@ -633,7 +650,7 @@ void currentGenerationDeviceLostPausesAudioFlushesQueuesClearsPresenterAndReques
     auto player = makePlayer(audio, presenter, events);
     assert(player.open().ok());
 
-    player.enqueueVideo(runtimeVideo(1, 1, 100ms, media_sdk::PixelFormat::Native));
+    discardFramePushResult(player.enqueueVideo(runtimeVideo(1, 1, 100ms, media_sdk::PixelFormat::Native)));
     assert(waitUntil([&presenter]() { return presenter.presentCount == 1; }));
     presenter.complete(presenter.lastId(), media_sdk::runtime::PresentStatus::DeviceLost);
 
@@ -662,7 +679,7 @@ void queuedPresenterResultWithZeroIdTriggersFallback()
     auto player = makePlayer(audio, presenter, events);
     assert(player.open().ok());
 
-    player.enqueueVideo(runtimeVideo(1, 1, 100ms, media_sdk::PixelFormat::Native));
+    discardFramePushResult(player.enqueueVideo(runtimeVideo(1, 1, 100ms, media_sdk::PixelFormat::Native)));
 
     assert(waitUntil([&player]() { return player.diagnostics().nativeFallbacks == 1; }));
     assert(waitUntil([&events]() { return events.fallbackRequestCount == 1; }));
@@ -684,7 +701,7 @@ void oldGenerationDeviceLostDoesNotInterruptCurrentPlayback()
     auto player = makePlayer(audio, presenter, events);
     assert(player.open().ok());
 
-    player.enqueueVideo(runtimeVideo(1, 1, 100ms, media_sdk::PixelFormat::Native));
+    discardFramePushResult(player.enqueueVideo(runtimeVideo(1, 1, 100ms, media_sdk::PixelFormat::Native)));
     assert(waitUntil([&presenter]() { return presenter.presentCount == 1; }));
     const auto oldPresentId = presenter.lastId();
 
@@ -707,19 +724,19 @@ void fallbackSeekCompletionResumesAudioAndVideoScheduling()
     auto player = makePlayer(audio, presenter, events);
     assert(player.open().ok());
 
-    player.enqueueVideo(runtimeVideo(1, 1, 100ms, media_sdk::PixelFormat::Native));
+    discardFramePushResult(player.enqueueVideo(runtimeVideo(1, 1, 100ms, media_sdk::PixelFormat::Native)));
     assert(waitUntil([&presenter]() { return presenter.presentCount == 1; }));
     presenter.complete(presenter.lastId(), media_sdk::runtime::PresentStatus::DeviceLost);
     assert(waitUntil([&events]() { return events.fallbackRequestCount == 1; }));
 
     audio.setClock(100ms, 2);
-    player.enqueueVideo(runtimeVideo(1, 2, 100ms));
+    discardFramePushResult(player.enqueueVideo(runtimeVideo(1, 2, 100ms)));
     std::this_thread::sleep_for(10ms);
     assert(presenter.presentCount == 1);
 
     player.completeSeek(1, 2);
     assert(audio.resumeCount == 2);
-    player.enqueueVideo(runtimeVideo(1, 2, 100ms));
+    discardFramePushResult(player.enqueueVideo(runtimeVideo(1, 2, 100ms)));
     assert(waitUntil([&presenter]() { return presenter.presentCount == 2; }));
 
     const auto diagnostics = player.diagnostics();

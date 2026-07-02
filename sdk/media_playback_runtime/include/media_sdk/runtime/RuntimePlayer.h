@@ -56,8 +56,10 @@ public:
     RuntimePlayer& operator=(const RuntimePlayer&) = delete;
 
     Result<void> open();
-    void enqueueAudio(RuntimeAudioFrame frame);
-    void enqueueVideo(RuntimeVideoFrame frame);
+    [[nodiscard("frame enqueue result tells producers whether runtime accepted, rejected, or cancelled the frame")]]
+    RuntimeFramePushResult enqueueAudio(RuntimeAudioFrame frame);
+    [[nodiscard("frame enqueue result tells producers whether runtime accepted, rejected, or cancelled the frame")]]
+    RuntimeFramePushResult enqueueVideo(RuntimeVideoFrame frame);
     void enqueueEndOfStream(SessionId sessionId, Generation generation);
     void pause();
     void resume();
