@@ -212,14 +212,15 @@ def main() -> None:
         require(token not in decode_worker_cpp,
                 f"DecodeWorker should not emit decoded frames through IEventSink: {token}")
     for token in [
-        "DecodeFramePushDiagnostics",
         "recordFramePushResult",
-        "m_framePushDiagnostics",
+        "m_decodeStats.framePushAccepted",
+        "m_decodeStats.framePushBackpressured",
         "DecodeFramePushStatus::Backpressured",
-        "maxWaitUs",
+        "framePushWaitCount",
+        "framePushMaxWaitUs",
     ]:
         require(token in decode_worker_header + decode_worker_cpp,
-                f"DecodeWorker should record decoded frame push diagnostics token: {token}")
+                f"DecodeWorker should expose decoded frame push diagnostics through decode stats token: {token}")
     require("DemuxerOptions" in demuxer_header and
             "enableHardwareDecode" in demuxer_header and
             "enableHardwareDecode" in demuxer_cpp,

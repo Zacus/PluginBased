@@ -24,6 +24,14 @@ struct DecodePerformanceStats {
     std::int64_t normalizeMaxUs = 0;
     std::int64_t queuedVideoFrames = 0;
     std::int64_t queueDroppedVideoFrames = 0;
+    std::int64_t framePushAccepted = 0;
+    std::int64_t framePushBackpressured = 0;
+    std::int64_t framePushStale = 0;
+    std::int64_t framePushCancelled = 0;
+    std::int64_t framePushClosed = 0;
+    std::int64_t framePushWaitCount = 0;
+    std::int64_t framePushWaitUs = 0;
+    std::int64_t framePushMaxWaitUs = 0;
     int sourcePixelFormat = AV_PIX_FMT_NONE;
     int cpuPixelFormat = AV_PIX_FMT_NONE;
 };
@@ -33,6 +41,7 @@ struct DecodePerformanceReport {
     DecodePerformanceStats stats;
     std::int64_t transferAverageUs = 0;
     std::int64_t normalizeAverageUs = 0;
+    std::int64_t framePushAverageWaitUs = 0;
     std::string sourcePixelFormatName;
     std::string cpuPixelFormatName;
 };

@@ -152,6 +152,11 @@ void testDecodePerformanceCreatesThrottledReportWithoutQt()
     stats.normalizedVideoFrames = 3;
     stats.normalizeTotalUs = 600;
     stats.normalizeMaxUs = 250;
+    stats.framePushAccepted = 5;
+    stats.framePushBackpressured = 2;
+    stats.framePushWaitCount = 2;
+    stats.framePushWaitUs = 90;
+    stats.framePushMaxWaitUs = 60;
     stats.sourcePixelFormat = AV_PIX_FMT_YUV420P;
     stats.cpuPixelFormat = AV_PIX_FMT_RGB24;
 
@@ -162,11 +167,34 @@ void testDecodePerformanceCreatesThrottledReportWithoutQt()
     assert(report.has_value());
     assert(report->decoderName == "software");
     assert(report->stats.decodedVideoFrames == 4);
+    assert(report->stats.framePushAccepted == 5);
+    assert(report->stats.framePushBackpressured == 2);
+    assert(report->stats.framePushWaitCount == 2);
+    assert(report->framePushAverageWaitUs == 45);
+    assert(report->stats.framePushMaxWaitUs == 60);
     assert(report->transferAverageUs == 150);
     assert(report->normalizeAverageUs == 200);
     assert(report->sourcePixelFormatName == "yuv420p");
     assert(report->cpuPixelFormatName == "rgb24");
     assert(logger.stats().decodedVideoFrames == 0);
+    assert(logger.stats().framePushAccepted == 0);
+}
+
+void testDecodePerformanceReportsFramePushOnlyActivity()
+{
+    media_sdk::DecodePerformanceLogger logger(2s);
+    const auto start = std::chrono::steady_clock::time_point {};
+    logger.reset(start);
+    auto& stats = logger.stats();
+    stats.framePushAccepted = 2;
+    stats.framePushStale = 1;
+
+    const auto report = logger.maybeCreateReport("audio-only", start + 2500ms);
+    assert(report.has_value());
+    assert(report->decoderName == "audio-only");
+    assert(report->stats.decodedVideoFrames == 0);
+    assert(report->stats.framePushAccepted == 2);
+    assert(report->stats.framePushStale == 1);
 }
 
 } // namespace
@@ -176,5 +204,6 @@ int main()
     testDemuxerOpensFileAndStreamDecoderReadsFrame();
     testDemuxerReportsMissingFile();
     testDecodePerformanceCreatesThrottledReportWithoutQt();
+    testDecodePerformanceReportsFramePushOnlyActivity();
     return 0;
 }

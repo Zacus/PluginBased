@@ -119,16 +119,6 @@ private:
         std::chrono::milliseconds position { 0 };
     };
 
-    struct DecodeFramePushDiagnostics {
-        std::int64_t accepted = 0;
-        std::int64_t backpressured = 0;
-        std::int64_t stale = 0;
-        std::int64_t cancelled = 0;
-        std::int64_t closed = 0;
-        std::int64_t waitUs = 0;
-        std::int64_t maxWaitUs = 0;
-    };
-
     void run(WorkerStopToken stopToken);
     void submit(Command command);
     bool waitForCommand(WorkerStopToken stopToken, Command& command);
@@ -170,7 +160,6 @@ private:
     StreamDecoder m_streamDecoder;
     VideoFrameProcessor m_videoFrameProcessor;
     DecodePerformanceStats m_decodeStats;
-    DecodeFramePushDiagnostics m_framePushDiagnostics;
     OpenedMedia m_media;
     std::uint64_t m_sessionId = 0;
     std::uint64_t m_generation = 0;

@@ -339,7 +339,6 @@ void DecodeWorker::closeMedia()
     m_hasMedia = false;
     m_playing = false;
     m_decodeStats = {};
-    m_framePushDiagnostics = {};
 }
 
 Result<void> DecodeWorker::decodePacket(AVCodecContext* codecContext,
@@ -459,25 +458,27 @@ bool DecodeWorker::handleFramePushResult(DecodeFramePushResult result)
 void DecodeWorker::recordFramePushResult(DecodeFramePushResult result)
 {
     const auto waitUs = result.waitTime.count();
-    m_framePushDiagnostics.waitUs += waitUs;
-    m_framePushDiagnostics.maxWaitUs = std::max(m_framePushDiagnostics.maxWaitUs, waitUs);
+    if (waitUs > 0)
+        ++m_decodeStats.framePushWaitCount;
+    m_decodeStats.framePushWaitUs += waitUs;
+    m_decodeStats.framePushMaxWaitUs = std::max(m_decodeStats.framePushMaxWaitUs, waitUs);
 
     switch (result.status)
     {
     case DecodeFramePushStatus::Accepted:
-        ++m_framePushDiagnostics.accepted;
+        ++m_decodeStats.framePushAccepted;
         break;
     case DecodeFramePushStatus::Backpressured:
-        ++m_framePushDiagnostics.backpressured;
+        ++m_decodeStats.framePushBackpressured;
         break;
     case DecodeFramePushStatus::StaleGeneration:
-        ++m_framePushDiagnostics.stale;
+        ++m_decodeStats.framePushStale;
         break;
     case DecodeFramePushStatus::Cancelled:
-        ++m_framePushDiagnostics.cancelled;
+        ++m_decodeStats.framePushCancelled;
         break;
     case DecodeFramePushStatus::Closed:
-        ++m_framePushDiagnostics.closed;
+        ++m_decodeStats.framePushClosed;
         break;
     }
 }

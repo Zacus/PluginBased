@@ -17,6 +17,20 @@ std::int64_t averageUs(std::int64_t totalUs, std::int64_t count)
     return count > 0 ? totalUs / count : 0;
 }
 
+std::int64_t framePushCount(const DecodePerformanceStats& stats)
+{
+    return stats.framePushAccepted
+        + stats.framePushBackpressured
+        + stats.framePushStale
+        + stats.framePushCancelled
+        + stats.framePushClosed;
+}
+
+bool hasReportableActivity(const DecodePerformanceStats& stats)
+{
+    return stats.decodedVideoFrames > 0 || framePushCount(stats) > 0;
+}
+
 } // namespace
 
 DecodePerformanceLogger::DecodePerformanceLogger(std::chrono::milliseconds interval)
@@ -36,7 +50,7 @@ std::optional<DecodePerformanceReport> DecodePerformanceLogger::maybeCreateRepor
 {
     if (now - m_lastReport < m_interval)
         return std::nullopt;
-    if (m_stats.decodedVideoFrames <= 0)
+    if (!hasReportableActivity(m_stats))
     {
         m_lastReport = now;
         return std::nullopt;
@@ -47,6 +61,9 @@ std::optional<DecodePerformanceReport> DecodePerformanceLogger::maybeCreateRepor
     report.stats = m_stats;
     report.transferAverageUs = averageUs(m_stats.transferTotalUs, m_stats.transferredVideoFrames);
     report.normalizeAverageUs = averageUs(m_stats.normalizeTotalUs, m_stats.normalizedVideoFrames);
+    report.framePushAverageWaitUs = averageUs(
+        m_stats.framePushWaitUs,
+        m_stats.framePushWaitCount);
     report.sourcePixelFormatName = pixelFormatName(m_stats.sourcePixelFormat);
     report.cpuPixelFormatName = pixelFormatName(m_stats.cpuPixelFormat);
 
