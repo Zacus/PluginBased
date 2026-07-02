@@ -14,6 +14,7 @@ class IEventSink
 {
 public:
     virtual ~IEventSink() = default;
+    // control events only; decoded audio/video frames use IDecodeFrameSink.
     virtual void onEvent(const PlayerEvent& event) = 0;
 };
 

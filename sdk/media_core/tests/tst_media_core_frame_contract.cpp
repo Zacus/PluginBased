@@ -1,4 +1,5 @@
 #include "media_sdk/Frame.h"
+#include "media_sdk/DecodeFrameSink.h"
 #include "media_sdk/MediaEvents.h"
 
 #include <cassert>
@@ -26,6 +27,38 @@ struct StorageProbe {
     }
 
     bool& destroyed;
+};
+
+class RecordingFrameSink final : public media_sdk::IDecodeFrameSink {
+public:
+    media_sdk::DecodeFramePushResult pushAudio(
+        media_sdk::AudioFrame frame,
+        media_sdk::DecodeFrameMetadata metadata) override
+    {
+        ++audioCount;
+        lastSessionId = metadata.sessionId;
+        lastGeneration = metadata.generation;
+        lastAudioPts = frame.pts();
+        return { .status = media_sdk::DecodeFramePushStatus::Accepted };
+    }
+
+    media_sdk::DecodeFramePushResult pushVideo(
+        media_sdk::VideoFrame frame,
+        media_sdk::DecodeFrameMetadata metadata) override
+    {
+        ++videoCount;
+        lastSessionId = metadata.sessionId;
+        lastGeneration = metadata.generation;
+        lastVideoPts = frame.pts();
+        return { .status = media_sdk::DecodeFramePushStatus::Accepted };
+    }
+
+    int audioCount = 0;
+    int videoCount = 0;
+    std::uint64_t lastSessionId = 0;
+    std::uint64_t lastGeneration = 0;
+    std::chrono::microseconds lastAudioPts { 0 };
+    std::chrono::microseconds lastVideoPts { 0 };
 };
 
 void testVideoFrameMetadataAndStorage()
@@ -177,6 +210,28 @@ void testAudioFrameCanOwnMovedSamples()
     assert(frame.samples()[3] == std::byte { 0x04 });
 }
 
+void testDecodeFrameSinkContract()
+{
+    RecordingFrameSink sink;
+    auto audio = media_sdk::AudioFrame::fromOwnedSamples(
+        media_sdk::AudioSampleFormat::Float32Interleaved,
+        48'000,
+        2,
+        1'000us,
+        std::vector<std::byte> {});
+
+    const auto result = sink.pushAudio(std::move(audio), {
+        .sessionId = 7,
+        .generation = 3,
+    });
+
+    assert(result.status == media_sdk::DecodeFramePushStatus::Accepted);
+    assert(sink.audioCount == 1);
+    assert(sink.lastSessionId == 7);
+    assert(sink.lastGeneration == 3);
+    assert(sink.lastAudioPts == 1'000us);
+}
+
 }
 
 int main()
@@ -185,5 +240,6 @@ int main()
     testNativeHandleMetadata();
     testAudioFrameAndEvents();
     testAudioFrameCanOwnMovedSamples();
+    testDecodeFrameSinkContract();
     return 0;
 }

@@ -87,9 +87,18 @@ def main() -> None:
         "[[nodiscard",
         "Result<void> open(const std::filesystem::path& path)",
         "Result<void> seek(std::chrono::milliseconds position)",
+        "control",
     ]:
         require(token in player_header,
                 f"Player.h should mark fallible SDK operations nodiscard token: {token}")
+
+    decode_frame_sink_header = PUBLIC_INCLUDE / "DecodeFrameSink.h"
+    require(decode_frame_sink_header.exists(),
+            "DecodeFrameSink.h should define the dedicated decoded frame data channel")
+    decode_frame_sink_text = read(decode_frame_sink_header)
+    for token in ["class IDecodeFrameSink", "DecodeFramePushStatus", "DecodeFramePushResult"]:
+        require(token in decode_frame_sink_text,
+                f"DecodeFrameSink.h should expose frame channel contract token: {token}")
 
     frame_header = read(PUBLIC_INCLUDE / "Frame.h")
     for token in ["PlaneView", "NativeHandle", "VideoFrame", "AudioFrame",
