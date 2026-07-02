@@ -1,5 +1,6 @@
 #pragma once
 
+#include "media_sdk/DecodeFrameSink.h"
 #include "media_sdk/MediaEvents.h"
 #include "media_sdk/PlayerConfig.h"
 #include "media_sdk/Result.h"
@@ -21,7 +22,7 @@ public:
 class Player
 {
 public:
-    explicit Player(PlayerConfig config, IEventSink& events);
+    explicit Player(PlayerConfig config, IEventSink& events, IDecodeFrameSink& frames);
     ~Player();
 
     Player(const Player&) = delete;

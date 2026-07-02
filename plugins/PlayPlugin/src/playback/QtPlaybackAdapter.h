@@ -5,6 +5,7 @@
 // Qt object thread; data events use PlaybackDataBridge off the GUI thread.
 
 #include "common/FrameQueue.h"
+#include "media_sdk/DecodeFrameSink.h"
 #include "media_sdk/Player.h"
 #include "playback/PlaybackDataBridge.h"
 #include "playback/PendingSeekRequests.h"
@@ -14,7 +15,10 @@
 
 #include <memory>
 
-class QtPlaybackAdapter final : public QObject, public media_sdk::IEventSink
+class QtPlaybackAdapter final
+    : public QObject
+    , public media_sdk::IEventSink
+    , public media_sdk::IDecodeFrameSink
 {
     Q_OBJECT
 
@@ -43,6 +47,12 @@ signals:
 
 private:
     void onEvent(const media_sdk::PlayerEvent& event) override;
+    media_sdk::DecodeFramePushResult pushAudio(
+        media_sdk::AudioFrame frame,
+        media_sdk::DecodeFrameMetadata metadata) override;
+    media_sdk::DecodeFramePushResult pushVideo(
+        media_sdk::VideoFrame frame,
+        media_sdk::DecodeFrameMetadata metadata) override;
 
     bool handleDataEvent(const media_sdk::PlayerEvent& event);
     void handleEvent(const media_sdk::PlayerEvent& event);

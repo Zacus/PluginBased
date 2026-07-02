@@ -167,6 +167,24 @@ void QtPlaybackAdapter::onEvent(const media_sdk::PlayerEvent& event)
                               Qt::QueuedConnection);
 }
 
+media_sdk::DecodeFramePushResult QtPlaybackAdapter::pushAudio(
+    media_sdk::AudioFrame frame,
+    media_sdk::DecodeFrameMetadata metadata)
+{
+    Q_UNUSED(frame);
+    Q_UNUSED(metadata);
+    return { .status = media_sdk::DecodeFramePushStatus::Closed };
+}
+
+media_sdk::DecodeFramePushResult QtPlaybackAdapter::pushVideo(
+    media_sdk::VideoFrame frame,
+    media_sdk::DecodeFrameMetadata metadata)
+{
+    Q_UNUSED(frame);
+    Q_UNUSED(metadata);
+    return { .status = media_sdk::DecodeFramePushStatus::Closed };
+}
+
 bool QtPlaybackAdapter::handleDataEvent(const media_sdk::PlayerEvent& event)
 {
     if (const auto* payload = std::get_if<media_sdk::MediaInfoEvent>(&event.payload))
@@ -274,7 +292,7 @@ void QtPlaybackAdapter::resetPlayer()
 {
     if (m_player)
         m_player->stop();
-    m_player = std::make_unique<media_sdk::Player>(m_config, *this);
+    m_player = std::make_unique<media_sdk::Player>(m_config, *this, *this);
 }
 
 AVFramePtr QtPlaybackAdapter::makeAudioFrame(const media_sdk::AudioFrame& frame) const

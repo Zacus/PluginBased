@@ -192,6 +192,24 @@ void SdkPlaybackAdapter::onEvent(const media_sdk::PlayerEvent& event)
                               Qt::QueuedConnection);
 }
 
+media_sdk::DecodeFramePushResult SdkPlaybackAdapter::pushAudio(
+    media_sdk::AudioFrame frame,
+    media_sdk::DecodeFrameMetadata metadata)
+{
+    Q_UNUSED(frame);
+    Q_UNUSED(metadata);
+    return { .status = media_sdk::DecodeFramePushStatus::Closed };
+}
+
+media_sdk::DecodeFramePushResult SdkPlaybackAdapter::pushVideo(
+    media_sdk::VideoFrame frame,
+    media_sdk::DecodeFrameMetadata metadata)
+{
+    Q_UNUSED(frame);
+    Q_UNUSED(metadata);
+    return { .status = media_sdk::DecodeFramePushStatus::Closed };
+}
+
 void SdkPlaybackAdapter::onFallbackToCpuRequested(
     media_sdk::runtime::RuntimeFallbackAction action)
 {
@@ -358,7 +376,7 @@ void SdkPlaybackAdapter::resetPlayer(bool preferNativeVideoFrames)
     if (m_player)
         m_player->stop();
     m_config.preferNativeVideoFrames = preferNativeVideoFrames;
-    m_player = std::make_unique<media_sdk::Player>(m_config, *this);
+    m_player = std::make_unique<media_sdk::Player>(m_config, *this, *this);
 }
 
 bool SdkPlaybackAdapter::openCorePlayer(const std::filesystem::path& path)

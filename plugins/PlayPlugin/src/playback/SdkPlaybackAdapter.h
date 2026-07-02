@@ -1,5 +1,6 @@
 #pragma once
 
+#include "media_sdk/DecodeFrameSink.h"
 #include "media_sdk/Player.h"
 #include "media_sdk/runtime/RuntimePlayer.h"
 #include "playback/PendingSeekRequests.h"
@@ -16,6 +17,7 @@
 class SdkPlaybackAdapter final
     : public QObject
     , public media_sdk::IEventSink
+    , public media_sdk::IDecodeFrameSink
     , public media_sdk::runtime::IRuntimePlayerEvents
 {
     Q_OBJECT
@@ -59,6 +61,12 @@ private:
     };
 
     void onEvent(const media_sdk::PlayerEvent& event) override;
+    media_sdk::DecodeFramePushResult pushAudio(
+        media_sdk::AudioFrame frame,
+        media_sdk::DecodeFrameMetadata metadata) override;
+    media_sdk::DecodeFramePushResult pushVideo(
+        media_sdk::VideoFrame frame,
+        media_sdk::DecodeFrameMetadata metadata) override;
     void onFallbackToCpuRequested(media_sdk::runtime::RuntimeFallbackAction action) override;
     void onEndOfStreamPresented(media_sdk::runtime::RuntimeTimeline timeline) override;
 

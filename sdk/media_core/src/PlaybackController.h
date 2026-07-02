@@ -1,6 +1,7 @@
 #pragma once
 
 #include "DecodeWorker.h"
+#include "media_sdk/DecodeFrameSink.h"
 #include "media_sdk/PlayerConfig.h"
 #include "media_sdk/Result.h"
 
@@ -12,7 +13,7 @@ namespace media_sdk {
 class PlaybackController
 {
 public:
-    PlaybackController(PlayerConfig config, IEventSink& events);
+    PlaybackController(PlayerConfig config, IEventSink& events, IDecodeFrameSink& frames);
     ~PlaybackController();
 
     PlaybackController(const PlaybackController&) = delete;

@@ -3,6 +3,7 @@
 #include "Demuxer.h"
 #include "StreamDecoder.h"
 #include "VideoFrameProcessor.h"
+#include "media_sdk/DecodeFrameSink.h"
 #include "media_sdk/Player.h"
 
 #include <chrono>
@@ -91,7 +92,7 @@ private:
 class DecodeWorker
 {
 public:
-    DecodeWorker(PlayerConfig config, IEventSink& events);
+    DecodeWorker(PlayerConfig config, IEventSink& events, IDecodeFrameSink& frames);
     ~DecodeWorker();
 
     DecodeWorker(const DecodeWorker&) = delete;
@@ -144,6 +145,7 @@ private:
 
     PlayerConfig m_config;
     IEventSink& m_events;
+    IDecodeFrameSink& m_frames;
     std::unique_ptr<WorkerThread> m_thread;
 
     mutable std::mutex m_mutex;

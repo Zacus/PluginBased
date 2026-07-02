@@ -1,4 +1,5 @@
 #include "media_sdk/Player.h"
+#include "media_sdk/DecodeFrameSink.h"
 
 #include <algorithm>
 #include <cassert>
@@ -139,6 +140,54 @@ private:
     bool m_audioFrameBlocked = false;
 };
 
+class RecordingFrameSink final : public media_sdk::IDecodeFrameSink {
+public:
+    media_sdk::DecodeFramePushResult pushAudio(
+        media_sdk::AudioFrame frame,
+        media_sdk::DecodeFrameMetadata metadata) override
+    {
+        std::scoped_lock lock(m_mutex);
+        ++m_audioFrames;
+        m_lastSessionId = metadata.sessionId;
+        m_lastGeneration = metadata.generation;
+        m_lastAudioPts = frame.pts();
+        return { .status = media_sdk::DecodeFramePushStatus::Accepted };
+    }
+
+    media_sdk::DecodeFramePushResult pushVideo(
+        media_sdk::VideoFrame frame,
+        media_sdk::DecodeFrameMetadata metadata) override
+    {
+        std::scoped_lock lock(m_mutex);
+        ++m_videoFrames;
+        m_lastSessionId = metadata.sessionId;
+        m_lastGeneration = metadata.generation;
+        m_lastVideoPts = frame.pts();
+        return { .status = media_sdk::DecodeFramePushStatus::Accepted };
+    }
+
+    int audioFrames() const
+    {
+        std::scoped_lock lock(m_mutex);
+        return m_audioFrames;
+    }
+
+    int videoFrames() const
+    {
+        std::scoped_lock lock(m_mutex);
+        return m_videoFrames;
+    }
+
+private:
+    mutable std::mutex m_mutex;
+    int m_audioFrames = 0;
+    int m_videoFrames = 0;
+    std::uint64_t m_lastSessionId = 0;
+    std::uint64_t m_lastGeneration = 0;
+    std::chrono::microseconds m_lastAudioPts { 0 };
+    std::chrono::microseconds m_lastVideoPts { 0 };
+};
+
 bool hasState(const media_sdk::PlayerEvent& event, media_sdk::PlayerState state)
 {
     if (const auto* payload = std::get_if<media_sdk::StateChangedEvent>(&event.payload))
@@ -197,7 +246,8 @@ void testOpenPlayReachesEof()
 {
     const auto samplePath = writeTinyWav();
     RecordingSink sink;
-    media_sdk::Player player({}, sink);
+    RecordingFrameSink frames;
+    media_sdk::Player player({}, sink, frames);
 
     assert(player.open(samplePath).ok());
     assert(sink.waitFor(hasMediaInfo));
@@ -228,7 +278,8 @@ void testSeekEmitsPositionAndContinuesPlayback()
 {
     const auto samplePath = writeTinyWav();
     RecordingSink sink;
-    media_sdk::Player player({}, sink);
+    RecordingFrameSink frames;
+    media_sdk::Player player({}, sink, frames);
 
     assert(player.open(samplePath).ok());
     assert(sink.waitFor(hasMediaInfo));
@@ -277,7 +328,8 @@ void testBurstSeekCoalescesQueuedRequestsBeforeDecodeResumes()
 {
     const auto samplePath = writeTinyWav();
     RecordingSink sink;
-    media_sdk::Player player({}, sink);
+    RecordingFrameSink frames;
+    media_sdk::Player player({}, sink, frames);
 
     assert(player.open(samplePath).ok());
     assert(sink.waitFor(hasMediaInfo));
@@ -320,7 +372,8 @@ void testStopEmitsStoppedState()
 {
     const auto samplePath = writeTinyWav();
     RecordingSink sink;
-    media_sdk::Player player({}, sink);
+    RecordingFrameSink frames;
+    media_sdk::Player player({}, sink, frames);
 
     assert(player.open(samplePath).ok());
     assert(sink.waitFor(hasMediaInfo));

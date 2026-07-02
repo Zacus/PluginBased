@@ -60,9 +60,10 @@ std::vector<std::byte> makeInterleavedAudioSamples(const AVFrame* frame, AVSampl
 
 } // namespace
 
-DecodeWorker::DecodeWorker(PlayerConfig config, IEventSink& events)
+DecodeWorker::DecodeWorker(PlayerConfig config, IEventSink& events, IDecodeFrameSink& frames)
     : m_config(std::move(config))
     , m_events(events)
+    , m_frames(frames)
 {
     m_thread = std::make_unique<WorkerThread>([this](WorkerStopToken stopToken) {
         run(stopToken);

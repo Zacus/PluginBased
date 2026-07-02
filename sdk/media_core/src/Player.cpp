@@ -9,16 +9,16 @@ namespace media_sdk {
 class Player::Impl
 {
 public:
-    Impl(PlayerConfig config, IEventSink& events)
-        : controller(std::move(config), events)
+    Impl(PlayerConfig config, IEventSink& events, IDecodeFrameSink& frames)
+        : controller(std::move(config), events, frames)
     {
     }
 
     PlaybackController controller;
 };
 
-Player::Player(PlayerConfig config, IEventSink& events)
-    : m_impl(std::make_unique<Impl>(std::move(config), events))
+Player::Player(PlayerConfig config, IEventSink& events, IDecodeFrameSink& frames)
+    : m_impl(std::make_unique<Impl>(std::move(config), events, frames))
 {
 }
 

@@ -4,8 +4,8 @@
 
 namespace media_sdk {
 
-PlaybackController::PlaybackController(PlayerConfig config, IEventSink& events)
-    : m_worker(std::move(config), events)
+PlaybackController::PlaybackController(PlayerConfig config, IEventSink& events, IDecodeFrameSink& frames)
+    : m_worker(std::move(config), events, frames)
 {
 }
 
