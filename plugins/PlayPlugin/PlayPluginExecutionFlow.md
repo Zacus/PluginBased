@@ -139,7 +139,7 @@ sequenceDiagram
 7. 媒体信息通过 `IEventSink` 发出，adapter 回到 Qt 线程后触发 `mediaInfoReady`。
 8. `PlayerEngine::onMediaInfoReady()` 更新 `duration`、`MediaInfo`，并通知管线启动音频/视频渲染器。
 
-## 6. SDK 解码与事件输出
+## 6. SDK 解码与输出通道
 
 SDK worker 的主循环负责：
 
@@ -147,8 +147,8 @@ SDK worker 的主循环负责：
 2. 暂停时阻塞等待新命令，避免忙等。
 3. seek 时执行 FFmpeg seek、flush codec buffers、递增 generation，并在 worker 完成后发出 `SeekCompletedEvent`。
 4. 读取 packet 并分发到音频或视频 codec。
-5. 解码后的音频帧包装为 SDK `AudioFrameEvent`。
-6. 解码后的视频帧经过 SDK `VideoFrameProcessor`，生成 `VideoFrameEvent`。
+5. 解码后的音频帧通过 `IDecodeFrameSink::pushAudio()` 进入独立帧数据通道。
+6. 解码后的视频帧经过 SDK `VideoFrameProcessor`，通过 `IDecodeFrameSink::pushVideo()` 进入独立帧数据通道。
 7. EOF 时发出当前 generation 的 drain marker，Qt data bridge 只能在同一 generation 已接受帧之后交付 EOF。
 
 队列策略：
@@ -163,11 +163,11 @@ SDK worker 的主循环负责：
 
 - SDK event 从 worker 线程进入 `onEvent()`。
 - control event 使用 `QMetaObject::invokeMethod(..., Qt::QueuedConnection)` 投递到 Qt 线程。
-- audio/video frame event 和 EOF 进入非 GUI 的 data bridge，由 data bridge 负责可取消背压、generation 过滤和 drain 顺序。
+- audio/video frame sink 和 EOF 进入非 GUI 的 data bridge，由 data bridge 负责可取消背压、generation 过滤和 drain 顺序。
 - `SeekCompletedEvent` 在 SDK 回调路径先恢复 data bridge 的新 generation，再 queued 到 Qt 线程完成 UI seek 映射。
 - `MediaInfoEvent` 转为 `mediaInfoReady(...)` Qt 信号。
-- `AudioFrameEvent` 转为 `AVFramePtr`，按当前 generation 写入 `AudioFrameQueue`。
-- `VideoFrameEvent` 转为 `AVFramePtr`，按当前 generation 写入 `VideoFrameQueue`。
+- `pushAudio()` 转为 `AVFramePtr`，按当前 generation 写入 `AudioFrameQueue`。
+- `pushVideo()` 转为 `AVFramePtr`，按当前 generation 写入 `VideoFrameQueue`。
 - `EndOfFileEvent` 作为 drain marker 进入同一条数据通道，再发出 `endOfFile()`。
 - `ErrorEvent` 转为 `errorOccurred(QString)`。
 - data bridge 在 EOF 或 stop/cancel 时输出每个 session/generation 的 accepted、stale、EOF 和 abort 计数汇总。

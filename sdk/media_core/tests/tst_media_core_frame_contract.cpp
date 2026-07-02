@@ -134,7 +134,7 @@ void testNativeHandleMetadata()
     assert(frame.nativeHandle().pixelFormat == 875704438);
 }
 
-void testAudioFrameAndEvents()
+void testAudioFrameAndControlEvents()
 {
     std::vector<std::byte> samples(128);
     media_sdk::AudioFrame frame({
@@ -152,14 +152,6 @@ void testAudioFrameAndEvents()
     assert(frame.pts() == 15'000us);
     assert(frame.samples().size() == samples.size());
 
-    media_sdk::PlayerEvent videoEvent {
-        .metadata = { .sessionId = 7, .generation = 3 },
-        .payload = media_sdk::VideoFrameEvent { media_sdk::VideoFrame {} }
-    };
-    media_sdk::PlayerEvent audioEvent {
-        .metadata = { .sessionId = 7, .generation = 3 },
-        .payload = media_sdk::AudioFrameEvent { media_sdk::AudioFrame {} }
-    };
     media_sdk::PlayerEvent mediaInfoEvent {
         .metadata = { .sessionId = 7, .generation = 3 },
         .payload = media_sdk::MediaInfoEvent {
@@ -171,12 +163,6 @@ void testAudioFrameAndEvents()
         }
     };
 
-    assert(videoEvent.metadata.sessionId == 7);
-    assert(videoEvent.metadata.generation == 3);
-    assert(std::holds_alternative<media_sdk::VideoFrameEvent>(videoEvent.payload));
-    assert(audioEvent.metadata.sessionId == 7);
-    assert(audioEvent.metadata.generation == 3);
-    assert(std::holds_alternative<media_sdk::AudioFrameEvent>(audioEvent.payload));
     assert(mediaInfoEvent.metadata.sessionId == 7);
     assert(mediaInfoEvent.metadata.generation == 3);
     const auto& mediaInfo = std::get<media_sdk::MediaInfoEvent>(mediaInfoEvent.payload).info;
@@ -238,7 +224,7 @@ int main()
 {
     testVideoFrameMetadataAndStorage();
     testNativeHandleMetadata();
-    testAudioFrameAndEvents();
+    testAudioFrameAndControlEvents();
     testAudioFrameCanOwnMovedSamples();
     testDecodeFrameSinkContract();
     return 0;

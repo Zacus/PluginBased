@@ -1,7 +1,6 @@
 #pragma once
 
 #include "media_sdk/Error.h"
-#include "media_sdk/Frame.h"
 
 #include <chrono>
 #include <cstdint>
@@ -45,14 +44,6 @@ struct SeekCompletedEvent {
     std::chrono::milliseconds position { 0 };
 };
 
-struct AudioFrameEvent {
-    AudioFrame frame;
-};
-
-struct VideoFrameEvent {
-    VideoFrame frame;
-};
-
 struct ErrorEvent {
     MediaError error;
 };
@@ -70,8 +61,6 @@ using PlayerEventPayload = std::variant<
     StateChangedEvent,
     PositionChangedEvent,
     SeekCompletedEvent,
-    AudioFrameEvent,
-    VideoFrameEvent,
     ErrorEvent,
     EndOfFileEvent>;
 

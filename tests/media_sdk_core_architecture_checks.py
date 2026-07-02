@@ -106,11 +106,14 @@ def main() -> None:
         require(token in frame_header,
                 f"Frame.h should expose the phase 3 frame contract token: {token}")
 
-    media_events_header = read(PUBLIC_INCLUDE / "MediaEvents.h")
-    for token in ["MediaInfo", "channelLayoutMask", "PositionChangedEvent", "AudioFrameEvent",
-                  "VideoFrameEvent", "EndOfFileEvent"]:
+    media_events_path = PUBLIC_INCLUDE / "MediaEvents.h"
+    media_events_header = read(media_events_path)
+    for token in ["MediaInfo", "channelLayoutMask", "PositionChangedEvent", "EndOfFileEvent"]:
         require(token in media_events_header,
                 f"MediaEvents.h should expose the phase 3 event token: {token}")
+    for forbidden in ("AudioFrameEvent", "VideoFrameEvent"):
+        require(forbidden not in media_events_header,
+                f"MediaEvents.h must not expose frame payload {forbidden}")
 
     phase4_sources = [
         SDK_ROOT / "src" / "FFmpegUtils.h",

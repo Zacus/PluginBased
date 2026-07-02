@@ -171,18 +171,28 @@ media_sdk::DecodeFramePushResult QtPlaybackAdapter::pushAudio(
     media_sdk::AudioFrame frame,
     media_sdk::DecodeFrameMetadata metadata)
 {
-    Q_UNUSED(frame);
-    Q_UNUSED(metadata);
-    return { .status = media_sdk::DecodeFramePushStatus::Closed };
+    auto avFrame = makeAudioFrame(frame);
+    if (!avFrame)
+        return { .status = media_sdk::DecodeFramePushStatus::Closed };
+
+    if (!m_dataBridge.pushAudio(std::move(avFrame), metadata.sessionId, metadata.generation))
+        return { .status = media_sdk::DecodeFramePushStatus::StaleGeneration };
+
+    return { .status = media_sdk::DecodeFramePushStatus::Accepted };
 }
 
 media_sdk::DecodeFramePushResult QtPlaybackAdapter::pushVideo(
     media_sdk::VideoFrame frame,
     media_sdk::DecodeFrameMetadata metadata)
 {
-    Q_UNUSED(frame);
-    Q_UNUSED(metadata);
-    return { .status = media_sdk::DecodeFramePushStatus::Closed };
+    auto avFrame = makeVideoFrame(frame);
+    if (!avFrame)
+        return { .status = media_sdk::DecodeFramePushStatus::Closed };
+
+    if (!m_dataBridge.pushVideo(std::move(avFrame), metadata.sessionId, metadata.generation))
+        return { .status = media_sdk::DecodeFramePushStatus::StaleGeneration };
+
+    return { .status = media_sdk::DecodeFramePushStatus::Accepted };
 }
 
 bool QtPlaybackAdapter::handleDataEvent(const media_sdk::PlayerEvent& event)
@@ -203,26 +213,6 @@ bool QtPlaybackAdapter::handleDataEvent(const media_sdk::PlayerEvent& event)
     {
         m_dataBridge.setGeneration(event.metadata.sessionId, event.metadata.generation);
         return false;
-    }
-
-    if (const auto* payload = std::get_if<media_sdk::AudioFrameEvent>(&event.payload))
-    {
-        auto frame = makeAudioFrame(payload->frame);
-        if (frame && !m_dataBridge.pushAudio(std::move(frame),
-                                             event.metadata.sessionId,
-                                             event.metadata.generation))
-            LOG_DEBUG("QtPlaybackAdapter: rejected audio frame for stale or cancelled generation");
-        return true;
-    }
-
-    if (const auto* payload = std::get_if<media_sdk::VideoFrameEvent>(&event.payload))
-    {
-        auto frame = makeVideoFrame(payload->frame);
-        if (frame && !m_dataBridge.pushVideo(std::move(frame),
-                                             event.metadata.sessionId,
-                                             event.metadata.generation))
-            LOG_DEBUG("QtPlaybackAdapter: rejected video frame for stale or cancelled generation");
-        return true;
     }
 
     if (std::holds_alternative<media_sdk::EndOfFileEvent>(event.payload))

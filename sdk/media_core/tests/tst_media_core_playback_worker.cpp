@@ -75,26 +75,11 @@ class RecordingSink final : public media_sdk::IEventSink
 public:
     void onEvent(const media_sdk::PlayerEvent& event) override
     {
-        bool shouldBlockAudioFrame = false;
         {
             std::scoped_lock lock(m_mutex);
             m_events.push_back(event);
-            if (std::holds_alternative<media_sdk::AudioFrameEvent>(event.payload))
-                ++m_audioFrameEvents;
-            if (std::holds_alternative<media_sdk::VideoFrameEvent>(event.payload))
-                ++m_videoFrameEvents;
-            shouldBlockAudioFrame = m_blockAudioFrames
-                && std::holds_alternative<media_sdk::AudioFrameEvent>(event.payload);
-            if (shouldBlockAudioFrame)
-                m_audioFrameBlocked = true;
         }
         m_cv.notify_all();
-
-        if (shouldBlockAudioFrame)
-        {
-            std::unique_lock lock(m_mutex);
-            m_cv.wait(lock, [&]() { return !m_blockAudioFrames; });
-        }
     }
 
     template<typename Predicate>
@@ -106,56 +91,16 @@ public:
         });
     }
 
-    int audioFrameEvents() const
-    {
-        std::scoped_lock lock(m_mutex);
-        return m_audioFrameEvents;
-    }
-
-    int videoFrameEvents() const
-    {
-        std::scoped_lock lock(m_mutex);
-        return m_videoFrameEvents;
-    }
-
     std::vector<media_sdk::PlayerEvent> snapshot() const
     {
         std::scoped_lock lock(m_mutex);
         return m_events;
     }
 
-    void blockAudioFrames()
-    {
-        std::scoped_lock lock(m_mutex);
-        m_blockAudioFrames = true;
-        m_audioFrameBlocked = false;
-    }
-
-    bool waitForBlockedAudioFrame(std::chrono::milliseconds timeout = 3s)
-    {
-        std::unique_lock lock(m_mutex);
-        return m_cv.wait_for(lock, timeout, [&]() {
-            return m_audioFrameBlocked;
-        });
-    }
-
-    void releaseAudioFrames()
-    {
-        {
-            std::scoped_lock lock(m_mutex);
-            m_blockAudioFrames = false;
-        }
-        m_cv.notify_all();
-    }
-
 private:
     mutable std::mutex m_mutex;
     std::condition_variable m_cv;
     std::vector<media_sdk::PlayerEvent> m_events;
-    int m_audioFrameEvents = 0;
-    int m_videoFrameEvents = 0;
-    bool m_blockAudioFrames = false;
-    bool m_audioFrameBlocked = false;
 };
 
 class RecordingFrameSink final : public media_sdk::IDecodeFrameSink {
@@ -270,11 +215,6 @@ bool hasMediaInfo(const media_sdk::PlayerEvent& event)
     return std::holds_alternative<media_sdk::MediaInfoEvent>(event.payload);
 }
 
-bool hasAudioFrame(const media_sdk::PlayerEvent& event)
-{
-    return std::holds_alternative<media_sdk::AudioFrameEvent>(event.payload);
-}
-
 bool hasEof(const media_sdk::PlayerEvent& event)
 {
     return std::holds_alternative<media_sdk::EndOfFileEvent>(event.payload);
@@ -324,8 +264,6 @@ void testOpenPlayReachesEof()
     player.play();
 
     assert(frames.waitForAudioFrame());
-    assert(sink.audioFrameEvents() == 0);
-    assert(sink.videoFrameEvents() == 0);
     assert(sink.waitFor(hasEof));
     assert(sink.waitFor([](const media_sdk::PlayerEvent& event) {
         return hasState(event, media_sdk::PlayerState::Finished);
@@ -370,8 +308,6 @@ void testSeekEmitsPositionAndContinuesPlayback()
         return hasPositionAtOrAfter(event, 100ms);
     }));
     assert(frames.waitForAudioFrame());
-    assert(sink.audioFrameEvents() == 0);
-    assert(sink.videoFrameEvents() == 0);
 
     const auto events = sink.snapshot();
     const auto* mediaInfo = firstEventMatching(events, hasMediaInfo);

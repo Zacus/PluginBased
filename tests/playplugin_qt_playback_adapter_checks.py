@@ -80,8 +80,13 @@ def main() -> None:
                             adapter_cpp.find("PositionChangedEvent")]
     require("m_dataBridge.finish" in adapter_cpp and ".flush()" not in eof_block,
             "QtPlaybackAdapter should route EOF through the data bridge without flushing queues")
-    require("AudioFrameEvent" in adapter_cpp and "VideoFrameEvent" in adapter_cpp,
-            "QtPlaybackAdapter should handle SDK audio and video frame events")
+    for path in (
+        "plugins/PlayPlugin/src/playback/SdkPlaybackAdapter.cpp",
+        "plugins/PlayPlugin/src/playback/QtPlaybackAdapter.cpp",
+    ):
+        text = read(path)
+        require("AudioFrameEvent" not in text and "VideoFrameEvent" not in text,
+                f"{path} must not depend on frame events")
     require("int videoRowBytes(media_sdk::PixelFormat format, int width)" in adapter_cpp and
             "return width;" in adapter_cpp and
             "(width + 1) / 2" not in adapter_cpp[adapter_cpp.find("int videoRowBytes"):
