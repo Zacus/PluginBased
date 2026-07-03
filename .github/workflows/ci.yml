@@ -35,27 +35,51 @@ jobs:
           repository: microsoft/vcpkg
           path: vcpkg
 
-      - name: Cache Homebrew Qt
-        uses: actions/cache@v4
-        with:
-          path: /opt/homebrew/Cellar/qt
-          key: brew-qt-${{ runner.os }}-${{ hashFiles('.github/workflows/ci.yml') }}
-          restore-keys: brew-qt-${{ runner.os }}-
-
       - name: Install Qt
         run: |
-          # 缓存命中时跳过下载，但始终重建软链接
           brew install qt || true
-          brew link --overwrite --force qt
+          brew link --overwrite --force qt || true
+
           QT_PREFIX="$(brew --prefix qt)"
-          QT6_CMAKE_DIR="$(find "${QT_PREFIX}" -path "*/lib/cmake/Qt6" -type d -print -quit || true)"
-          echo "CMAKE_PREFIX_PATH=${QT_PREFIX}" >> "$GITHUB_ENV"
-          if [ -n "${QT6_CMAKE_DIR}" ]; then
-            echo "Qt6_DIR=${QT6_CMAKE_DIR}" >> "$GITHUB_ENV"
+          QT6_CMAKE_DIR=""
+
+          for candidate in \
+            "${QT_PREFIX}" \
+            "$(brew --cellar qt)/$(brew list --versions qt | awk '{print $NF}')"
+          do
+            if [ ! -d "${candidate}" ]; then
+              continue
+            fi
+
+            detected_dir="$(find -H "${candidate}" -path "*/lib/cmake/Qt6" -type d -print -quit || true)"
+            if [ -n "${detected_dir}" ]; then
+              QT_PREFIX="${candidate}"
+              QT6_CMAKE_DIR="${detected_dir}"
+              break
+            fi
+          done
+
+          if [ -z "${QT6_CMAKE_DIR}" ]; then
+            echo "::warning title=Qt reinstall::Homebrew reports qt installed, but Qt6Config.cmake was not found. Reinstalling qt."
+            brew reinstall qt
+            brew link --overwrite --force qt || true
+
+            QT_PREFIX="$(brew --prefix qt)"
+            QT6_CMAKE_DIR="$(find -H "${QT_PREFIX}" -path "*/lib/cmake/Qt6" -type d -print -quit || true)"
           fi
+
+          if [ -z "${QT6_CMAKE_DIR}" ]; then
+            echo "::error title=Qt detection failed::Could not find Qt6Config.cmake after brew install/reinstall qt."
+            brew list --versions qt || true
+            find -H "$(brew --cellar qt)" -maxdepth 6 -type d -path "*/cmake/Qt6" -print || true
+            exit 1
+          fi
+
+          echo "CMAKE_PREFIX_PATH=${QT_PREFIX}" >> "$GITHUB_ENV"
+          echo "Qt6_DIR=${QT6_CMAKE_DIR}" >> "$GITHUB_ENV"
           echo "Qt prefix: ${QT_PREFIX}"
-          echo "Detected Qt6_DIR: ${QT6_CMAKE_DIR:-not found}"
-          find "${QT_PREFIX}" -maxdepth 5 -type d -path "*/cmake/Qt6" -print || true
+          echo "Detected Qt6_DIR: ${QT6_CMAKE_DIR}"
+          find -H "${QT_PREFIX}" -maxdepth 5 -type d -path "*/cmake/Qt6" -print || true
 
       - name: Cache vcpkg downloads
         uses: actions/cache@v4
