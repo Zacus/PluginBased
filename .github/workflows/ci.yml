@@ -15,6 +15,7 @@ jobs:
       VCPKG_MAX_RETRIES: 5
       X_VCPKG_DOWNLOAD_RETRY_DELAY_SECONDS: 10
       VCPKG_BINARY_SOURCES: "clear;default,readwrite"
+      HOMEBREW_NO_AUTO_UPDATE: 1
 
     steps:
       - name: Checkout PluginBased
@@ -46,7 +47,12 @@ jobs:
           # 缓存命中时跳过下载，但始终重建软链接
           brew install qt || true
           brew link --overwrite --force qt
-          
+          QT_PREFIX="$(brew --prefix qt)"
+          test -d "${QT_PREFIX}/lib/cmake/Qt6"
+          echo "Qt6_DIR=${QT_PREFIX}/lib/cmake/Qt6" >> "$GITHUB_ENV"
+          echo "CMAKE_PREFIX_PATH=${QT_PREFIX}" >> "$GITHUB_ENV"
+          echo "Qt prefix: ${QT_PREFIX}"
+          echo "Qt6_DIR: ${QT_PREFIX}/lib/cmake/Qt6"
 
       - name: Cache vcpkg downloads
         uses: actions/cache@v4
@@ -67,11 +73,19 @@ jobs:
 
       - name: Configure
         working-directory: PluginBased
-        run: >
-          cmake -S . -B build
-          -DCMAKE_BUILD_TYPE=Debug
-          -DCMAKE_PREFIX_PATH="${{ env.Qt6_DIR }}"
-          -DCMAKE_TOOLCHAIN_FILE="${{ github.workspace }}/vcpkg/scripts/buildsystems/vcpkg.cmake"
+        run: |
+          cmake -S . -B build \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_PREFIX_PATH="${CMAKE_PREFIX_PATH}" \
+            -DQt6_DIR="${Qt6_DIR}" \
+            -DCMAKE_TOOLCHAIN_FILE="${{ github.workspace }}/vcpkg/scripts/buildsystems/vcpkg.cmake" || {
+              echo "::group::CMake/vcpkg configure diagnostics"
+              test -f build/vcpkg-manifest-install.log && cat build/vcpkg-manifest-install.log
+              test -f build/CMakeFiles/CMakeConfigureLog.yaml && cat build/CMakeFiles/CMakeConfigureLog.yaml
+              test -f build/CMakeFiles/CMakeError.log && cat build/CMakeFiles/CMakeError.log
+              echo "::endgroup::"
+              exit 1
+            }
 
       - name: Build
         working-directory: PluginBased
