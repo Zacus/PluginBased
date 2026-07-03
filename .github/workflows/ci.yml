@@ -40,6 +40,19 @@ jobs:
           brew install qt || true
           brew link --overwrite --force qt || true
 
+          detect_qt6_dir() {
+            local prefix="$1"
+            if [ ! -d "${prefix}" ]; then
+              return 0
+            fi
+
+            local config_file
+            config_file="$(find -L "${prefix}" -name Qt6Config.cmake -print -quit || true)"
+            if [ -n "${config_file}" ]; then
+              dirname "${config_file}"
+            fi
+          }
+
           QT_PREFIX="$(brew --prefix qt)"
           QT6_CMAKE_DIR=""
 
@@ -47,11 +60,7 @@ jobs:
             "${QT_PREFIX}" \
             "$(brew --cellar qt)/$(brew list --versions qt | awk '{print $NF}')"
           do
-            if [ ! -d "${candidate}" ]; then
-              continue
-            fi
-
-            detected_dir="$(find -H "${candidate}" -path "*/lib/cmake/Qt6" -type d -print -quit || true)"
+            detected_dir="$(detect_qt6_dir "${candidate}")"
             if [ -n "${detected_dir}" ]; then
               QT_PREFIX="${candidate}"
               QT6_CMAKE_DIR="${detected_dir}"
@@ -65,13 +74,13 @@ jobs:
             brew link --overwrite --force qt || true
 
             QT_PREFIX="$(brew --prefix qt)"
-            QT6_CMAKE_DIR="$(find -H "${QT_PREFIX}" -path "*/lib/cmake/Qt6" -type d -print -quit || true)"
+            QT6_CMAKE_DIR="$(detect_qt6_dir "${QT_PREFIX}")"
           fi
 
           if [ -z "${QT6_CMAKE_DIR}" ]; then
             echo "::error title=Qt detection failed::Could not find Qt6Config.cmake after brew install/reinstall qt."
             brew list --versions qt || true
-            find -H "$(brew --cellar qt)" -maxdepth 6 -type d -path "*/cmake/Qt6" -print || true
+            find -L "$(brew --cellar qt)" -name Qt6Config.cmake -print || true
             exit 1
           fi
 
@@ -79,7 +88,7 @@ jobs:
           echo "Qt6_DIR=${QT6_CMAKE_DIR}" >> "$GITHUB_ENV"
           echo "Qt prefix: ${QT_PREFIX}"
           echo "Detected Qt6_DIR: ${QT6_CMAKE_DIR}"
-          find -H "${QT_PREFIX}" -maxdepth 5 -type d -path "*/cmake/Qt6" -print || true
+          find -L "${QT_PREFIX}" -name Qt6Config.cmake -print || true
 
       - name: Cache vcpkg downloads
         uses: actions/cache@v4
