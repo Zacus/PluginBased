@@ -87,12 +87,43 @@ jobs:
             "${qt_args[@]}" \
             -DCMAKE_TOOLCHAIN_FILE="${{ github.workspace }}/vcpkg/scripts/buildsystems/vcpkg.cmake" || {
               echo "::group::CMake/vcpkg configure diagnostics"
-              test -f build/vcpkg-manifest-install.log && cat build/vcpkg-manifest-install.log
-              test -f build/CMakeFiles/CMakeConfigureLog.yaml && cat build/CMakeFiles/CMakeConfigureLog.yaml
-              test -f build/CMakeFiles/CMakeError.log && cat build/CMakeFiles/CMakeError.log
+              {
+                echo "## Configure diagnostics"
+                echo ""
+                echo "### Environment"
+                echo '```text'
+                echo "CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}"
+                echo "Qt6_DIR=${Qt6_DIR:-}"
+                echo '```'
+                for log_file in \
+                  build/vcpkg-manifest-install.log \
+                  build/CMakeFiles/CMakeConfigureLog.yaml \
+                  build/CMakeFiles/CMakeError.log
+                do
+                  if [ -f "${log_file}" ]; then
+                    echo ""
+                    echo "### ${log_file}"
+                    echo '```text'
+                    cat "${log_file}"
+                    echo '```'
+                  fi
+                done
+              } | tee configure-diagnostics.md >> "$GITHUB_STEP_SUMMARY"
               echo "::endgroup::"
               exit 1
             }
+
+      - name: Upload configure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: configure-diagnostics
+          path: |
+            PluginBased/configure-diagnostics.md
+            PluginBased/build/vcpkg-manifest-install.log
+            PluginBased/build/CMakeFiles/CMakeConfigureLog.yaml
+            PluginBased/build/CMakeFiles/CMakeError.log
+          if-no-files-found: ignore
 
       - name: Build
         working-directory: PluginBased
