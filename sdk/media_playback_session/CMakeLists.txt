@@ -99,4 +99,24 @@ if(BUILD_TESTING)
     add_test(NAME media_sdk_playback_session_frame_router
         COMMAND $<TARGET_FILE:MediaSdkPlaybackSessionFrameRouterTest>
     )
+
+    add_executable(MediaSdkPlaybackSessionEventRouterTest
+        tests/tst_playback_session_event_router.cpp
+    )
+    target_compile_features(MediaSdkPlaybackSessionEventRouterTest PRIVATE cxx_std_20)
+    set_target_properties(MediaSdkPlaybackSessionEventRouterTest PROPERTIES
+        CXX_EXTENSIONS OFF
+        AUTOMOC OFF
+        AUTOUIC OFF
+        AUTORCC OFF
+    )
+    target_include_directories(MediaSdkPlaybackSessionEventRouterTest PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/src"
+    )
+    target_link_libraries(MediaSdkPlaybackSessionEventRouterTest PRIVATE
+        media_sdk_playback_session
+    )
+    add_test(NAME media_sdk_playback_session_event_router
+        COMMAND $<TARGET_FILE:MediaSdkPlaybackSessionEventRouterTest>
+    )
 endif()
