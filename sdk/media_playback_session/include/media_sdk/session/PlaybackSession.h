@@ -10,6 +10,11 @@
 
 namespace media_sdk::session {
 
+namespace detail {
+struct PlaybackSessionFactories;
+struct PlaybackSessionTestHooks;
+} // namespace detail
+
 class PlaybackSession final {
 public:
     PlaybackSession(PlaybackSessionConfig config,
@@ -32,6 +37,12 @@ public:
     runtime::RuntimeDiagnostics diagnostics() const;
 
 private:
+    friend struct detail::PlaybackSessionTestHooks;
+
+    PlaybackSession(PlaybackSessionConfig config,
+                    PlaybackSessionDependencies dependencies,
+                    std::shared_ptr<detail::PlaybackSessionFactories> factories);
+
     struct Impl;
     std::unique_ptr<Impl> m_impl;
 };

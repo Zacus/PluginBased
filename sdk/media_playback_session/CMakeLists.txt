@@ -33,6 +33,9 @@ if(BUILD_TESTING)
         AUTOUIC OFF
         AUTORCC OFF
     )
+    target_include_directories(MediaSdkPlaybackSessionContractTest PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/src"
+    )
     target_link_libraries(MediaSdkPlaybackSessionContractTest PRIVATE
         media_sdk_playback_session
     )
