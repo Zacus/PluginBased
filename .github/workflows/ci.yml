@@ -48,11 +48,14 @@ jobs:
           brew install qt || true
           brew link --overwrite --force qt
           QT_PREFIX="$(brew --prefix qt)"
-          test -d "${QT_PREFIX}/lib/cmake/Qt6"
-          echo "Qt6_DIR=${QT_PREFIX}/lib/cmake/Qt6" >> "$GITHUB_ENV"
+          QT6_CMAKE_DIR="$(find "${QT_PREFIX}" -path "*/lib/cmake/Qt6" -type d -print -quit || true)"
           echo "CMAKE_PREFIX_PATH=${QT_PREFIX}" >> "$GITHUB_ENV"
+          if [ -n "${QT6_CMAKE_DIR}" ]; then
+            echo "Qt6_DIR=${QT6_CMAKE_DIR}" >> "$GITHUB_ENV"
+          fi
           echo "Qt prefix: ${QT_PREFIX}"
-          echo "Qt6_DIR: ${QT_PREFIX}/lib/cmake/Qt6"
+          echo "Detected Qt6_DIR: ${QT6_CMAKE_DIR:-not found}"
+          find "${QT_PREFIX}" -maxdepth 5 -type d -path "*/cmake/Qt6" -print || true
 
       - name: Cache vcpkg downloads
         uses: actions/cache@v4
@@ -74,10 +77,14 @@ jobs:
       - name: Configure
         working-directory: PluginBased
         run: |
+          qt_args=()
+          if [ -n "${Qt6_DIR:-}" ]; then
+            qt_args+=("-DQt6_DIR=${Qt6_DIR}")
+          fi
           cmake -S . -B build \
             -DCMAKE_BUILD_TYPE=Debug \
             -DCMAKE_PREFIX_PATH="${CMAKE_PREFIX_PATH}" \
-            -DQt6_DIR="${Qt6_DIR}" \
+            "${qt_args[@]}" \
             -DCMAKE_TOOLCHAIN_FILE="${{ github.workspace }}/vcpkg/scripts/buildsystems/vcpkg.cmake" || {
               echo "::group::CMake/vcpkg configure diagnostics"
               test -f build/vcpkg-manifest-install.log && cat build/vcpkg-manifest-install.log
