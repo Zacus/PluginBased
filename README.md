@@ -2,6 +2,8 @@
 
 基于 Qt 6 / QML 的通用插件化应用宿主。以**应用面板**为主页，插件以卡片形式展示，点击进入；业务能力由插件提供，支持运行时动态加载 `.dll/.so` 插件。
 
+当前仓库同时包含一个播放领域的 Media SDK 演进实现：`PlayPlugin` 通过 SDK core 解封装/解码，通过独立帧通道把音视频帧交给 Qt 展示层或 SDK runtime，控制事件与帧数据通道已经解耦。
+
 ---
 
 ## 目录结构
@@ -44,10 +46,16 @@ PluginBased/
 │       ├── qml/                 # 播放器界面、控制栏、播放列表
 │       ├── shaders/             # YUV 视频渲染 shader
 │       ├── translations/        # 插件自带翻译 TS
-│       └── src/                 # FFmpeg 解码、音视频渲染、硬件解码后端
+│       └── src/                 # Qt 播放桥、渲染器、Presenter、QML-facing 模型
 │
+├── sdk/                         # 播放领域 SDK
+│   ├── media_core/              # FFmpeg demux/decode、硬解后端、帧推送接口
+│   ├── media_playback_runtime/  # A/V 时钟、渲染队列背压、runtime 播放调度
+│   └── media_platform_audio_macos/ # macOS AudioUnit/CoreAudio 音频输出
+│
+├── docs/                        # 设计文档与阶段任务记录
 ├── translations/                # 宿主应用翻译 TS
-├── tests/                       # 轻量回归检查脚本
+├── tests/                       # 架构约束、回归检查和 CTest 脚本
 └── tools/                       # 打包、部署、依赖验证工具
 ```
 
@@ -60,8 +68,9 @@ PluginBased/
 | Qt | 6.5+ | 框架：Core / Gui / Quick / QuickControls2 / Multimedia |
 | spdlog | 1.12+ | 结构化日志 |
 | fmt | 10+ | 格式化（spdlog 依赖） |
-| FFmpeg | 5.0+ | PlayPlugin 音视频解码、重采样、像素转换 |
+| FFmpeg | 5.0+ | Media SDK demux/decode、重采样、像素转换 |
 | pkgconf/pkg-config | 任意 | CMake 查找 FFmpeg pkg-config 模块 |
+| CoreAudio / AudioUnit | macOS 系统框架 | SDK runtime 的 macOS 音频输出 |
 
 项目顶层通过 `FetchContent` 引入相邻目录 `../QtQuickComponents`，构建前请确保该目录存在，或在 `CMakeLists.txt` 中替换为对应的远程仓库来源。
 
@@ -94,18 +103,16 @@ ctest --test-dir build --output-on-failure
 
 ## 自动化验证
 
-项目启用 CTest，当前注册以下基础检查：
+项目启用 CTest，当前注册 36 项检查。验证覆盖宿主、插件、播放 SDK core、runtime、macOS 音频平台层和架构约束：
 
-| 测试 | 说明 |
+| 范围 | 代表性测试 |
 |---|---|
-| `playplugin_regression_checks` | 播放插件、重命名和插件接口回归检查 |
-| `plugin_generator_checks` | 可视化插件生成器、模板输出、图片图标和插件内置翻译检查 |
-| `ci_ctest_checks` | CI/CTest 配置结构检查 |
-| `i18n_architecture_checks` | 宿主/插件多语言边界和运行时刷新检查 |
-| `plugin_metadata_validator` | 插件 JSON 元数据校验 |
-| `plugin_discovery` | 插件发现和清单解析检查 |
-| `app_theme_service_checks` | 主题服务结构检查 |
-| `plugin_generator_backend_smoke` | C++ 插件生成后端 smoke test |
+| PlayPlugin 架构与回归 | `playplugin_regression_checks`、`playplugin_qt_playback_adapter_checks`、`playplugin_bplus_completion_checks` |
+| 播放队列与 seek | `playplugin_frame_queue`、`playplugin_playback_data_bridge`、`playplugin_pending_seek_requests` |
+| Media SDK core | `media_sdk_core_frame_contract`、`media_sdk_core_ffmpeg_integration`、`media_sdk_core_playback_worker` |
+| SDK runtime | `media_sdk_playback_runtime_frame_queue`、`media_sdk_playback_runtime_av_sync_scheduler`、`media_sdk_playback_runtime_player_mock` |
+| macOS 音频平台层 | `media_sdk_platform_audio_macos_engine`、`media_sdk_platform_audio_macos_ring_buffer` |
+| 宿主与插件基础能力 | `plugin_metadata_validator`、`plugin_discovery`、`plugin_generator_backend_smoke`、`i18n_architecture_checks` |
 
 本地运行：
 
@@ -169,7 +176,21 @@ language         = en_US    ; 默认 en_US，当前支持 en_US / zh_CN
 
 实现 `IAppPlugin` 通用插件接口，编译为动态库并在根目录 `plugins.json` 中启用后，即可从构建或发布包的 `plugins/` 目录加载。卡片面板会在 `pluginsReady` 信号触发后动态渲染插件卡片。
 
-宿主只负责插件加载、生命周期和页面路由；播放器、转码器或其他具体业务能力都由插件内部实现。当前 `PlayPlugin` 是一个自包含播放器插件，内部包含 FFmpeg 解码、硬件解码后端、音频渲染、视频渲染、播放列表模型和 QML 界面。
+宿主只负责插件加载、生命周期和页面路由；播放器、转码器或其他具体业务能力都由插件内部实现。当前 `PlayPlugin` 是一个自包含播放器插件，内部包含播放桥、音视频渲染、播放列表模型和 QML 界面；解封装、解码、硬解后端和 runtime 播放调度逐步收敛到 `sdk/`。
+
+### Media SDK 与播放链路
+
+播放链路按“控制事件”和“帧数据”拆分：
+
+- `sdk/media_core` 负责打开媒体、FFmpeg demux/decode、VideoToolbox 后端、帧格式封装和 `media_sdk::Player` 控制入口。
+- `media_sdk::IEventSink` 只传递控制事件，例如媒体信息、状态、seek 完成、进度、EOF 和错误。
+- `media_sdk::IDecodeFrameSink` 只传递解码后的音频/视频帧，返回结构化推帧状态，区分 accepted、backpressured、stale generation、cancelled 和 closed。
+- `plugins/PlayPlugin/src/playback/QtPlaybackAdapter` 是 Legacy Qt 播放链路的 SDK 边界，把 SDK frame sink 推入现有 Qt 帧队列，并把控制事件 marshal 回 Qt 对象线程。
+- `plugins/PlayPlugin/src/playback/PlaybackDataBridge` 管理 session/generation 过滤、可取消背压、EOF drain 和数据通道诊断。seek 取消和真正 stop/abort 使用不同状态，避免把旧 generation 唤醒误报为解码错误。
+- `sdk/media_playback_runtime` 提供 runtime 侧 A/V 时钟、渲染帧队列背压、present tracking、native fallback 和 mock player 测试覆盖。
+- `sdk/media_platform_audio_macos` 使用 AudioUnit/CoreAudio 输出音频，实时回调路径使用专用 ring buffer，避免在音频回调中走阻塞锁。
+
+当前 `PlayPlugin` 仍保留 Legacy Qt 展示链路，SDK runtime 可作为后续切换目标；插件层只做展示、QML 状态和 Qt RHI/Surface 对接，不再依赖通过 `PlayerEvent` 发送音视频帧。
 
 ### QML 类型注册
 
