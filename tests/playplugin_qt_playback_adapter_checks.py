@@ -95,18 +95,23 @@ def main() -> None:
     require("mediaInfoReady" in adapter_h and "endOfFile" in adapter_h and "seekCompleted" in adapter_h,
             "QtPlaybackAdapter should expose decoder-compatible Qt signals")
 
-    require("public media_sdk::IDecodeFrameSink" in sdk_adapter_h,
-            "SdkPlaybackAdapter must implement IDecodeFrameSink")
-    require("pushAudio(" in sdk_adapter_h and "pushVideo(" in sdk_adapter_h,
-            "SdkPlaybackAdapter must expose frame sink methods")
-    require("ensureRuntimeForMedia" in sdk_adapter_cpp,
-            "MediaInfoEvent must synchronously ensure runtime before queued UI handling")
-    require("RuntimeFramePushStatus" in sdk_adapter_cpp,
-            "SdkPlaybackAdapter must map runtime frame push results")
-    sdk_handle_data_start = sdk_adapter_cpp.find("bool SdkPlaybackAdapter::handleDataEvent")
-    sdk_handle_control_start = sdk_adapter_cpp.find("void SdkPlaybackAdapter::handleControlEvent")
-    sdk_handle_data_body = sdk_adapter_cpp[sdk_handle_data_start:sdk_handle_control_start]
-    require("AudioFrameEvent" not in sdk_handle_data_body and "VideoFrameEvent" not in sdk_handle_data_body,
+    require("media_sdk::IDecodeFrameSink" not in sdk_adapter_h,
+            "SdkPlaybackAdapter must not implement IDecodeFrameSink after switching to PlaybackSession")
+    require("media_sdk::IEventSink" not in sdk_adapter_h,
+            "SdkPlaybackAdapter must not implement IEventSink after switching to PlaybackSession")
+    require("media_sdk::runtime::IRuntimePlayerEvents" not in sdk_adapter_h,
+            "SdkPlaybackAdapter must not implement runtime events after switching to PlaybackSession")
+    require("std::unique_ptr<media_sdk::session::PlaybackSession>" in sdk_adapter_h,
+            "SdkPlaybackAdapter should own a PlaybackSession")
+    require("media_sdk::session::ISessionEvents" in sdk_adapter_h,
+            "SdkPlaybackAdapter should convert session events to Qt signals")
+    require("std::make_unique<media_sdk::Player>" not in sdk_adapter_cpp,
+            "SdkPlaybackAdapter must not create media_sdk::Player directly")
+    require("std::make_shared<media_sdk::runtime::RuntimePlayer>" not in sdk_adapter_cpp,
+            "SdkPlaybackAdapter must not create RuntimePlayer directly")
+    require("float32InterleavedSamples" not in sdk_adapter_cpp,
+            "SdkPlaybackAdapter must not convert PCM samples after switching to PlaybackSession")
+    require("AudioFrameEvent" not in sdk_adapter_cpp and "VideoFrameEvent" not in sdk_adapter_cpp,
             "SdkPlaybackAdapter must not route decoded frames through PlayerEvent data handling")
 
     require("src/playback/PlaybackDataBridge.h" in cmake and
@@ -117,6 +122,8 @@ def main() -> None:
             "PlayPlugin CMake should compile QtPlaybackAdapter")
     require("media_sdk_core" in cmake or "media_sdk::core" in cmake,
             "PlayPlugin should link the media SDK core target")
+    require("media_sdk::playback_session" in cmake,
+            "PlayPlugin should link the playback session SDK target")
 
     require("QtPlaybackAdapter" in pipeline_h + pipeline_cpp,
             "PlaybackPipeline should use QtPlaybackAdapter")
