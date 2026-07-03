@@ -77,6 +77,7 @@ jobs:
       - name: Configure
         working-directory: PluginBased
         run: |
+          set -o pipefail
           qt_args=()
           if [ -n "${Qt6_DIR:-}" ]; then
             qt_args+=("-DQt6_DIR=${Qt6_DIR}")
@@ -85,7 +86,8 @@ jobs:
             -DCMAKE_BUILD_TYPE=Debug \
             -DCMAKE_PREFIX_PATH="${CMAKE_PREFIX_PATH}" \
             "${qt_args[@]}" \
-            -DCMAKE_TOOLCHAIN_FILE="${{ github.workspace }}/vcpkg/scripts/buildsystems/vcpkg.cmake" || {
+            -DCMAKE_TOOLCHAIN_FILE="${{ github.workspace }}/vcpkg/scripts/buildsystems/vcpkg.cmake" \
+            2>&1 | tee configure.log || {
               emit_error_annotation() {
                 local file="$1"
                 if [ ! -f "${file}" ]; then
@@ -108,6 +110,7 @@ jobs:
                 echo "::error title=Configure diagnostics from ${file}::${excerpt}"
               }
 
+              emit_error_annotation "configure.log"
               emit_error_annotation "build/vcpkg-manifest-install.log"
               emit_error_annotation "build/CMakeFiles/CMakeConfigureLog.yaml"
               emit_error_annotation "build/CMakeFiles/CMakeError.log"
@@ -122,6 +125,7 @@ jobs:
                 echo "Qt6_DIR=${Qt6_DIR:-}"
                 echo '```'
                 for log_file in \
+                  configure.log \
                   build/vcpkg-manifest-install.log \
                   build/CMakeFiles/CMakeConfigureLog.yaml \
                   build/CMakeFiles/CMakeError.log
@@ -146,6 +150,7 @@ jobs:
           name: configure-diagnostics
           path: |
             PluginBased/configure-diagnostics.md
+            PluginBased/configure.log
             PluginBased/build/vcpkg-manifest-install.log
             PluginBased/build/CMakeFiles/CMakeConfigureLog.yaml
             PluginBased/build/CMakeFiles/CMakeError.log
