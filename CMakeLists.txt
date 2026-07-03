@@ -95,6 +95,7 @@ add_subdirectory(plugin)
 add_subdirectory(core)
 add_subdirectory(sdk/media_core)
 add_subdirectory(sdk/media_playback_runtime)
+add_subdirectory(sdk/media_playback_session)
 if(APPLE)
     add_subdirectory(sdk/media_platform_audio_macos)
 endif()
@@ -226,6 +227,10 @@ if(BUILD_TESTING)
     )
     add_test(NAME media_sdk_playback_runtime_architecture_checks
         COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tests/media_sdk_playback_runtime_architecture_checks.py"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+    )
+    add_test(NAME media_sdk_playback_session_architecture_checks
+        COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tests/media_sdk_playback_session_architecture_checks.py"
         WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
     )
     add_test(NAME playplugin_qt_rhi_presenter_architecture_checks
