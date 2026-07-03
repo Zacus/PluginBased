@@ -195,4 +195,39 @@ jobs:
 
       - name: Test
         working-directory: PluginBased
-        run: ctest --test-dir build --output-on-failure
+        run: |
+          set -o pipefail
+          ctest --test-dir build --output-on-failure 2>&1 | tee ctest.log || {
+            emit_error_annotation() {
+              local file="$1"
+              if [ ! -f "${file}" ]; then
+                return 0
+              fi
+
+              local excerpt
+              excerpt="$(
+                {
+                  echo "### ${file}: matching failure context"
+                  grep -Ei -C 5 "fail|failed|failure|error|exception|timeout|not run" "${file}" || true
+                  echo ""
+                  echo "### ${file}: tail"
+                  tail -n 120 "${file}"
+                } | sed -e 's/%/%25/g' -e 's/\r/%0D/g' -e 's/$/%0A/' | tr -d '\n'
+              )"
+              echo "::error title=CTest diagnostics from ${file}::${excerpt}"
+            }
+
+            emit_error_annotation "ctest.log"
+            emit_error_annotation "build/Testing/Temporary/LastTest.log"
+            exit 1
+          }
+
+      - name: Upload test diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-diagnostics
+          path: |
+            PluginBased/ctest.log
+            PluginBased/build/Testing/Temporary/LastTest.log
+          if-no-files-found: ignore
