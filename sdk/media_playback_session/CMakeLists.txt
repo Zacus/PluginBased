@@ -79,4 +79,24 @@ if(BUILD_TESTING)
     add_test(NAME media_sdk_playback_session_audio_converter
         COMMAND $<TARGET_FILE:MediaSdkPlaybackSessionAudioConverterTest>
     )
+
+    add_executable(MediaSdkPlaybackSessionFrameRouterTest
+        tests/tst_playback_session_frame_router.cpp
+    )
+    target_compile_features(MediaSdkPlaybackSessionFrameRouterTest PRIVATE cxx_std_20)
+    set_target_properties(MediaSdkPlaybackSessionFrameRouterTest PROPERTIES
+        CXX_EXTENSIONS OFF
+        AUTOMOC OFF
+        AUTOUIC OFF
+        AUTORCC OFF
+    )
+    target_include_directories(MediaSdkPlaybackSessionFrameRouterTest PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/src"
+    )
+    target_link_libraries(MediaSdkPlaybackSessionFrameRouterTest PRIVATE
+        media_sdk_playback_session
+    )
+    add_test(NAME media_sdk_playback_session_frame_router
+        COMMAND $<TARGET_FILE:MediaSdkPlaybackSessionFrameRouterTest>
+    )
 endif()
