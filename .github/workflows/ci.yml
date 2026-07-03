@@ -86,6 +86,32 @@ jobs:
             -DCMAKE_PREFIX_PATH="${CMAKE_PREFIX_PATH}" \
             "${qt_args[@]}" \
             -DCMAKE_TOOLCHAIN_FILE="${{ github.workspace }}/vcpkg/scripts/buildsystems/vcpkg.cmake" || {
+              emit_error_annotation() {
+                local file="$1"
+                if [ ! -f "${file}" ]; then
+                  return 0
+                fi
+
+                local excerpt
+                excerpt="$(
+                  {
+                    echo "CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}"
+                    echo "Qt6_DIR=${Qt6_DIR:-}"
+                    echo ""
+                    echo "### ${file}: matching error context"
+                    grep -Ei -C 3 "error|failed|fatal|not found|could not|unable" "${file}" || true
+                    echo ""
+                    echo "### ${file}: tail"
+                    tail -n 80 "${file}"
+                  } | sed -e 's/%/%25/g' -e 's/\r/%0D/g' -e 's/$/%0A/' | tr -d '\n'
+                )"
+                echo "::error title=Configure diagnostics from ${file}::${excerpt}"
+              }
+
+              emit_error_annotation "build/vcpkg-manifest-install.log"
+              emit_error_annotation "build/CMakeFiles/CMakeConfigureLog.yaml"
+              emit_error_annotation "build/CMakeFiles/CMakeError.log"
+
               echo "::group::CMake/vcpkg configure diagnostics"
               {
                 echo "## Configure diagnostics"
