@@ -16,6 +16,7 @@ jobs:
       X_VCPKG_DOWNLOAD_RETRY_DELAY_SECONDS: 10
       VCPKG_BINARY_SOURCES: "clear;default,readwrite"
       HOMEBREW_NO_AUTO_UPDATE: 1
+      VCPKG_COMMIT: 4b3e4c276b5b87a649e66341e11553e8c577459c
 
     steps:
       - name: Checkout PluginBased
@@ -33,6 +34,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: microsoft/vcpkg
+          ref: ${{ env.VCPKG_COMMIT }}
           path: vcpkg
 
       - name: Cache Homebrew Qt
@@ -61,14 +63,14 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.vcpkg/downloads
-          key: vcpkg-downloads-${{ runner.os }}-${{ hashFiles('PluginBased/vcpkg.json') }}
+          key: vcpkg-downloads-${{ runner.os }}-${{ env.VCPKG_COMMIT }}-${{ hashFiles('PluginBased/vcpkg.json') }}
           restore-keys: vcpkg-downloads-${{ runner.os }}-
 
       - name: Cache vcpkg binary cache
         uses: actions/cache@v4
         with:
           path: ~/.cache/vcpkg/archives
-          key: vcpkg-bin-${{ runner.os }}-${{ hashFiles('PluginBased/vcpkg.json') }}
+          key: vcpkg-bin-${{ runner.os }}-${{ env.VCPKG_COMMIT }}-${{ hashFiles('PluginBased/vcpkg.json') }}
           restore-keys: vcpkg-bin-${{ runner.os }}-
 
       - name: Bootstrap vcpkg
