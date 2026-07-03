@@ -59,4 +59,24 @@ if(BUILD_TESTING)
     add_test(NAME media_sdk_playback_session_timeline
         COMMAND $<TARGET_FILE:MediaSdkPlaybackSessionTimelineTest>
     )
+
+    add_executable(MediaSdkPlaybackSessionAudioConverterTest
+        tests/tst_playback_session_audio_converter.cpp
+    )
+    target_compile_features(MediaSdkPlaybackSessionAudioConverterTest PRIVATE cxx_std_20)
+    set_target_properties(MediaSdkPlaybackSessionAudioConverterTest PROPERTIES
+        CXX_EXTENSIONS OFF
+        AUTOMOC OFF
+        AUTOUIC OFF
+        AUTORCC OFF
+    )
+    target_include_directories(MediaSdkPlaybackSessionAudioConverterTest PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/src"
+    )
+    target_link_libraries(MediaSdkPlaybackSessionAudioConverterTest PRIVATE
+        media_sdk_playback_session
+    )
+    add_test(NAME media_sdk_playback_session_audio_converter
+        COMMAND $<TARGET_FILE:MediaSdkPlaybackSessionAudioConverterTest>
+    )
 endif()
