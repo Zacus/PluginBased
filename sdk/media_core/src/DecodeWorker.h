@@ -139,9 +139,9 @@ private:
     void emitEvent(PlayerEvent event);
     void emitState(PlayerState state);
     void emitError(MediaError error);
-    bool emitVideoFrame(VideoFrame frame);
+    StreamDecoder::FrameHandlerStatus emitVideoFrame(VideoFrame frame);
     DecodeFrameMetadata frameMetadata() const;
-    bool handleFramePushResult(DecodeFramePushResult result);
+    StreamDecoder::FrameHandlerStatus handleFramePushResult(DecodeFramePushResult result);
     void recordFramePushResult(DecodeFramePushResult result);
     AudioFrame makeAudioFrame(AVFramePtr frame) const;
     AudioSampleFormat publishedInterleavedAudioSampleFormat(AVSampleFormat format) const;

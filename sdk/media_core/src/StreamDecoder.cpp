@@ -54,12 +54,19 @@ Result<void> StreamDecoder::receiveFrames(AVCodecContext* codecContext,
             return decodeFailure(avErrorString(ret));
 
         normalizeFramePts(frame.get(), timeBase);
-        if (!onFrame(std::move(frame)))
+        switch (onFrame(std::move(frame)))
+        {
+        case StreamDecoder::FrameHandlerStatus::Continue:
+            break;
+        case StreamDecoder::FrameHandlerStatus::Stop:
+            return Result<void>::success();
+        case StreamDecoder::FrameHandlerStatus::Reject:
             return Result<void>::failure({
                 MediaErrorCode::DecodeFailed,
                 "Frame handler rejected decoded frame",
                 {},
             });
+        }
     }
 
     return Result<void>::success();

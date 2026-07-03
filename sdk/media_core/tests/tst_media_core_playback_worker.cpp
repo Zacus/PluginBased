@@ -124,6 +124,12 @@ public:
             m_cv.wait(lock, [&]() { return !m_blockAudioFrames; });
         }
 
+        {
+            std::scoped_lock lock(m_mutex);
+            if (m_cancelAudioFrames)
+                return { .status = media_sdk::DecodeFramePushStatus::Cancelled };
+        }
+
         std::scoped_lock lock(m_mutex);
         ++m_audioFrames;
         m_lastSessionId = metadata.sessionId;
@@ -178,6 +184,16 @@ public:
         m_cv.notify_all();
     }
 
+    void cancelBlockedAudioFrames()
+    {
+        {
+            std::scoped_lock lock(m_mutex);
+            m_cancelAudioFrames = true;
+            m_blockAudioFrames = false;
+        }
+        m_cv.notify_all();
+    }
+
     int audioFrames() const
     {
         std::scoped_lock lock(m_mutex);
@@ -201,6 +217,7 @@ private:
     std::chrono::microseconds m_lastVideoPts { 0 };
     bool m_blockAudioFrames = false;
     bool m_audioFrameBlocked = false;
+    bool m_cancelAudioFrames = false;
 };
 
 bool hasState(const media_sdk::PlayerEvent& event, media_sdk::PlayerState state)
@@ -218,6 +235,11 @@ bool hasMediaInfo(const media_sdk::PlayerEvent& event)
 bool hasEof(const media_sdk::PlayerEvent& event)
 {
     return std::holds_alternative<media_sdk::EndOfFileEvent>(event.payload);
+}
+
+bool hasError(const media_sdk::PlayerEvent& event)
+{
+    return std::holds_alternative<media_sdk::ErrorEvent>(event.payload);
 }
 
 bool hasPositionAtOrAfter(const media_sdk::PlayerEvent& event,
@@ -397,6 +419,33 @@ void testStopEmitsStoppedState()
     std::filesystem::remove(samplePath);
 }
 
+void testCancelledFramePushDuringStopDoesNotEmitDecodeError()
+{
+    const auto samplePath = writeTinyWav();
+    RecordingSink sink;
+    RecordingFrameSink frames;
+    media_sdk::Player player({}, sink, frames);
+
+    assert(player.open(samplePath).ok());
+    assert(sink.waitFor(hasMediaInfo));
+
+    frames.blockAudioFrames();
+    player.play();
+    assert(frames.waitForBlockedAudioFrame());
+
+    frames.cancelBlockedAudioFrames();
+    player.stop();
+
+    assert(sink.waitFor([](const media_sdk::PlayerEvent& event) {
+        return hasState(event, media_sdk::PlayerState::Stopped);
+    }));
+
+    const auto events = sink.snapshot();
+    assert(std::ranges::none_of(events, hasError));
+
+    std::filesystem::remove(samplePath);
+}
+
 } // namespace
 
 int main()
@@ -405,5 +454,6 @@ int main()
     testSeekEmitsPositionAndContinuesPlayback();
     testBurstSeekCoalescesQueuedRequestsBeforeDecodeResumes();
     testStopEmitsStoppedState();
+    testCancelledFramePushDuringStopDoesNotEmitDecodeError();
     return 0;
 }

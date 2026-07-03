@@ -10,7 +10,13 @@ namespace media_sdk {
 class StreamDecoder
 {
 public:
-    using FrameHandler = std::function<bool(AVFramePtr frame)>;
+    enum class FrameHandlerStatus {
+        Continue,
+        Stop,
+        Reject
+    };
+
+    using FrameHandler = std::function<FrameHandlerStatus(AVFramePtr frame)>;
 
     Result<void> sendPacket(AVCodecContext* codecContext,
                             const AVPacket* packet,

@@ -362,7 +362,7 @@ Result<void> DecodeWorker::decodePacket(AVCodecContext* codecContext,
                 if (!processed.ok())
                 {
                     emitError(processed.error());
-                    return false;
+                    return StreamDecoder::FrameHandlerStatus::Reject;
                 }
                 return emitVideoFrame(std::move(processed.value()));
             }
@@ -387,7 +387,12 @@ void DecodeWorker::flushDecoders()
                     { .preferNativeVideoFrames = m_config.preferNativeVideoFrames },
                     m_media.hardwareDecoder.get(),
                     &m_decodeStats);
-                return processed.ok() && emitVideoFrame(std::move(processed.value()));
+                if (!processed.ok())
+                {
+                    emitError(processed.error());
+                    return StreamDecoder::FrameHandlerStatus::Reject;
+                }
+                return emitVideoFrame(std::move(processed.value()));
             });
     }
     if (m_media.audioCodecContext)
@@ -425,7 +430,7 @@ void DecodeWorker::emitError(MediaError error)
     emitEvent(makeEvent(ErrorEvent { std::move(error) }));
 }
 
-bool DecodeWorker::emitVideoFrame(VideoFrame frame)
+StreamDecoder::FrameHandlerStatus DecodeWorker::emitVideoFrame(VideoFrame frame)
 {
     return handleFramePushResult(m_frames.pushVideo(std::move(frame), frameMetadata()));
 }
@@ -438,7 +443,7 @@ DecodeFrameMetadata DecodeWorker::frameMetadata() const
     };
 }
 
-bool DecodeWorker::handleFramePushResult(DecodeFramePushResult result)
+StreamDecoder::FrameHandlerStatus DecodeWorker::handleFramePushResult(DecodeFramePushResult result)
 {
     recordFramePushResult(result);
 
@@ -447,12 +452,14 @@ bool DecodeWorker::handleFramePushResult(DecodeFramePushResult result)
     case DecodeFramePushStatus::Accepted:
     case DecodeFramePushStatus::Backpressured:
     case DecodeFramePushStatus::StaleGeneration:
-        return true;
+        return StreamDecoder::FrameHandlerStatus::Continue;
     case DecodeFramePushStatus::Cancelled:
+        m_playing = false;
+        return StreamDecoder::FrameHandlerStatus::Stop;
     case DecodeFramePushStatus::Closed:
-        return false;
+        return StreamDecoder::FrameHandlerStatus::Reject;
     }
-    return false;
+    return StreamDecoder::FrameHandlerStatus::Reject;
 }
 
 void DecodeWorker::recordFramePushResult(DecodeFramePushResult result)

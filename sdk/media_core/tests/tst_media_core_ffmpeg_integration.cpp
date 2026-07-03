@@ -104,7 +104,7 @@ void testDemuxerOpensFileAndStreamDecoderReadsFrame()
                     ++decodedFrames;
                     if (firstPts == AV_NOPTS_VALUE)
                         firstPts = frame->pts;
-                    return true;
+                    return media_sdk::StreamDecoder::FrameHandlerStatus::Continue;
                 });
             assert(result.ok());
         }
@@ -121,7 +121,7 @@ void testDemuxerOpensFileAndStreamDecoderReadsFrame()
             ++decodedFrames;
             if (firstPts == AV_NOPTS_VALUE)
                 firstPts = frame->pts;
-            return true;
+            return media_sdk::StreamDecoder::FrameHandlerStatus::Continue;
         });
     assert(flushed.ok());
     assert(decodedFrames > 0);
