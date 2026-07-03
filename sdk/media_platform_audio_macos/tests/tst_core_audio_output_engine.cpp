@@ -181,6 +181,23 @@ void pauseStopsDeviceWithoutFlushingQueuedAudio()
     assert(output == input);
 }
 
+void pauseBeforeResumeMarksLogicalPausedWithoutStoppingDevice()
+{
+    auto [engine, device, stats] = makeEngine();
+    assert(engine->open(audioFormat()).ok());
+
+    engine->pause();
+
+    assert(stats->stopCount == 0);
+    assert(!device->running);
+    assert(engine->clock().paused);
+
+    assert(engine->resume().ok());
+    assert(stats->startCount == 1);
+    assert(device->running);
+    assert(!engine->clock().paused);
+}
+
 void flushResetsDeviceAndRejectsOldGeneration()
 {
     auto [engine, device, stats] = makeEngine();
@@ -262,6 +279,7 @@ int main()
 {
     resumeStartsDeviceAndCallbackConsumesPcm();
     pauseStopsDeviceWithoutFlushingQueuedAudio();
+    pauseBeforeResumeMarksLogicalPausedWithoutStoppingDevice();
     flushResetsDeviceAndRejectsOldGeneration();
     closeStopsAndRejectsWrites();
     destructorStopsAndClosesDevice();

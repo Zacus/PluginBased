@@ -107,11 +107,13 @@ runtime::ClockSnapshot CoreAudioOutputEngine::clock() const
 void CoreAudioOutputEngine::pause()
 {
     std::scoped_lock lock(m_mutex);
-    if (!m_open || !m_running)
+    if (!m_open)
         return;
 
-    m_device->stop();
-    m_running = false;
+    if (m_running) {
+        m_device->stop();
+        m_running = false;
+    }
     m_paused = true;
 }
 
