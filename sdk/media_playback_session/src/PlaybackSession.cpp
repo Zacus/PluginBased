@@ -9,6 +9,7 @@
 
 #include <functional>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <utility>
 
@@ -32,6 +33,11 @@ Result<void> sessionFailure(MediaErrorCode code, std::string message)
 Result<runtime::RuntimeTimeline> runtimeFailure(MediaErrorCode code, std::string message)
 {
     return Result<runtime::RuntimeTimeline>::failure(makeSessionError(code, std::move(message)));
+}
+
+bool sameTimeline(runtime::RuntimeTimeline lhs, runtime::RuntimeTimeline rhs)
+{
+    return lhs.sessionId == rhs.sessionId && lhs.generation == rhs.generation;
 }
 
 bool hasAudio(const MediaInfo& info)
@@ -298,6 +304,7 @@ struct PlaybackSession::Impl final
             coreToStop = std::move(core);
             runtimeToStop = std::move(runtimePlayer);
             currentPath.clear();
+            handledFallbackTimeline.reset();
         }
 
         if (coreToStop)
@@ -374,6 +381,7 @@ struct PlaybackSession::Impl final
             std::lock_guard lock(m_mutex);
             previousRuntime = std::move(runtimePlayer);
             runtimePlayer = std::move(newRuntime);
+            handledFallbackTimeline.reset();
         }
         if (previousRuntime)
             previousRuntime->stop();
@@ -454,14 +462,97 @@ private:
         return router.pushVideo(std::move(frame), metadata);
     }
 
-    void onFallbackToCpuRequested(runtime::RuntimeFallbackAction) override
+    void onFallbackToCpuRequested(runtime::RuntimeFallbackAction action) override
     {
-        // Native fallback orchestration moves into PlaybackSession in Task 7.
+        handleFallbackToCpu(action);
     }
 
     void onEndOfStreamPresented(runtime::RuntimeTimeline runtimeTimeline) override
     {
         eventRouter.onEndOfStreamPresented(runtimeTimeline);
+    }
+
+    void handleFallbackToCpu(runtime::RuntimeFallbackAction action)
+    {
+        const runtime::RuntimeTimeline fallbackTimeline {
+            .sessionId = action.sessionId,
+            .generation = action.generation,
+        };
+        const auto coreMetadata = timelineState.coreForRuntimeTimeline(fallbackTimeline);
+        if (!coreMetadata.has_value())
+            return;
+
+        std::filesystem::path path;
+        PlayerConfig fallbackCoreConfig;
+        std::shared_ptr<detail::PlaybackSessionFactories> currentFactories;
+        {
+            std::lock_guard lock(m_mutex);
+            if (handledFallbackTimeline.has_value()
+                && sameTimeline(*handledFallbackTimeline, fallbackTimeline)) {
+                return;
+            }
+            if (currentPath.empty() || !factories || !factories->createCore)
+                return;
+
+            handledFallbackTimeline = fallbackTimeline;
+            config.core.preferNativeVideoFrames = false;
+            config.preferNativeVideoFrames = false;
+            path = currentPath;
+            fallbackCoreConfig = config.core;
+            currentFactories = factories;
+        }
+
+        eventRouter.beginFallbackSeek(fallbackTimeline);
+
+        auto fallbackCore = currentFactories->createCore(
+            fallbackCoreConfig,
+            static_cast<IEventSink&>(*this),
+            static_cast<IDecodeFrameSink&>(*this));
+        if (!fallbackCore) {
+            emitError(*coreMetadata,
+                      makeSessionError(MediaErrorCode::InternalStateError,
+                                       "PlaybackSession fallback core factory returned null"));
+            return;
+        }
+
+        std::shared_ptr<detail::IPlaybackSessionCorePlayer> previousCore;
+        {
+            std::lock_guard lock(m_mutex);
+            previousCore = std::move(core);
+            core = fallbackCore;
+        }
+        if (previousCore)
+            previousCore->stop();
+
+        const auto openResult = fallbackCore->open(path);
+        if (!openResult.ok()) {
+            emitError(*coreMetadata, openResult.error());
+            return;
+        }
+
+        fallbackCore->play();
+        const auto seekResult = fallbackCore->seek(
+            std::chrono::duration_cast<std::chrono::milliseconds>(action.resumePosition));
+        if (!seekResult.ok()) {
+            emitError(*coreMetadata, seekResult.error());
+            return;
+        }
+
+        if (dependencies.events)
+            dependencies.events->onNativeRenderingFailed();
+    }
+
+    void emitError(EventMetadata metadata, MediaError error)
+    {
+        if (!dependencies.events)
+            return;
+
+        dependencies.events->onEvent({
+            .metadata = metadata,
+            .payload = ErrorEvent {
+                .error = std::move(error),
+            },
+        });
     }
 
     PlaybackSessionConfig config;
@@ -474,6 +565,7 @@ private:
     std::shared_ptr<detail::IPlaybackSessionCorePlayer> core;
     std::shared_ptr<detail::IPlaybackSessionRuntimePlayer> runtimePlayer;
     std::filesystem::path currentPath;
+    std::optional<runtime::RuntimeTimeline> handledFallbackTimeline;
 };
 
 PlaybackSession::PlaybackSession(PlaybackSessionConfig config,

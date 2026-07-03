@@ -38,11 +38,22 @@ public:
 
     void beginSeek(runtime::RuntimeTimeline runtimeTimeline)
     {
+        beginSeek(runtimeTimeline, false);
+    }
+
+    void beginFallbackSeek(runtime::RuntimeTimeline runtimeTimeline)
+    {
+        beginSeek(runtimeTimeline, true);
+    }
+
+    void beginSeek(runtime::RuntimeTimeline runtimeTimeline, bool suppressMediaInfoUntilSeek)
+    {
         {
             std::lock_guard lock(m_mutex);
             m_pendingSeekTimeline = runtimeTimeline;
             m_runtimeEofForwarded = false;
             m_coreEofQueued = false;
+            m_suppressMediaInfoUntilSeek = suppressMediaInfoUntilSeek;
         }
         m_timeline.clear();
     }
@@ -54,6 +65,7 @@ public:
             m_pendingSeekTimeline.reset();
             m_runtimeEofForwarded = false;
             m_coreEofQueued = false;
+            m_suppressMediaInfoUntilSeek = false;
         }
         m_timeline.clear();
     }
@@ -112,6 +124,8 @@ private:
     {
         {
             std::lock_guard lock(m_mutex);
+            if (m_suppressMediaInfoUntilSeek)
+                return;
             m_pendingSeekTimeline.reset();
             m_runtimeEofForwarded = false;
             m_coreEofQueued = false;
@@ -189,6 +203,7 @@ private:
         m_pendingSeekTimeline.reset();
         m_runtimeEofForwarded = false;
         m_coreEofQueued = false;
+        m_suppressMediaInfoUntilSeek = false;
         return timeline;
     }
 
@@ -199,6 +214,7 @@ private:
     std::optional<runtime::RuntimeTimeline> m_pendingSeekTimeline;
     bool m_runtimeEofForwarded = false;
     bool m_coreEofQueued = false;
+    bool m_suppressMediaInfoUntilSeek = false;
 };
 
 } // namespace media_sdk::session

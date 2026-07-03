@@ -122,4 +122,24 @@ if(BUILD_TESTING)
     add_test(NAME media_sdk_playback_session_event_router
         COMMAND $<TARGET_FILE:MediaSdkPlaybackSessionEventRouterTest>
     )
+
+    add_executable(MediaSdkPlaybackSessionFallbackTest
+        tests/tst_playback_session_fallback.cpp
+    )
+    target_compile_features(MediaSdkPlaybackSessionFallbackTest PRIVATE cxx_std_20)
+    set_target_properties(MediaSdkPlaybackSessionFallbackTest PROPERTIES
+        CXX_EXTENSIONS OFF
+        AUTOMOC OFF
+        AUTOUIC OFF
+        AUTORCC OFF
+    )
+    target_include_directories(MediaSdkPlaybackSessionFallbackTest PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/src"
+    )
+    target_link_libraries(MediaSdkPlaybackSessionFallbackTest PRIVATE
+        media_sdk_playback_session
+    )
+    add_test(NAME media_sdk_playback_session_fallback
+        COMMAND $<TARGET_FILE:MediaSdkPlaybackSessionFallbackTest>
+    )
 endif()

@@ -14,6 +14,7 @@ public:
     {
         (void)diagnostics;
     }
+    virtual void onNativeRenderingFailed() {}
 };
 
 struct PlaybackSessionConfig {
