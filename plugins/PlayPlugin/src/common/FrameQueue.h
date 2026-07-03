@@ -32,6 +32,16 @@ public:
         bool    eof    = false; // 文件结束标记帧
     };
 
+    enum class PushStatus {
+        Accepted,
+        CancelledGeneration,
+        Aborted
+    };
+
+    struct PushResult {
+        PushStatus status = PushStatus::Aborted;
+    };
+
     using WakeCallback = std::function<void()>;
 
     explicit FrameQueue(int maxSize = 16)
@@ -46,10 +56,26 @@ public:
      */
     bool push(T frame, int serial = 0, bool eof = false)
     {
-        return pushWithCancelSerial(std::move(frame), std::nullopt, serial, eof);
+        return pushWithResult(std::move(frame), serial, eof).status == PushStatus::Accepted;
     }
 
     bool pushIfCancelSerial(T frame, int expectedCancelSerial, int serial = 0, bool eof = false)
+    {
+        return pushWithResultIfCancelSerial(std::move(frame), expectedCancelSerial, serial, eof).status ==
+               PushStatus::Accepted;
+    }
+
+    [[nodiscard("push result distinguishes accepted, generation cancellation, and queue abort")]]
+    PushResult pushWithResult(T frame, int serial = 0, bool eof = false)
+    {
+        return pushWithCancelSerial(std::move(frame), std::nullopt, serial, eof);
+    }
+
+    [[nodiscard("push result distinguishes accepted, generation cancellation, and queue abort")]]
+    PushResult pushWithResultIfCancelSerial(T frame,
+                                            int expectedCancelSerial,
+                                            int serial = 0,
+                                            bool eof = false)
     {
         return pushWithCancelSerial(std::move(frame), expectedCancelSerial, serial, eof);
     }
@@ -183,10 +209,10 @@ public:
     }
 
 private:
-    bool pushWithCancelSerial(T frame,
-                              std::optional<int> expectedCancelSerial,
-                              int serial,
-                              bool eof)
+    PushResult pushWithCancelSerial(T frame,
+                                    std::optional<int> expectedCancelSerial,
+                                    int serial,
+                                    bool eof)
     {
         WakeCallback wakeCallback;
         {
@@ -197,15 +223,17 @@ private:
                    cancelSerial == m_cancelSerial) {
                 m_notFull.wait(&m_mutex);
             }
-            if (m_abort) return false;
-            if (cancelSerial != m_cancelSerial) return false;
+            if (m_abort)
+                return { .status = PushStatus::Aborted };
+            if (cancelSerial != m_cancelSerial)
+                return { .status = PushStatus::CancelledGeneration };
 
             m_queue.push_back({ std::move(frame), serial, eof });
             m_notEmpty.wakeOne();
             wakeCallback = m_wakeCallback;
         }
         notifyWakeCallback(wakeCallback);
-        return true;
+        return { .status = PushStatus::Accepted };
     }
 
     void notifyWakeCallback(const WakeCallback& wakeCallback)

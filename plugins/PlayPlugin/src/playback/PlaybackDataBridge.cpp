@@ -17,6 +17,20 @@ bool hasStats(const PlaybackDataBridge::PlaybackDataBridgeStats& stats)
            stats.queueAbortFailures != 0;
 }
 
+PlaybackDataBridge::PushStatus mapQueuePushStatus(AudioFrameQueue::PushStatus status)
+{
+    switch (status)
+    {
+    case AudioFrameQueue::PushStatus::Accepted:
+        return PlaybackDataBridge::PushStatus::Accepted;
+    case AudioFrameQueue::PushStatus::CancelledGeneration:
+        return PlaybackDataBridge::PushStatus::StaleGeneration;
+    case AudioFrameQueue::PushStatus::Aborted:
+        return PlaybackDataBridge::PushStatus::Cancelled;
+    }
+    return PlaybackDataBridge::PushStatus::Cancelled;
+}
+
 } // namespace
 
 PlaybackDataBridge::PlaybackDataBridge(VideoFrameQueue* videoQueue, AudioFrameQueue* audioQueue)
@@ -89,13 +103,17 @@ PlaybackDataBridge::PushResult PlaybackDataBridge::pushAudio(
         }
     }
 
-    const bool pushed = m_audioQueue->pushIfCancelSerial(std::move(frame),
-                                                         queueCancelSerial,
-                                                         static_cast<int>(generation));
-    incrementCounter(sessionId,
-                     generation,
-                     pushed ? Counter::AudioAccepted : Counter::QueueAbortFailure);
-    return { .status = pushed ? PushStatus::Accepted : PushStatus::Cancelled };
+    const auto pushResult = m_audioQueue->pushWithResultIfCancelSerial(std::move(frame),
+                                                                       queueCancelSerial,
+                                                                       static_cast<int>(generation));
+    const auto status = mapQueuePushStatus(pushResult.status);
+    Counter counter = Counter::QueueAbortFailure;
+    if (status == PushStatus::Accepted)
+        counter = Counter::AudioAccepted;
+    else if (status == PushStatus::StaleGeneration)
+        counter = Counter::AudioRejectedStale;
+    incrementCounter(sessionId, generation, counter);
+    return { .status = status };
 }
 
 PlaybackDataBridge::PushResult PlaybackDataBridge::pushVideo(
@@ -115,13 +133,17 @@ PlaybackDataBridge::PushResult PlaybackDataBridge::pushVideo(
         }
     }
 
-    const bool pushed = m_videoQueue->pushIfCancelSerial(std::move(frame),
-                                                         queueCancelSerial,
-                                                         static_cast<int>(generation));
-    incrementCounter(sessionId,
-                     generation,
-                     pushed ? Counter::VideoAccepted : Counter::QueueAbortFailure);
-    return { .status = pushed ? PushStatus::Accepted : PushStatus::Cancelled };
+    const auto pushResult = m_videoQueue->pushWithResultIfCancelSerial(std::move(frame),
+                                                                       queueCancelSerial,
+                                                                       static_cast<int>(generation));
+    const auto status = mapQueuePushStatus(pushResult.status);
+    Counter counter = Counter::QueueAbortFailure;
+    if (status == PushStatus::Accepted)
+        counter = Counter::VideoAccepted;
+    else if (status == PushStatus::StaleGeneration)
+        counter = Counter::VideoRejectedStale;
+    incrementCounter(sessionId, generation, counter);
+    return { .status = status };
 }
 
 bool PlaybackDataBridge::finish(std::uint64_t sessionId, std::uint64_t generation)

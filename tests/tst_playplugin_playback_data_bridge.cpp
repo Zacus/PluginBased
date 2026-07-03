@@ -32,7 +32,7 @@ void pushResultDistinguishesAcceptedAndStaleGeneration()
     assert(stale.status == PlaybackDataBridge::PushStatus::StaleGeneration);
 }
 
-void blockedPushReportsCancelledWhenGenerationIsCancelled()
+void blockedPushReportsStaleWhenGenerationIsCancelled()
 {
     VideoFrameQueue videoQueue(1);
     AudioFrameQueue audioQueue(1);
@@ -54,7 +54,7 @@ void blockedPushReportsCancelledWhenGenerationIsCancelled()
 
     bridge.cancelGeneration();
     assert(blocked.wait_for(1s) == std::future_status::ready);
-    assert(blocked.get().status == PlaybackDataBridge::PushStatus::Cancelled);
+    assert(blocked.get().status == PlaybackDataBridge::PushStatus::StaleGeneration);
 }
 
 void invalidFrameReportsClosed()
@@ -78,7 +78,7 @@ void invalidFrameReportsClosed()
 int main()
 {
     pushResultDistinguishesAcceptedAndStaleGeneration();
-    blockedPushReportsCancelledWhenGenerationIsCancelled();
+    blockedPushReportsStaleWhenGenerationIsCancelled();
     invalidFrameReportsClosed();
     return 0;
 }

@@ -44,9 +44,9 @@ def main() -> None:
             "PlaybackDataBridge should not be a QObject or GUI-thread object")
     require("pushAudio(" in bridge_h and "pushVideo(" in bridge_h and "finish(" in bridge_h,
             "PlaybackDataBridge should expose audio/video/drain data-path methods")
-    require("m_audioQueue->pushIfCancelSerial(" in bridge_cpp and
-            "m_videoQueue->pushIfCancelSerial(" in bridge_cpp,
-            "PlaybackDataBridge should use blocking cancel-epoch queue push off the GUI thread")
+    require("m_audioQueue->pushWithResultIfCancelSerial(" in bridge_cpp and
+            "m_videoQueue->pushWithResultIfCancelSerial(" in bridge_cpp,
+            "PlaybackDataBridge should use structured cancel-epoch queue push results off the GUI thread")
     require("m_audioQueue->finishIfCancelSerial(" in bridge_cpp and
             "m_videoQueue->finishIfCancelSerial(" in bridge_cpp,
             "PlaybackDataBridge should use cancel-epoch FrameQueue finish APIs for EOF")

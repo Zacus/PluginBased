@@ -57,6 +57,30 @@ void pushIfCancelSerialRejectsPushAfterCancel()
     assert(queue.empty());
 }
 
+void pushResultIfCancelSerialReportsCancelledGenerationAfterCancel()
+{
+    FrameQueue<int> queue(1);
+    const int cancelSerial = queue.cancelSerial();
+
+    queue.cancelPendingPushes();
+
+    const auto result = queue.pushWithResultIfCancelSerial(1, cancelSerial, 1);
+    assert(result.status == FrameQueue<int>::PushStatus::CancelledGeneration);
+    assert(queue.empty());
+}
+
+void pushResultIfCancelSerialReportsAbortedAfterAbort()
+{
+    FrameQueue<int> queue(1);
+    const int cancelSerial = queue.cancelSerial();
+
+    queue.abort();
+
+    const auto result = queue.pushWithResultIfCancelSerial(1, cancelSerial, 1);
+    assert(result.status == FrameQueue<int>::PushStatus::Aborted);
+    assert(queue.empty());
+}
+
 void finishIfCancelSerialRejectsEofAfterCancel()
 {
     FrameQueue<int> queue(1);
@@ -73,6 +97,8 @@ int main()
     cancelPendingPushesRejectsBlockedProducerWithoutAbortingConsumer();
     abortStillStopsBlockedConsumer();
     pushIfCancelSerialRejectsPushAfterCancel();
+    pushResultIfCancelSerialReportsCancelledGenerationAfterCancel();
+    pushResultIfCancelSerialReportsAbortedAfterAbort();
     finishIfCancelSerialRejectsEofAfterCancel();
     return 0;
 }
