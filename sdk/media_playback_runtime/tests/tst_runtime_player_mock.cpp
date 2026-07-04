@@ -5,6 +5,7 @@
 #include <chrono>
 #include <condition_variable>
 #include <cstddef>
+#include <cstdint>
 #include <cstring>
 #include <functional>
 #include <future>
@@ -265,10 +266,52 @@ std::vector<std::byte> bytesFromFloats(std::vector<float> samples)
     return bytes;
 }
 
+std::vector<std::byte> bytesFromInt16(std::vector<std::int16_t> samples)
+{
+    std::vector<std::byte> bytes(samples.size() * sizeof(std::int16_t));
+    std::memcpy(bytes.data(), samples.data(), bytes.size());
+    return bytes;
+}
+
+std::vector<std::byte> bytesFromInt32(std::vector<std::int32_t> samples)
+{
+    std::vector<std::byte> bytes(samples.size() * sizeof(std::int32_t));
+    std::memcpy(bytes.data(), samples.data(), bytes.size());
+    return bytes;
+}
+
+std::vector<std::byte> bytesFromUInt8(std::vector<std::uint8_t> samples)
+{
+    std::vector<std::byte> bytes(samples.size());
+    std::memcpy(bytes.data(), samples.data(), bytes.size());
+    return bytes;
+}
+
 std::vector<float> floatsFromBytes(const std::vector<std::byte>& bytes)
 {
     std::vector<float> samples(bytes.size() / sizeof(float));
     std::memcpy(samples.data(), bytes.data(), samples.size() * sizeof(float));
+    return samples;
+}
+
+std::vector<std::int16_t> int16FromBytes(const std::vector<std::byte>& bytes)
+{
+    std::vector<std::int16_t> samples(bytes.size() / sizeof(std::int16_t));
+    std::memcpy(samples.data(), bytes.data(), samples.size() * sizeof(std::int16_t));
+    return samples;
+}
+
+std::vector<std::int32_t> int32FromBytes(const std::vector<std::byte>& bytes)
+{
+    std::vector<std::int32_t> samples(bytes.size() / sizeof(std::int32_t));
+    std::memcpy(samples.data(), bytes.data(), samples.size() * sizeof(std::int32_t));
+    return samples;
+}
+
+std::vector<std::uint8_t> uint8FromBytes(const std::vector<std::byte>& bytes)
+{
+    std::vector<std::uint8_t> samples(bytes.size());
+    std::memcpy(samples.data(), bytes.data(), samples.size());
     return samples;
 }
 
@@ -315,6 +358,26 @@ media_sdk::runtime::RuntimeAudioFrame runtimeAudioWithSamples(
         .sessionId = sessionId,
         .generation = generation,
     };
+}
+
+media_sdk::runtime::RuntimeAudioFrame runtimeAudioWithBytes(
+    media_sdk::runtime::SessionId sessionId,
+    media_sdk::runtime::Generation generation,
+    std::chrono::microseconds pts,
+    std::vector<std::byte> samples)
+{
+    return {
+        .frame = makeAudioFrame(pts, std::move(samples)),
+        .sessionId = sessionId,
+        .generation = generation,
+    };
+}
+
+std::vector<std::byte> waitForWrittenBytes(MockAudioOutput& audio, int expectedWrites)
+{
+    assert(waitUntil([&audio, expectedWrites]() { return audio.writeCount == expectedWrites; }));
+    std::lock_guard lock(audio.mutex);
+    return audio.lastWrittenBytes;
 }
 
 media_sdk::runtime::RuntimeVideoFrame runtimeVideo(
@@ -489,6 +552,127 @@ void audioControlsApplyGainAndMuteBeforeAudioWrite()
     assert(muted.size() == 4);
     for (float sample : muted)
         assert(sample == 0.0f);
+}
+
+void audioControlsApplyGainForInt16Audio()
+{
+    MockAudioOutput audio;
+    MockPresenter presenter;
+    media_sdk::runtime::RuntimePlayerConfig config;
+    config.audioFormat.sampleFormat = media_sdk::runtime::AudioSampleFormat::Int16;
+    auto player = makePlayer(audio, presenter, config);
+    assert(player.open().ok());
+
+    player.setAudioControls({
+        .volume = 0.5f,
+        .muted = false,
+    });
+    const auto result = player.enqueueAudio(
+        runtimeAudioWithBytes(1, 1, 42ms, bytesFromInt16({ 12000, -12000, 3000, -3000 })));
+    assert(result.status == media_sdk::runtime::RuntimeFramePushStatus::Accepted);
+
+    const auto samples = int16FromBytes(waitForWrittenBytes(audio, 1));
+    assert(samples.size() == 4);
+    assert(samples[0] == 6000);
+    assert(samples[1] == -6000);
+    assert(samples[2] == 1500);
+    assert(samples[3] == -1500);
+}
+
+void audioControlsApplyGainForInt32Audio()
+{
+    MockAudioOutput audio;
+    MockPresenter presenter;
+    media_sdk::runtime::RuntimePlayerConfig config;
+    config.audioFormat.sampleFormat = media_sdk::runtime::AudioSampleFormat::Int32;
+    auto player = makePlayer(audio, presenter, config);
+    assert(player.open().ok());
+
+    player.setAudioControls({
+        .volume = 0.5f,
+        .muted = false,
+    });
+    const auto result = player.enqueueAudio(
+        runtimeAudioWithBytes(1, 1, 42ms, bytesFromInt32({ 120000, -120000, 3000, -3000 })));
+    assert(result.status == media_sdk::runtime::RuntimeFramePushStatus::Accepted);
+
+    const auto samples = int32FromBytes(waitForWrittenBytes(audio, 1));
+    assert(samples.size() == 4);
+    assert(samples[0] == 60000);
+    assert(samples[1] == -60000);
+    assert(samples[2] == 1500);
+    assert(samples[3] == -1500);
+}
+
+void audioControlsApplyGainForUInt8Audio()
+{
+    MockAudioOutput audio;
+    MockPresenter presenter;
+    media_sdk::runtime::RuntimePlayerConfig config;
+    config.audioFormat.sampleFormat = media_sdk::runtime::AudioSampleFormat::UInt8;
+    auto player = makePlayer(audio, presenter, config);
+    assert(player.open().ok());
+
+    player.setAudioControls({
+        .volume = 0.5f,
+        .muted = false,
+    });
+    const auto result = player.enqueueAudio(
+        runtimeAudioWithBytes(1, 1, 42ms, bytesFromUInt8({ 228, 28, 128 })));
+    assert(result.status == media_sdk::runtime::RuntimeFramePushStatus::Accepted);
+
+    const auto samples = uint8FromBytes(waitForWrittenBytes(audio, 1));
+    assert(samples.size() == 3);
+    assert(samples[0] == 178);
+    assert(samples[1] == 78);
+    assert(samples[2] == 128);
+}
+
+void audioControlsMuteUsesFormatSilence()
+{
+    {
+        MockAudioOutput audio;
+        MockPresenter presenter;
+        media_sdk::runtime::RuntimePlayerConfig config;
+        config.audioFormat.sampleFormat = media_sdk::runtime::AudioSampleFormat::Int16;
+        auto player = makePlayer(audio, presenter, config);
+        assert(player.open().ok());
+
+        player.setAudioControls({
+            .volume = 1.0f,
+            .muted = true,
+        });
+        const auto result = player.enqueueAudio(
+            runtimeAudioWithBytes(1, 1, 42ms, bytesFromInt16({ 12000, -12000 })));
+        assert(result.status == media_sdk::runtime::RuntimeFramePushStatus::Accepted);
+
+        const auto samples = int16FromBytes(waitForWrittenBytes(audio, 1));
+        assert(samples.size() == 2);
+        assert(samples[0] == 0);
+        assert(samples[1] == 0);
+    }
+
+    {
+        MockAudioOutput audio;
+        MockPresenter presenter;
+        media_sdk::runtime::RuntimePlayerConfig config;
+        config.audioFormat.sampleFormat = media_sdk::runtime::AudioSampleFormat::UInt8;
+        auto player = makePlayer(audio, presenter, config);
+        assert(player.open().ok());
+
+        player.setAudioControls({
+            .volume = 1.0f,
+            .muted = true,
+        });
+        const auto result = player.enqueueAudio(
+            runtimeAudioWithBytes(1, 1, 42ms, bytesFromUInt8({ 228, 28, 128 })));
+        assert(result.status == media_sdk::runtime::RuntimeFramePushStatus::Accepted);
+
+        const auto samples = uint8FromBytes(waitForWrittenBytes(audio, 1));
+        assert(samples.size() == 3);
+        for (auto sample : samples)
+            assert(sample == 128);
+    }
 }
 
 void audioQueueBackpressureIsReportedInDiagnostics()
@@ -921,6 +1105,10 @@ int main()
     timelineTracksSeekGeneration();
     audioFramesAreWrittenToInjectedAudioOutput();
     audioControlsApplyGainAndMuteBeforeAudioWrite();
+    audioControlsApplyGainForInt16Audio();
+    audioControlsApplyGainForInt32Audio();
+    audioControlsApplyGainForUInt8Audio();
+    audioControlsMuteUsesFormatSilence();
     audioQueueBackpressureIsReportedInDiagnostics();
     videoFramesAreScheduledAgainstAudioClock();
     videoWaitDecisionDelaysAndEventuallyPresentsSameFrame();

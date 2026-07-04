@@ -10,7 +10,9 @@
 #include <atomic>
 #include <cmath>
 #include <condition_variable>
+#include <cstdint>
 #include <cstring>
+#include <limits>
 #include <mutex>
 #include <thread>
 #include <utility>
@@ -53,26 +55,104 @@ RuntimeAudioControls sanitizeAudioControls(RuntimeAudioControls controls)
     return controls;
 }
 
+template<typename SampleType>
+bool sampleBytesAreAligned(std::span<const std::byte> samples)
+{
+    return samples.size() % sizeof(SampleType) == 0;
+}
+
+template<typename SampleType>
+SampleType readSample(const std::byte* source)
+{
+    SampleType sample {};
+    std::memcpy(&sample, source, sizeof(sample));
+    return sample;
+}
+
+template<typename SampleType>
+void writeSample(std::byte* target, SampleType sample)
+{
+    std::memcpy(target, &sample, sizeof(sample));
+}
+
+template<typename SampleType>
+void applySignedIntegralGain(std::vector<std::byte>& output, float volume)
+{
+    if (!sampleBytesAreAligned<SampleType>(output))
+        return;
+
+    for (std::size_t offset = 0; offset < output.size(); offset += sizeof(SampleType)) {
+        const auto sample = readSample<SampleType>(output.data() + offset);
+        const auto scaled = std::llround(static_cast<double>(sample) * static_cast<double>(volume));
+        const auto clamped = std::clamp(
+            scaled,
+            static_cast<long long>(std::numeric_limits<SampleType>::min()),
+            static_cast<long long>(std::numeric_limits<SampleType>::max()));
+        writeSample(output.data() + offset, static_cast<SampleType>(clamped));
+    }
+}
+
+void applyUInt8Gain(std::vector<std::byte>& output, float volume)
+{
+    constexpr int silence = 128;
+    for (std::byte& byte : output) {
+        const auto sample = static_cast<int>(std::to_integer<std::uint8_t>(byte));
+        const auto centered = sample - silence;
+        const auto scaled = silence
+            + std::llround(static_cast<double>(centered) * static_cast<double>(volume));
+        byte = static_cast<std::byte>(std::clamp(scaled, 0LL, 255LL));
+    }
+}
+
+void applyFloat32Gain(std::vector<std::byte>& output, float volume)
+{
+    if (!sampleBytesAreAligned<float>(output))
+        return;
+
+    for (std::size_t offset = 0; offset < output.size(); offset += sizeof(float)) {
+        const auto sample = readSample<float>(output.data() + offset) * volume;
+        writeSample(output.data() + offset, sample);
+    }
+}
+
+void fillSilence(std::vector<std::byte>& output, AudioSampleFormat sampleFormat)
+{
+    if (sampleFormat == AudioSampleFormat::UInt8) {
+        std::fill(output.begin(), output.end(), static_cast<std::byte>(128));
+        return;
+    }
+    std::fill(output.begin(), output.end(), std::byte { 0 });
+}
+
 std::vector<std::byte> applyAudioControls(std::span<const std::byte> samples,
-                                          RuntimeAudioControls controls)
+                                          RuntimeAudioControls controls,
+                                          AudioSampleFormat sampleFormat)
 {
     std::vector<std::byte> output(samples.begin(), samples.end());
     if (output.empty())
         return output;
 
     if (controls.muted || controls.volume == 0.0f) {
-        std::fill(output.begin(), output.end(), std::byte { 0 });
+        fillSilence(output, sampleFormat);
         return output;
     }
 
-    if (output.size() % sizeof(float) != 0)
-        return output;
-
-    for (std::size_t offset = 0; offset < output.size(); offset += sizeof(float)) {
-        float sample = 0.0f;
-        std::memcpy(&sample, output.data() + offset, sizeof(sample));
-        sample *= controls.volume;
-        std::memcpy(output.data() + offset, &sample, sizeof(sample));
+    switch (sampleFormat) {
+    case AudioSampleFormat::UInt8:
+        applyUInt8Gain(output, controls.volume);
+        break;
+    case AudioSampleFormat::Int16:
+        applySignedIntegralGain<std::int16_t>(output, controls.volume);
+        break;
+    case AudioSampleFormat::Int32:
+        applySignedIntegralGain<std::int32_t>(output, controls.volume);
+        break;
+    case AudioSampleFormat::Float32:
+    case AudioSampleFormat::Float32Planar:
+        applyFloat32Gain(output, controls.volume);
+        break;
+    case AudioSampleFormat::Unknown:
+        break;
     }
     return output;
 }
@@ -436,7 +516,7 @@ struct RuntimePlayer::Impl {
             std::vector<std::byte> controlledSamples;
             std::span<const std::byte> outputSamples = samples;
             if (controls.muted || controls.volume != 1.0f) {
-                controlledSamples = applyAudioControls(samples, controls);
+                controlledSamples = applyAudioControls(samples, controls, config.audioFormat.sampleFormat);
                 outputSamples = controlledSamples;
             }
             const auto writeResult = dependencies.audioOutput->write({
