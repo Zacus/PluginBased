@@ -930,6 +930,22 @@ void pausedSeekPresentsOnePrerollFrameWithoutResumingAudio()
     assert(presenter.timing().clock == 500ms);
 }
 
+void pausedPlaybackCancelsLateVideoPushWithoutDecodeError()
+{
+    MockAudioOutput audio;
+    audio.setClock(100ms, 1);
+    MockPresenter presenter;
+    auto player = makePlayer(audio, presenter);
+    assert(player.open().ok());
+
+    player.pause();
+    const auto result = player.enqueueVideo(runtimeVideo(1, 1, 100ms));
+
+    assert(result.status == media_sdk::runtime::RuntimeFramePushStatus::Cancelled);
+    std::this_thread::sleep_for(10ms);
+    assert(presenter.presentCount == 0);
+}
+
 void stopAbortsQueuesPausesAudioClearsPresenterAndReturnsIdle()
 {
     MockAudioOutput audio;
@@ -1158,6 +1174,7 @@ int main()
     eofBackpressureIsReportedInDiagnostics();
     seekInvalidatesOldGenerationFramesAndCompletions();
     pausedSeekPresentsOnePrerollFrameWithoutResumingAudio();
+    pausedPlaybackCancelsLateVideoPushWithoutDecodeError();
     stopAbortsQueuesPausesAudioClearsPresenterAndReturnsIdle();
     nativePresenterFailureRunsFullFallbackTransition();
     nativeDiagnosticsTrackZeroCopySuccessWithoutCpuCopy();

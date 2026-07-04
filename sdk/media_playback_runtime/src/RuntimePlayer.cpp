@@ -844,7 +844,7 @@ struct RuntimePlayer::Impl {
             return RuntimeFramePushStatus::Closed;
         if (paused) {
             if (!pausedSeekPrerollPending || pausedSeekPrerollReserved)
-                return RuntimeFramePushStatus::Closed;
+                return RuntimeFramePushStatus::Cancelled;
             pausedSeekPrerollReserved = true;
         }
         return RuntimeFramePushStatus::Accepted;
