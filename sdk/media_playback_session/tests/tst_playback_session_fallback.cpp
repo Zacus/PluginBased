@@ -247,6 +247,12 @@ public:
         });
     }
 
+    void triggerFallbackAfterRuntimeGenerationAdvance(std::chrono::microseconds resumePosition)
+    {
+        ++currentTimeline.generation;
+        triggerFallback(resumePosition);
+    }
+
     int openCount = 0;
     int videoPushCount = 0;
     int completeSeekCount = 0;
@@ -472,6 +478,35 @@ void fallbackWhilePausedRestoresPausedCoreState()
     assert(events.nativeRenderingFailedCount == 1);
 }
 
+void fallbackWithNextRuntimeGenerationStillReopensCpuCore()
+{
+    TestContext context;
+    RecordingSessionEvents events;
+    auto session = makeSession(context, events);
+    openNativeSession(context, *session, coreTimeline(10, 3));
+
+    context.runtime->triggerFallbackAfterRuntimeGenerationAdvance(1500ms);
+
+    assert(context.cores.size() == 2);
+    assert(!context.coreConfigs[1].preferNativeVideoFrames);
+    assert(context.cores[0]->stopCount == 1);
+    assert(context.cores[1]->openCount == 1);
+    assert(context.cores[1]->playCount == 1);
+    assert(context.cores[1]->seekCount == 1);
+    assert(context.cores[1]->lastSeekPosition == 1500ms);
+    assert(events.nativeRenderingFailedCount == 1);
+
+    context.cores[1]->emitSeekCompleted(coreTimeline(11, 1), 1500ms);
+    assert(context.runtime->completeSeekCount == 1);
+
+    const auto accepted = context.cores[1]->pushVideo({
+        .sessionId = 11,
+        .generation = 1,
+    });
+    assert(accepted.status == media_sdk::DecodeFramePushStatus::Accepted);
+    assert(context.runtime->lastVideo.generation == 2);
+}
+
 } // namespace
 
 int main()
@@ -480,4 +515,5 @@ int main()
     repeatedFallbackForSameGenerationIsIgnored();
     fallbackSeekFailureEmitsErrorEvent();
     fallbackWhilePausedRestoresPausedCoreState();
+    fallbackWithNextRuntimeGenerationStillReopensCpuCore();
 }

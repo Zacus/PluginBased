@@ -521,7 +521,7 @@ private:
             .sessionId = action.sessionId,
             .generation = action.generation,
         };
-        const auto coreMetadata = timelineState.coreForRuntimeTimeline(fallbackTimeline);
+        const auto coreMetadata = timelineState.coreForRuntimeSession(fallbackTimeline.sessionId);
         if (!coreMetadata.has_value())
             return;
 

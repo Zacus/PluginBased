@@ -247,8 +247,9 @@ struct RuntimePlayer::Impl {
 
     RuntimeFramePushResult enqueueVideo(RuntimeVideoFrame frame)
     {
-        if (!isAcceptingVideo())
-            return { .status = RuntimeFramePushStatus::Closed };
+        const auto gateStatus = videoPushGate(frame.sessionId, frame.generation);
+        if (gateStatus != RuntimeFramePushStatus::Accepted)
+            return { .status = gateStatus };
 
         const bool nativeFrame = frame.frame.pixelFormat() == PixelFormat::Native;
         const auto pushResult = videoQueue.push(std::move(frame));
@@ -786,10 +787,16 @@ struct RuntimePlayer::Impl {
         return running;
     }
 
-    bool isAcceptingVideo() const
+    RuntimeFramePushStatus videoPushGate(SessionId checkedSessionId, Generation checkedGeneration) const
     {
         std::lock_guard lock(m_mutex);
-        return running && !paused && !fallbackPending;
+        if (!running)
+            return RuntimeFramePushStatus::Closed;
+        if (checkedSessionId != sessionId || checkedGeneration != generation)
+            return RuntimeFramePushStatus::RejectedGeneration;
+        if (paused || fallbackPending)
+            return RuntimeFramePushStatus::Closed;
+        return RuntimeFramePushStatus::Accepted;
     }
 
     bool isCurrent(SessionId checkedSessionId, Generation checkedGeneration) const

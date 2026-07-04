@@ -1021,6 +1021,24 @@ void currentGenerationDeviceLostPausesAudioFlushesQueuesClearsPresenterAndReques
     assert(!events.lastAction.preferNativeVideoFrames);
 }
 
+void fallbackPendingRejectsOldGenerationFramesAsStale()
+{
+    MockAudioOutput audio;
+    audio.setClock(100ms, 1);
+    MockPresenter presenter;
+    MockRuntimeEvents events;
+    auto player = makePlayer(audio, presenter, events);
+    assert(player.open().ok());
+
+    discardFramePushResult(player.enqueueVideo(runtimeVideo(1, 1, 100ms, media_sdk::PixelFormat::Native)));
+    assert(waitUntil([&presenter]() { return presenter.presentCount == 1; }));
+    presenter.complete(presenter.lastId(), media_sdk::runtime::PresentStatus::DeviceLost);
+    assert(waitUntil([&events]() { return events.fallbackRequestCount == 1; }));
+
+    const auto staleResult = player.enqueueVideo(runtimeVideo(1, 1, 100ms));
+    assert(staleResult.status == media_sdk::runtime::RuntimeFramePushStatus::RejectedGeneration);
+}
+
 void queuedPresenterResultWithZeroIdTriggersFallback()
 {
     MockAudioOutput audio;
@@ -1125,4 +1143,5 @@ int main()
     queuedPresenterResultWithZeroIdTriggersFallback();
     oldGenerationDeviceLostDoesNotInterruptCurrentPlayback();
     fallbackSeekCompletionResumesAudioAndVideoScheduling();
+    fallbackPendingRejectsOldGenerationFramesAsStale();
 }

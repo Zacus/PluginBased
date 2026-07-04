@@ -81,6 +81,15 @@ public:
         return m_core;
     }
 
+    [[nodiscard("empty means the runtime session is stale or no core timeline is active")]]
+    std::optional<EventMetadata> coreForRuntimeSession(runtime::SessionId sessionId) const
+    {
+        std::lock_guard lock(m_mutex);
+        if (!m_accepting || sessionId != m_runtime.sessionId)
+            return std::nullopt;
+        return m_core;
+    }
+
     [[nodiscard("false means no core/runtime timeline is currently accepting frames or events")]]
     bool hasAcceptedTimeline() const
     {
