@@ -69,6 +69,8 @@ public:
     void completeSeek(SessionId sessionId, Generation generation);
     void stop();
     RuntimeDiagnostics diagnostics() const;
+    [[nodiscard("clock snapshots are the authoritative playback position source")]]
+    ClockSnapshot clock() const;
     RuntimeTimeline timeline() const;
 
 private:

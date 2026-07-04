@@ -45,6 +45,8 @@ public:
     virtual void stop() = 0;
     [[nodiscard("diagnostics verify queue, fallback, native, and clock behavior")]]
     virtual runtime::RuntimeDiagnostics diagnostics() const = 0;
+    [[nodiscard("clock snapshots drive external playback position events")]]
+    virtual runtime::ClockSnapshot clock() const = 0;
     [[nodiscard("timeline is required for stale callback checks")]]
     virtual runtime::RuntimeTimeline timeline() const = 0;
 };

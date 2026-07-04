@@ -161,6 +161,11 @@ public:
         return m_player.diagnostics();
     }
 
+    runtime::ClockSnapshot clock() const override
+    {
+        return m_player.clock();
+    }
+
     runtime::RuntimeTimeline timeline() const override
     {
         return m_player.timeline();
@@ -209,9 +214,18 @@ public:
             enqueueEndOfStreamHandler(runtimeTimeline);
     }
 
+    [[nodiscard("empty means no current runtime clock is available for this timeline")]]
+    std::optional<runtime::ClockSnapshot> playbackClock(runtime::RuntimeTimeline runtimeTimeline)
+    {
+        if (playbackClockHandler)
+            return playbackClockHandler(runtimeTimeline);
+        return std::nullopt;
+    }
+
     std::function<Result<runtime::RuntimeTimeline>(const MediaInfo&)> openRuntimeForMediaHandler;
     std::function<void(runtime::RuntimeTimeline)> completeSeekHandler;
     std::function<void(runtime::RuntimeTimeline)> enqueueEndOfStreamHandler;
+    std::function<std::optional<runtime::ClockSnapshot>(runtime::RuntimeTimeline)> playbackClockHandler;
 };
 
 struct PlaybackSession::Impl final
@@ -239,6 +253,8 @@ struct PlaybackSession::Impl final
             [this](runtime::RuntimeTimeline runtimeTimeline) { completeSeek(runtimeTimeline); };
         runtimeControl.enqueueEndOfStreamHandler =
             [this](runtime::RuntimeTimeline runtimeTimeline) { enqueueEndOfStream(runtimeTimeline); };
+        runtimeControl.playbackClockHandler =
+            [this](runtime::RuntimeTimeline runtimeTimeline) { return playbackClock(runtimeTimeline); };
     }
 
     ~Impl() override
@@ -358,7 +374,7 @@ struct PlaybackSession::Impl final
 
         if (handles.runtimePlayer) {
             handles.runtimePlayer->seek(std::chrono::duration_cast<std::chrono::microseconds>(position));
-            eventRouter.beginSeek(handles.runtimePlayer->timeline());
+            eventRouter.beginSeek(handles.runtimePlayer->timeline(), position);
         } else {
             eventRouter.cancelFrameAcceptance();
         }
@@ -448,6 +464,20 @@ struct PlaybackSession::Impl final
             currentRuntime->enqueueEndOfStream(runtimeTimeline.sessionId, runtimeTimeline.generation);
             notifyRuntimeDiagnostics();
         }
+    }
+
+    std::optional<runtime::ClockSnapshot> playbackClock(runtime::RuntimeTimeline runtimeTimeline) const
+    {
+        auto currentRuntime = currentRuntimePlayer();
+        if (!currentRuntime)
+            return std::nullopt;
+        if (!timelineState.acceptsRuntimeTimeline(runtimeTimeline))
+            return std::nullopt;
+
+        auto snapshot = currentRuntime->clock();
+        if (!snapshot.valid || snapshot.generation != runtimeTimeline.generation)
+            return std::nullopt;
+        return snapshot;
     }
 
 private:
@@ -545,7 +575,9 @@ private:
             currentFactories = factories;
         }
 
-        eventRouter.beginFallbackSeek(fallbackTimeline);
+        const auto fallbackPosition =
+            std::chrono::duration_cast<std::chrono::milliseconds>(action.resumePosition);
+        eventRouter.beginFallbackSeek(fallbackTimeline, fallbackPosition);
 
         auto fallbackCore = currentFactories->createCore(
             fallbackCoreConfig,
@@ -574,8 +606,7 @@ private:
         }
 
         fallbackCore->play();
-        const auto seekResult = fallbackCore->seek(
-            std::chrono::duration_cast<std::chrono::milliseconds>(action.resumePosition));
+        const auto seekResult = fallbackCore->seek(fallbackPosition);
         if (!seekResult.ok()) {
             emitError(*coreMetadata, seekResult.error());
             return;

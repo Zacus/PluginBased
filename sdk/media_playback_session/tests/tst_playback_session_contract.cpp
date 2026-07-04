@@ -240,6 +240,7 @@ public:
                       media_sdk::runtime::Generation generation) override;
     void stop() override;
     media_sdk::runtime::RuntimeDiagnostics diagnostics() const override;
+    media_sdk::runtime::ClockSnapshot clock() const override;
     media_sdk::runtime::RuntimeTimeline timeline() const override;
 
     void triggerEndOfStreamPresented()
@@ -380,6 +381,16 @@ void FakeRuntimePlayer::stop()
 media_sdk::runtime::RuntimeDiagnostics FakeRuntimePlayer::diagnostics() const
 {
     return m_context.diagnostics;
+}
+
+media_sdk::runtime::ClockSnapshot FakeRuntimePlayer::clock() const
+{
+    return {
+        .position = lastSeekPosition,
+        .generation = currentTimeline.generation,
+        .valid = true,
+        .paused = paused,
+    };
 }
 
 media_sdk::runtime::RuntimeTimeline FakeRuntimePlayer::timeline() const

@@ -468,6 +468,24 @@ struct RuntimePlayer::Impl {
         };
     }
 
+    ClockSnapshot snapshotClock() const
+    {
+        Generation activeGeneration = 0;
+        bool active = false;
+        {
+            std::lock_guard lock(m_mutex);
+            active = running;
+            activeGeneration = generation;
+        }
+        if (!active || !dependencies.audioOutput)
+            return {};
+
+        auto snapshot = dependencies.audioOutput->clock();
+        if (snapshot.generation != activeGeneration)
+            snapshot.valid = false;
+        return snapshot;
+    }
+
     void onPresentComplete(PresentCompletion completion)
     {
         bool failed = false;
@@ -905,6 +923,11 @@ void RuntimePlayer::stop()
 RuntimeDiagnostics RuntimePlayer::diagnostics() const
 {
     return m_impl->snapshotDiagnostics();
+}
+
+ClockSnapshot RuntimePlayer::clock() const
+{
+    return m_impl->snapshotClock();
 }
 
 RuntimeTimeline RuntimePlayer::timeline() const
