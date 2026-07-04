@@ -315,6 +315,26 @@ if(BUILD_TESTING)
         COMMAND $<TARGET_FILE:PlayPluginPendingSeekRequestsTest>
         WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
     )
+    add_executable(PlayPluginSdkPlaybackAdapterTest
+        tests/tst_playplugin_sdk_playback_adapter.cpp
+        "${PLAYPLUGIN_TEST_PLUGIN_ROOT}/PlayPlugin/src/playback/SdkPlaybackAdapter.cpp"
+    )
+    target_include_directories(PlayPluginSdkPlaybackAdapterTest PRIVATE
+        "${PLAYPLUGIN_TEST_PLUGIN_ROOT}/PlayPlugin/src"
+        "${CMAKE_SOURCE_DIR}/logger"
+    )
+    target_link_libraries(PlayPluginSdkPlaybackAdapterTest PRIVATE
+        Qt6::Core
+        Qt6::Test
+        media_sdk::playback_session
+        media_sdk::playback_runtime
+        PluginBasedLogger
+        FFmpeg::all
+    )
+    add_test(NAME playplugin_sdk_playback_adapter
+        COMMAND $<TARGET_FILE:PlayPluginSdkPlaybackAdapterTest>
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+    )
     add_test(NAME app_theme_service_checks
         COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tests/app_theme_service_checks.py"
         WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"

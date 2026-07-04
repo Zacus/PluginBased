@@ -38,8 +38,12 @@ def main() -> None:
     require("SessionEventBridge" in sdk_adapter_h
             and "media_sdk::session::ISessionEvents" in sdk_adapter_cpp,
             "SdkPlaybackAdapter should own a per-session SDK event bridge")
-    require("std::unique_ptr<media_sdk::session::PlaybackSession>" in sdk_adapter_h,
-            "SdkPlaybackAdapter should own PlaybackSession")
+    require("std::unique_ptr<ISdkPlaybackSession>" in sdk_adapter_h
+            and "SdkPlaybackSessionFactory" in sdk_adapter_h,
+            "SdkPlaybackAdapter should own an injectable SDK playback session facade")
+    require("RealSdkPlaybackSession" in sdk_adapter_cpp
+            and "media_sdk::session::PlaybackSession m_session" in sdk_adapter_cpp,
+            "SdkPlaybackAdapter production path should wrap the real SDK PlaybackSession")
     require("onRuntimeDiagnostics" in sdk_adapter_cpp and "PlayPerf: sdk" in sdk_adapter_cpp,
             "SdkPlaybackAdapter should bridge SDK diagnostics to PlayPlugin logging")
     require("SessionEventBridge" in sdk_adapter_h + sdk_adapter_cpp,

@@ -8,8 +8,30 @@
 
 #include <chrono>
 #include <cstdint>
+#include <filesystem>
+#include <functional>
 #include <memory>
 #include <mutex>
+
+class ISdkPlaybackSession {
+public:
+    virtual ~ISdkPlaybackSession() = default;
+
+    [[nodiscard("open result determines whether adapter may start playback")]]
+    virtual media_sdk::Result<void> open(const std::filesystem::path& path) = 0;
+    virtual void play() = 0;
+    virtual void pause() = 0;
+    virtual void stop() = 0;
+    [[nodiscard("seek result determines whether adapter should keep pending seek state")]]
+    virtual media_sdk::Result<void> seek(std::chrono::milliseconds position) = 0;
+    virtual void setAudioControls(media_sdk::runtime::RuntimeAudioControls controls) = 0;
+    [[nodiscard("timeline maps SDK generation back to Qt seek serials")]]
+    virtual media_sdk::runtime::RuntimeTimeline timeline() const = 0;
+};
+
+using SdkPlaybackSessionFactory = std::function<std::unique_ptr<ISdkPlaybackSession>(
+    media_sdk::session::PlaybackSessionConfig,
+    media_sdk::session::PlaybackSessionDependencies)>;
 
 class SdkPlaybackAdapter final : public QObject
 {
@@ -18,6 +40,10 @@ class SdkPlaybackAdapter final : public QObject
 public:
     SdkPlaybackAdapter(media_sdk::runtime::IAudioOutput* audioOutput,
                        media_sdk::runtime::IVideoPresenter* videoPresenter,
+                       QObject* parent = nullptr);
+    SdkPlaybackAdapter(media_sdk::runtime::IAudioOutput* audioOutput,
+                       media_sdk::runtime::IVideoPresenter* videoPresenter,
+                       SdkPlaybackSessionFactory sessionFactory,
                        QObject* parent = nullptr);
     ~SdkPlaybackAdapter() override;
 
@@ -60,7 +86,8 @@ private:
     mutable std::mutex m_mutex;
     media_sdk::runtime::IAudioOutput* m_audioOutput = nullptr;
     media_sdk::runtime::IVideoPresenter* m_videoPresenter = nullptr;
-    std::unique_ptr<media_sdk::session::PlaybackSession> m_session;
+    SdkPlaybackSessionFactory m_sessionFactory;
+    std::unique_ptr<ISdkPlaybackSession> m_session;
     std::unique_ptr<SessionEventBridge> m_sessionEventBridge;
     PendingSeekRequests<int> m_pendingSeekRequests;
     std::uint64_t m_eventSerial = 0;

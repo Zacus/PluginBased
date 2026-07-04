@@ -167,7 +167,10 @@ def check_sdk_playback_adapter_contract() -> None:
     combined = "\n".join((header, source))
 
     assert_contains(header, "class SdkPlaybackAdapter final", SDK_PLAYBACK_ADAPTER_H)
-    assert_contains(header, "std::unique_ptr<media_sdk::session::PlaybackSession>", SDK_PLAYBACK_ADAPTER_H)
+    assert_contains(header, "std::unique_ptr<ISdkPlaybackSession>", SDK_PLAYBACK_ADAPTER_H)
+    assert_contains(header, "SdkPlaybackSessionFactory", SDK_PLAYBACK_ADAPTER_H)
+    assert_contains(source, "class RealSdkPlaybackSession final", SDK_PLAYBACK_ADAPTER_CPP)
+    assert_contains(source, "media_sdk::session::PlaybackSession m_session", SDK_PLAYBACK_ADAPTER_CPP)
     assert_contains(header, "std::unique_ptr<SessionEventBridge>", SDK_PLAYBACK_ADAPTER_H)
     assert_contains(source, "media_sdk::session::ISessionEvents", SDK_PLAYBACK_ADAPTER_CPP)
     assert_contains(source, "onRuntimeDiagnostics", SDK_PLAYBACK_ADAPTER_CPP)

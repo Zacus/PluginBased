@@ -43,8 +43,9 @@ def main() -> None:
     require("destroySdkRuntimeChain" in pipeline_cpp,
             "PlaybackPipeline should explicitly tear down SDK runtime chain")
 
-    require("media_sdk::session::PlaybackSession" in sdk_adapter_h,
-            "SdkPlaybackAdapter should own SDK PlaybackSession")
+    require("std::unique_ptr<ISdkPlaybackSession>" in sdk_adapter_h
+            and "RealSdkPlaybackSession" in sdk_adapter_cpp,
+            "SdkPlaybackAdapter should own an injectable facade over SDK PlaybackSession")
     require("acceptsEventSerial" in sdk_adapter_cpp,
             "SdkPlaybackAdapter should reject stale queued Qt callbacks")
     require("PlayPerf: sdk" in sdk_adapter_cpp,

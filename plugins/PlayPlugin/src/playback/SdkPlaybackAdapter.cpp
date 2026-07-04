@@ -13,6 +13,7 @@ extern "C" {
 #include <filesystem>
 #include <memory>
 #include <optional>
+#include <utility>
 #include <variant>
 
 namespace {
@@ -66,13 +67,82 @@ private:
     std::uint64_t m_eventSerial = 0;
 };
 
+namespace {
+
+class RealSdkPlaybackSession final : public ISdkPlaybackSession {
+public:
+    RealSdkPlaybackSession(media_sdk::session::PlaybackSessionConfig config,
+                           media_sdk::session::PlaybackSessionDependencies dependencies)
+        : m_session(std::move(config), dependencies)
+    {
+    }
+
+    media_sdk::Result<void> open(const std::filesystem::path& path) override
+    {
+        return m_session.open(path);
+    }
+
+    void play() override
+    {
+        m_session.play();
+    }
+
+    void pause() override
+    {
+        m_session.pause();
+    }
+
+    void stop() override
+    {
+        m_session.stop();
+    }
+
+    media_sdk::Result<void> seek(std::chrono::milliseconds position) override
+    {
+        return m_session.seek(position);
+    }
+
+    void setAudioControls(media_sdk::runtime::RuntimeAudioControls controls) override
+    {
+        m_session.setAudioControls(controls);
+    }
+
+    media_sdk::runtime::RuntimeTimeline timeline() const override
+    {
+        return m_session.timeline();
+    }
+
+private:
+    media_sdk::session::PlaybackSession m_session;
+};
+
+SdkPlaybackSessionFactory defaultSessionFactory()
+{
+    return [](media_sdk::session::PlaybackSessionConfig config,
+              media_sdk::session::PlaybackSessionDependencies dependencies) {
+        return std::make_unique<RealSdkPlaybackSession>(std::move(config), dependencies);
+    };
+}
+
+} // namespace
+
 SdkPlaybackAdapter::SdkPlaybackAdapter(
     media_sdk::runtime::IAudioOutput* audioOutput,
     media_sdk::runtime::IVideoPresenter* videoPresenter,
     QObject* parent)
+    : SdkPlaybackAdapter(audioOutput, videoPresenter, defaultSessionFactory(), parent)
+{
+}
+
+SdkPlaybackAdapter::SdkPlaybackAdapter(
+    media_sdk::runtime::IAudioOutput* audioOutput,
+    media_sdk::runtime::IVideoPresenter* videoPresenter,
+    SdkPlaybackSessionFactory sessionFactory,
+    QObject* parent)
     : QObject(parent)
     , m_audioOutput(audioOutput)
     , m_videoPresenter(videoPresenter)
+    , m_sessionFactory(std::move(sessionFactory))
 {
 }
 
@@ -103,13 +173,18 @@ void SdkPlaybackAdapter::openFile(const QUrl& url)
         eventBridge = std::make_unique<SessionEventBridge>(*this, eventSerial);
     }
 
-    auto session = std::make_unique<media_sdk::session::PlaybackSession>(
-        sessionConfig(),
-        media_sdk::session::PlaybackSessionDependencies {
-            .audioOutput = m_audioOutput,
-            .videoPresenter = m_videoPresenter,
-            .events = eventBridge.get(),
-        });
+    const auto dependencies = media_sdk::session::PlaybackSessionDependencies {
+        .audioOutput = m_audioOutput,
+        .videoPresenter = m_videoPresenter,
+        .events = eventBridge.get(),
+    };
+    auto session = m_sessionFactory
+        ? m_sessionFactory(sessionConfig(), dependencies)
+        : nullptr;
+    if (!session) {
+        emit errorOccurred(QStringLiteral("SdkPlaybackAdapter session factory returned null"));
+        return;
+    }
 
     const auto path = pathFromUrl(url);
     const auto result = session->open(path);
@@ -140,7 +215,7 @@ void SdkPlaybackAdapter::setPaused(bool paused)
 
     m_paused = paused;
 
-    media_sdk::session::PlaybackSession* session = nullptr;
+    ISdkPlaybackSession* session = nullptr;
     {
         std::lock_guard lock(m_mutex);
         session = m_session.get();
@@ -162,7 +237,7 @@ void SdkPlaybackAdapter::seek(qint64 positionMs, int generation)
         return;
     }
 
-    media_sdk::session::PlaybackSession* session = nullptr;
+    ISdkPlaybackSession* session = nullptr;
     {
         std::lock_guard lock(m_mutex);
         session = m_session.get();
@@ -195,7 +270,7 @@ void SdkPlaybackAdapter::stopDecoding()
     }
 
     std::unique_ptr<SessionEventBridge> eventBridge;
-    std::unique_ptr<media_sdk::session::PlaybackSession> session;
+    std::unique_ptr<ISdkPlaybackSession> session;
     {
         std::lock_guard lock(m_mutex);
         ++m_eventSerial;
@@ -237,7 +312,7 @@ void SdkPlaybackAdapter::setVolume(float volume)
         return;
     }
 
-    media_sdk::session::PlaybackSession* session = nullptr;
+    ISdkPlaybackSession* session = nullptr;
     media_sdk::runtime::RuntimeAudioControls controls;
     {
         std::lock_guard lock(m_mutex);
@@ -263,7 +338,7 @@ void SdkPlaybackAdapter::setMuted(bool muted)
         return;
     }
 
-    media_sdk::session::PlaybackSession* session = nullptr;
+    ISdkPlaybackSession* session = nullptr;
     media_sdk::runtime::RuntimeAudioControls controls;
     {
         std::lock_guard lock(m_mutex);
