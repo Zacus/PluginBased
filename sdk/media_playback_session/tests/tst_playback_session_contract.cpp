@@ -68,6 +68,14 @@ media_sdk::PlayerEvent seekCompletedEvent(media_sdk::EventMetadata metadata,
     };
 }
 
+media_sdk::PlayerEvent eofEvent(media_sdk::EventMetadata metadata)
+{
+    return {
+        .metadata = metadata,
+        .payload = media_sdk::EndOfFileEvent {},
+    };
+}
+
 media_sdk::VideoFrame makeVideoFrame()
 {
     return media_sdk::VideoFrame(media_sdk::VideoFrameDesc {
@@ -185,6 +193,11 @@ public:
         m_events.onEvent(seekCompletedEvent(metadata, position));
     }
 
+    void emitEndOfFile(media_sdk::EventMetadata metadata)
+    {
+        m_events.onEvent(eofEvent(metadata));
+    }
+
     media_sdk::DecodeFramePushResult pushVideo(media_sdk::VideoFrame frame,
                                                media_sdk::DecodeFrameMetadata metadata)
     {
@@ -228,6 +241,11 @@ public:
     media_sdk::runtime::RuntimeDiagnostics diagnostics() const override;
     media_sdk::runtime::RuntimeTimeline timeline() const override;
 
+    void triggerEndOfStreamPresented()
+    {
+        m_events->onEndOfStreamPresented(currentTimeline);
+    }
+
     int openCount = 0;
     int audioPushCount = 0;
     int videoPushCount = 0;
@@ -237,9 +255,11 @@ public:
     int seekCount = 0;
     int completeSeekCount = 0;
     int stopCount = 0;
+    bool paused = false;
     media_sdk::runtime::RuntimeVideoFrame lastVideo {};
     media_sdk::runtime::RuntimeTimeline currentTimeline = runtimeTimeline(100, 1);
     std::chrono::microseconds lastSeekPosition { 0 };
+    media_sdk::runtime::IRuntimePlayerEvents* m_events = nullptr;
 
 private:
     TestContext& m_context;
@@ -317,12 +337,14 @@ void FakeRuntimePlayer::enqueueEndOfStream(media_sdk::runtime::SessionId,
 void FakeRuntimePlayer::pause()
 {
     ++pauseCount;
+    paused = true;
     m_context.operations.push_back("runtime.pause");
 }
 
 void FakeRuntimePlayer::resume()
 {
     ++resumeCount;
+    paused = false;
     m_context.operations.push_back("runtime.resume");
 }
 
@@ -369,8 +391,9 @@ media_sdk::session::detail::PlaybackSessionFactories factoriesFor(TestContext& c
             },
         .createRuntime =
             [&context](media_sdk::runtime::RuntimePlayerConfig,
-                       media_sdk::runtime::RuntimePlayerDependencies) {
+                       media_sdk::runtime::RuntimePlayerDependencies dependencies) {
                 context.runtime = std::make_shared<FakeRuntimePlayer>(context);
+                context.runtime->m_events = dependencies.events;
                 return context.runtime;
             },
     };
@@ -523,6 +546,187 @@ void seekCallsRuntimeSeekBeforeCoreSeek()
     assert(std::holds_alternative<media_sdk::SeekCompletedEvent>(events.events.back().payload));
 }
 
+void pauseBeforeMediaInfoPausesRuntimeAfterItOpens()
+{
+    TestContext context;
+    DummyAudioOutput audio;
+    DummyVideoPresenter presenter;
+    RecordingSessionEvents events;
+    auto session = makeSession(context, &audio, &presenter, &events);
+    assert(session->open("sample.mov").ok());
+
+    session->pause();
+    assert(context.core->pauseCount == 1);
+    context.operations.clear();
+
+    context.core->emitMediaInfo(coreTimeline(10, 3));
+
+    assert(context.runtime);
+    assert(context.runtime->pauseCount == 1);
+    assert(context.runtime->resumeCount == 0);
+    assert(context.runtime->paused);
+}
+
+void playBeforeMediaInfoResumesRuntimeAfterItOpens()
+{
+    TestContext context;
+    DummyAudioOutput audio;
+    DummyVideoPresenter presenter;
+    RecordingSessionEvents events;
+    auto session = makeSession(context, &audio, &presenter, &events);
+    assert(session->open("sample.mov").ok());
+
+    session->play();
+    assert(context.core->playCount == 1);
+    context.operations.clear();
+
+    context.core->emitMediaInfo(coreTimeline(10, 3));
+
+    assert(context.runtime);
+    assert(context.runtime->resumeCount == 1);
+    assert(context.runtime->pauseCount == 0);
+    assert(!context.runtime->paused);
+}
+
+void seekWhilePlayingCancelsOldFramePushUntilSeekCompletes()
+{
+    TestContext context;
+    DummyAudioOutput audio;
+    DummyVideoPresenter presenter;
+    RecordingSessionEvents events;
+    auto session = makeSession(context, &audio, &presenter, &events);
+    assert(session->open("sample.mov").ok());
+    context.core->emitMediaInfo(coreTimeline(10, 3));
+
+    const auto acceptedBeforeSeek = context.core->pushVideo(makeVideoFrame(), {
+        .sessionId = 10,
+        .generation = 3,
+    });
+    assert(acceptedBeforeSeek.status == media_sdk::DecodeFramePushStatus::Accepted);
+
+    assert(session->seek(900ms).ok());
+
+    const auto staleOldGeneration = context.core->pushVideo(makeVideoFrame(), {
+        .sessionId = 10,
+        .generation = 3,
+    });
+    assert(staleOldGeneration.status == media_sdk::DecodeFramePushStatus::StaleGeneration);
+
+    const auto staleBeforeCompletion = context.core->pushVideo(makeVideoFrame(), {
+        .sessionId = 10,
+        .generation = 4,
+    });
+    assert(staleBeforeCompletion.status == media_sdk::DecodeFramePushStatus::StaleGeneration);
+
+    context.core->emitSeekCompleted(coreTimeline(10, 4), 900ms);
+
+    const auto acceptedAfterCompletion = context.core->pushVideo(makeVideoFrame(), {
+        .sessionId = 10,
+        .generation = 4,
+    });
+    assert(acceptedAfterCompletion.status == media_sdk::DecodeFramePushStatus::Accepted);
+}
+
+void seekWhilePausedDoesNotResumeAfterSeekCompletion()
+{
+    TestContext context;
+    DummyAudioOutput audio;
+    DummyVideoPresenter presenter;
+    RecordingSessionEvents events;
+    auto session = makeSession(context, &audio, &presenter, &events);
+    assert(session->open("sample.mov").ok());
+    context.core->emitMediaInfo(coreTimeline(10, 3));
+    session->pause();
+    context.operations.clear();
+
+    assert(session->seek(1200ms).ok());
+    context.core->emitSeekCompleted(coreTimeline(10, 4), 1200ms);
+
+    for (const auto& operation : context.operations) {
+        assert(operation != "runtime.resume");
+        assert(operation != "core.play");
+    }
+    assert(context.runtime->paused);
+}
+
+void stopDuringPendingSeekSuppressesStaleSeekCompletionAndFrames()
+{
+    TestContext context;
+    DummyAudioOutput audio;
+    DummyVideoPresenter presenter;
+    RecordingSessionEvents events;
+    auto session = makeSession(context, &audio, &presenter, &events);
+    assert(session->open("sample.mov").ok());
+    context.core->emitMediaInfo(coreTimeline(10, 3));
+    events.events.clear();
+
+    assert(session->seek(1500ms).ok());
+    session->stop();
+
+    context.core->emitSeekCompleted(coreTimeline(10, 4), 1500ms);
+    assert(events.events.empty());
+
+    const auto stalePush = context.core->pushVideo(makeVideoFrame(), {
+        .sessionId = 10,
+        .generation = 4,
+    });
+    assert(stalePush.status == media_sdk::DecodeFramePushStatus::StaleGeneration);
+}
+
+void openAnotherFileRejectsPreviousFileFramesAndEof()
+{
+    TestContext context;
+    DummyAudioOutput audio;
+    DummyVideoPresenter presenter;
+    RecordingSessionEvents events;
+    auto session = makeSession(context, &audio, &presenter, &events);
+    assert(session->open("first.mov").ok());
+    auto firstCore = context.core;
+    context.core->emitMediaInfo(coreTimeline(10, 3));
+    events.events.clear();
+
+    assert(session->open("second.mov").ok());
+    auto secondCore = context.core;
+    assert(secondCore != firstCore);
+    secondCore->emitMediaInfo(coreTimeline(11, 1));
+    events.events.clear();
+
+    const auto stalePush = firstCore->pushVideo(makeVideoFrame(), {
+        .sessionId = 10,
+        .generation = 3,
+    });
+    assert(stalePush.status == media_sdk::DecodeFramePushStatus::StaleGeneration);
+
+    firstCore->emitEndOfFile(coreTimeline(10, 3));
+    context.runtime->triggerEndOfStreamPresented();
+    assert(events.events.empty());
+
+    const auto acceptedPush = secondCore->pushVideo(makeVideoFrame(), {
+        .sessionId = 11,
+        .generation = 1,
+    });
+    assert(acceptedPush.status == media_sdk::DecodeFramePushStatus::Accepted);
+}
+
+void coreEofWaitsForRuntimeEndOfStreamBeforeExternalEof()
+{
+    TestContext context;
+    DummyAudioOutput audio;
+    DummyVideoPresenter presenter;
+    RecordingSessionEvents events;
+    auto session = makeSession(context, &audio, &presenter, &events);
+    assert(session->open("sample.mov").ok());
+    context.core->emitMediaInfo(coreTimeline(10, 3));
+    events.events.clear();
+
+    context.core->emitEndOfFile(coreTimeline(10, 3));
+    assert(events.events.empty());
+
+    context.runtime->triggerEndOfStreamPresented();
+    assert(events.events.size() == 1);
+    assert(std::holds_alternative<media_sdk::EndOfFileEvent>(events.events.back().payload));
+}
+
 void stopStopsCoreAndRuntimeExactlyOnce()
 {
     TestContext context;
@@ -567,6 +771,13 @@ int main()
     playCallsCorePlayAndRuntimeResume();
     pauseCallsCorePauseAndRuntimePause();
     seekCallsRuntimeSeekBeforeCoreSeek();
+    pauseBeforeMediaInfoPausesRuntimeAfterItOpens();
+    playBeforeMediaInfoResumesRuntimeAfterItOpens();
+    seekWhilePlayingCancelsOldFramePushUntilSeekCompletes();
+    seekWhilePausedDoesNotResumeAfterSeekCompletion();
+    stopDuringPendingSeekSuppressesStaleSeekCompletionAndFrames();
+    openAnotherFileRejectsPreviousFileFramesAndEof();
+    coreEofWaitsForRuntimeEndOfStreamBeforeExternalEof();
     stopStopsCoreAndRuntimeExactlyOnce();
     diagnosticsAndTimelineForwardRuntimeValues();
 }

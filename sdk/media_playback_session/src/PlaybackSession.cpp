@@ -214,6 +214,12 @@ struct PlaybackSession::Impl final
     , private IDecodeFrameSink
     , private runtime::IRuntimePlayerEvents
 {
+    enum class PlaybackCommandState {
+        Idle,
+        Playing,
+        Paused,
+    };
+
     Impl(PlaybackSessionConfig sessionConfig,
          PlaybackSessionDependencies sessionDependencies,
          std::shared_ptr<detail::PlaybackSessionFactories> sessionFactories)
@@ -276,6 +282,11 @@ struct PlaybackSession::Impl final
 
     void play()
     {
+        {
+            std::lock_guard lock(m_mutex);
+            commandState = PlaybackCommandState::Playing;
+        }
+
         auto handles = currentHandles();
         if (handles.runtimePlayer)
             handles.runtimePlayer->resume();
@@ -285,6 +296,11 @@ struct PlaybackSession::Impl final
 
     void pause()
     {
+        {
+            std::lock_guard lock(m_mutex);
+            commandState = PlaybackCommandState::Paused;
+        }
+
         auto handles = currentHandles();
         if (handles.runtimePlayer)
             handles.runtimePlayer->pause();
@@ -305,6 +321,7 @@ struct PlaybackSession::Impl final
             runtimeToStop = std::move(runtimePlayer);
             currentPath.clear();
             handledFallbackTimeline.reset();
+            commandState = PlaybackCommandState::Idle;
         }
 
         if (coreToStop)
@@ -376,6 +393,7 @@ struct PlaybackSession::Impl final
             return Result<runtime::RuntimeTimeline>::failure(openResult.error());
 
         const auto runtimeTimeline = newRuntime->timeline();
+        auto runtimeToSynchronize = newRuntime;
         std::shared_ptr<detail::IPlaybackSessionRuntimePlayer> previousRuntime;
         {
             std::lock_guard lock(m_mutex);
@@ -385,6 +403,7 @@ struct PlaybackSession::Impl final
         }
         if (previousRuntime)
             previousRuntime->stop();
+        synchronizeRuntimePlaybackState(runtimeToSynchronize);
         return Result<runtime::RuntimeTimeline>::success(runtimeTimeline);
     }
 
@@ -395,8 +414,10 @@ struct PlaybackSession::Impl final
             std::lock_guard lock(m_mutex);
             currentRuntime = runtimePlayer;
         }
-        if (currentRuntime)
+        if (currentRuntime) {
             currentRuntime->completeSeek(runtimeTimeline.sessionId, runtimeTimeline.generation);
+            synchronizeRuntimePlaybackState(currentRuntime);
+        }
     }
 
     void enqueueEndOfStream(runtime::RuntimeTimeline runtimeTimeline)
@@ -537,9 +558,34 @@ private:
             emitError(*coreMetadata, seekResult.error());
             return;
         }
+        if (playbackCommandState() == PlaybackCommandState::Paused)
+            fallbackCore->pause();
 
         if (dependencies.events)
             dependencies.events->onNativeRenderingFailed();
+    }
+
+    void synchronizeRuntimePlaybackState(
+        const std::shared_ptr<detail::IPlaybackSessionRuntimePlayer>& runtime) const
+    {
+        PlaybackCommandState state = PlaybackCommandState::Idle;
+        {
+            std::lock_guard lock(m_mutex);
+            if (runtimePlayer != runtime)
+                return;
+            state = commandState;
+        }
+
+        if (state == PlaybackCommandState::Paused)
+            runtime->pause();
+        else if (state == PlaybackCommandState::Playing)
+            runtime->resume();
+    }
+
+    PlaybackCommandState playbackCommandState() const
+    {
+        std::lock_guard lock(m_mutex);
+        return commandState;
     }
 
     void emitError(EventMetadata metadata, MediaError error)
@@ -566,6 +612,7 @@ private:
     std::shared_ptr<detail::IPlaybackSessionRuntimePlayer> runtimePlayer;
     std::filesystem::path currentPath;
     std::optional<runtime::RuntimeTimeline> handledFallbackTimeline;
+    PlaybackCommandState commandState = PlaybackCommandState::Idle;
 };
 
 PlaybackSession::PlaybackSession(PlaybackSessionConfig config,

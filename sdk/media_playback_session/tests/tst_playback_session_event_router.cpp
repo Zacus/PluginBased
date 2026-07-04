@@ -292,6 +292,56 @@ void runtimeEndOfStreamPresentedWithoutCoreEofIsIgnored()
     assert(events.events.empty());
 }
 
+void beginSeekClearsQueuedCoreEofUntilNewRuntimeDrain()
+{
+    media_sdk::session::SessionTimeline timeline;
+    RecordingRuntimeControl runtime;
+    RecordingSessionEvents events;
+    media_sdk::session::SessionEventRouter<RecordingRuntimeControl> router(
+        runtime,
+        timeline,
+        &events);
+
+    router.onEvent(mediaInfoEvent(coreTimeline(10, 3)));
+    router.onEvent(eofEvent(coreTimeline(10, 3)));
+    assert(runtime.eofCount == 1);
+
+    router.beginSeek(runtimeTimeline(21, 8));
+    router.onEndOfStreamPresented(runtimeTimeline(20, 7));
+    assert(events.events.size() == 1);
+    assert(std::holds_alternative<media_sdk::MediaInfoEvent>(events.events.back().payload));
+
+    events.events.clear();
+    router.onEvent(seekCompletedEvent(coreTimeline(10, 4), 1200ms));
+    router.onEvent(eofEvent(coreTimeline(10, 4)));
+    assert(runtime.eofCount == 2);
+    router.onEndOfStreamPresented(runtimeTimeline(21, 8));
+    assert(events.events.size() == 2);
+    assert(std::holds_alternative<media_sdk::EndOfFileEvent>(events.events.back().payload));
+}
+
+void cancelFrameAcceptanceDropsPendingSeekCompletion()
+{
+    media_sdk::session::SessionTimeline timeline;
+    RecordingRuntimeControl runtime;
+    RecordingSessionEvents events;
+    media_sdk::session::SessionEventRouter<RecordingRuntimeControl> router(
+        runtime,
+        timeline,
+        &events);
+
+    router.onEvent(mediaInfoEvent(coreTimeline(10, 3)));
+    router.beginSeek(runtimeTimeline(21, 8));
+    router.cancelFrameAcceptance();
+    events.events.clear();
+
+    router.onEvent(seekCompletedEvent(coreTimeline(10, 4), 1200ms));
+
+    assert(runtime.completeSeekCount == 0);
+    assert(events.events.empty());
+    assert(!timeline.hasAcceptedTimeline());
+}
+
 void staleErrorIsIgnoredAfterTimelineIsAccepted()
 {
     media_sdk::session::SessionTimeline timeline;
@@ -327,5 +377,7 @@ int main()
     coreEndOfFileEnqueuesRuntimeEofWithoutExternalEof();
     runtimeEndOfStreamPresentedEmitsExternalEof();
     runtimeEndOfStreamPresentedWithoutCoreEofIsIgnored();
+    beginSeekClearsQueuedCoreEofUntilNewRuntimeDrain();
+    cancelFrameAcceptanceDropsPendingSeekCompletion();
     staleErrorIsIgnoredAfterTimelineIsAccepted();
 }

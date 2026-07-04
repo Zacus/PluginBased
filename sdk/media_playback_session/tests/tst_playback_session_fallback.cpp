@@ -178,7 +178,7 @@ public:
 
     media_sdk::Result<void> open(const std::filesystem::path& path) override;
     void play() override;
-    void pause() override {}
+    void pause() override;
     void stop() override;
     media_sdk::Result<void> seek(std::chrono::milliseconds position) override;
 
@@ -199,6 +199,7 @@ public:
 
     int openCount = 0;
     int playCount = 0;
+    int pauseCount = 0;
     int stopCount = 0;
     int seekCount = 0;
     std::filesystem::path lastOpenedPath;
@@ -270,6 +271,11 @@ media_sdk::Result<void> FakeCorePlayer::open(const std::filesystem::path& path)
 void FakeCorePlayer::play()
 {
     ++playCount;
+}
+
+void FakeCorePlayer::pause()
+{
+    ++pauseCount;
 }
 
 void FakeCorePlayer::stop()
@@ -448,6 +454,23 @@ void fallbackSeekFailureEmitsErrorEvent()
     assert(error->error.code == media_sdk::MediaErrorCode::SeekFailed);
 }
 
+void fallbackWhilePausedRestoresPausedCoreState()
+{
+    TestContext context;
+    RecordingSessionEvents events;
+    auto session = makeSession(context, events);
+    openNativeSession(context, *session, coreTimeline(10, 3));
+
+    session->play();
+    session->pause();
+    context.runtime->triggerFallback(1500ms);
+
+    assert(context.cores.size() == 2);
+    assert(context.cores[1]->playCount == 1);
+    assert(context.cores[1]->pauseCount == 1);
+    assert(events.nativeRenderingFailedCount == 1);
+}
+
 } // namespace
 
 int main()
@@ -455,4 +478,5 @@ int main()
     nativeFallbackReopensCoreWithCpuFramesAndSeeksToResumePosition();
     repeatedFallbackForSameGenerationIsIgnored();
     fallbackSeekFailureEmitsErrorEvent();
+    fallbackWhilePausedRestoresPausedCoreState();
 }
