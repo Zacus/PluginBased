@@ -201,6 +201,8 @@ struct RuntimePlayer::Impl {
             running = true;
             paused = false;
             fallbackPending = false;
+            pausedSeekPrerollPending = false;
+            pausedSeekPrerollReserved = false;
             audioEofSeen = false;
             videoEofSeen = false;
             eofNotificationSent = false;
@@ -335,6 +337,8 @@ struct RuntimePlayer::Impl {
                 return;
             paused = false;
             shouldResume = true;
+            pausedSeekPrerollPending = false;
+            pausedSeekPrerollReserved = false;
         }
 
         if (shouldResume) {
@@ -367,6 +371,8 @@ struct RuntimePlayer::Impl {
             }
 
             fallbackPending = false;
+            pausedSeekPrerollPending = false;
+            pausedSeekPrerollReserved = false;
             paused = false;
             scheduler.reset(completedGeneration);
             shouldResume = true;
@@ -395,6 +401,8 @@ struct RuntimePlayer::Impl {
             activeSession = sessionId;
             nextGeneration = ++generation;
             fallbackPending = false;
+            pausedSeekPrerollPending = paused;
+            pausedSeekPrerollReserved = false;
             audioEofSeen = false;
             videoEofSeen = false;
             eofNotificationSent = false;
@@ -427,6 +435,8 @@ struct RuntimePlayer::Impl {
             running = false;
             paused = false;
             fallbackPending = false;
+            pausedSeekPrerollPending = false;
+            pausedSeekPrerollReserved = false;
             generation = 0;
             diagnostics.queueAbortCount += 2;
             shouldStop = true;
@@ -582,14 +592,21 @@ struct RuntimePlayer::Impl {
     {
         if (!isCurrent(queuedFrame.sessionId, queuedFrame.generation))
             return;
-        if (!waitUntilUnpaused(queuedFrame.sessionId, queuedFrame.generation))
+        const bool pausedPreroll = isPausedSeekPreroll(queuedFrame.sessionId, queuedFrame.generation);
+        if (!pausedPreroll && !waitUntilUnpaused(queuedFrame.sessionId, queuedFrame.generation))
             return;
 
         while (true) {
             auto clock = dependencies.audioOutput->clock();
             if (!config.audioClockEnabled)
                 clock.valid = false;
-            const auto decision = decideFrame(queuedFrame.frame.pts(), clock, queuedFrame.generation);
+            const auto decision = pausedPreroll
+                ? VideoScheduleDecision {
+                    .action = VideoScheduleAction::Render,
+                    .lateness = std::chrono::microseconds { 0 },
+                    .waitTime = std::chrono::microseconds { 0 },
+                }
+                : decideFrame(queuedFrame.frame.pts(), clock, queuedFrame.generation);
             if (decision.action == VideoScheduleAction::Drop) {
                 std::lock_guard lock(m_mutex);
                 ++diagnostics.videoDroppedLate;
@@ -647,6 +664,8 @@ struct RuntimePlayer::Impl {
                         ++diagnostics.nativePresented;
                     else
                         ++diagnostics.cpuPresented;
+                    if (pausedPreroll)
+                        completePausedSeekPrerollLocked(frameSessionId, frameGeneration);
                 }
             }
             if (trackFailed)
@@ -696,6 +715,15 @@ struct RuntimePlayer::Impl {
                 || presentTracker.hasCapacity();
         });
         return running && isCurrentLocked(checkedSessionId, checkedGeneration);
+    }
+
+    bool isPausedSeekPreroll(SessionId checkedSessionId, Generation checkedGeneration) const
+    {
+        std::lock_guard lock(m_mutex);
+        return running
+            && isCurrentLocked(checkedSessionId, checkedGeneration)
+            && paused
+            && pausedSeekPrerollPending;
     }
 
     void markEof(bool audio, SessionId checkedSessionId, Generation checkedGeneration)
@@ -805,16 +833,29 @@ struct RuntimePlayer::Impl {
         return running;
     }
 
-    RuntimeFramePushStatus videoPushGate(SessionId checkedSessionId, Generation checkedGeneration) const
+    RuntimeFramePushStatus videoPushGate(SessionId checkedSessionId, Generation checkedGeneration)
     {
         std::lock_guard lock(m_mutex);
         if (!running)
             return RuntimeFramePushStatus::Closed;
         if (checkedSessionId != sessionId || checkedGeneration != generation)
             return RuntimeFramePushStatus::RejectedGeneration;
-        if (paused || fallbackPending)
+        if (fallbackPending)
             return RuntimeFramePushStatus::Closed;
+        if (paused) {
+            if (!pausedSeekPrerollPending || pausedSeekPrerollReserved)
+                return RuntimeFramePushStatus::Closed;
+            pausedSeekPrerollReserved = true;
+        }
         return RuntimeFramePushStatus::Accepted;
+    }
+
+    void completePausedSeekPrerollLocked(SessionId checkedSessionId, Generation checkedGeneration)
+    {
+        if (!isCurrentLocked(checkedSessionId, checkedGeneration))
+            return;
+        pausedSeekPrerollPending = false;
+        pausedSeekPrerollReserved = false;
     }
 
     bool isCurrent(SessionId checkedSessionId, Generation checkedGeneration) const
@@ -858,6 +899,8 @@ struct RuntimePlayer::Impl {
     bool running = false;
     bool paused = false;
     bool fallbackPending = false;
+    bool pausedSeekPrerollPending = false;
+    bool pausedSeekPrerollReserved = false;
     bool audioEofSeen = false;
     bool videoEofSeen = false;
     bool eofNotificationSent = false;

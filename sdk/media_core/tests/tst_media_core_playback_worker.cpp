@@ -356,6 +356,33 @@ void testSeekEmitsPositionAndContinuesPlayback()
     std::filesystem::remove(samplePath);
 }
 
+void testPausedSeekPrerollsFrameWithoutResumingPlayback()
+{
+    const auto samplePath = writeTinyWav();
+    RecordingSink sink;
+    RecordingFrameSink frames;
+    media_sdk::Player player({}, sink, frames);
+
+    assert(player.open(samplePath).ok());
+    assert(sink.waitFor(hasMediaInfo));
+
+    assert(player.seek(100ms).ok());
+
+    assert(sink.waitFor([](const media_sdk::PlayerEvent& event) {
+        return hasSeekCompletedAtOrAfter(event, 100ms);
+    }));
+    assert(frames.waitForAudioFrame());
+
+    const auto events = sink.snapshot();
+    assert(std::ranges::none_of(events, [](const media_sdk::PlayerEvent& event) {
+        return hasState(event, media_sdk::PlayerState::Playing);
+    }));
+    assert(!sink.waitFor(hasEof, 100ms));
+
+    player.stop();
+    std::filesystem::remove(samplePath);
+}
+
 void testBurstSeekCoalescesQueuedRequestsBeforeDecodeResumes()
 {
     const auto samplePath = writeTinyWav();
@@ -452,6 +479,7 @@ int main()
 {
     testOpenPlayReachesEof();
     testSeekEmitsPositionAndContinuesPlayback();
+    testPausedSeekPrerollsFrameWithoutResumingPlayback();
     testBurstSeekCoalescesQueuedRequestsBeforeDecodeResumes();
     testStopEmitsStoppedState();
     testCancelledFramePushDuringStopDoesNotEmitDecodeError();

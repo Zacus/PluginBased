@@ -909,6 +909,27 @@ void seekInvalidatesOldGenerationFramesAndCompletions()
     assert(waitUntil([&presenter]() { return presenter.presentCount == 2; }));
 }
 
+void pausedSeekPresentsOnePrerollFrameWithoutResumingAudio()
+{
+    MockAudioOutput audio;
+    audio.setClock(100ms, 1);
+    MockPresenter presenter;
+    auto player = makePlayer(audio, presenter);
+    assert(player.open().ok());
+
+    player.pause();
+    assert(audio.pauseCount == 1);
+
+    player.seek(500ms);
+    audio.setClock(500ms, 2);
+    const auto result = player.enqueueVideo(runtimeVideo(1, 2, 500ms));
+
+    assert(result.status == media_sdk::runtime::RuntimeFramePushStatus::Accepted);
+    assert(waitUntil([&presenter]() { return presenter.presentCount == 1; }));
+    assert(audio.resumeCount == 1);
+    assert(presenter.timing().clock == 500ms);
+}
+
 void stopAbortsQueuesPausesAudioClearsPresenterAndReturnsIdle()
 {
     MockAudioOutput audio;
@@ -1136,6 +1157,7 @@ int main()
     eofCompletesOnlyAfterAudioAndVideoDrain();
     eofBackpressureIsReportedInDiagnostics();
     seekInvalidatesOldGenerationFramesAndCompletions();
+    pausedSeekPresentsOnePrerollFrameWithoutResumingAudio();
     stopAbortsQueuesPausesAudioClearsPresenterAndReturnsIdle();
     nativePresenterFailureRunsFullFallbackTransition();
     nativeDiagnosticsTrackZeroCopySuccessWithoutCpuCopy();
