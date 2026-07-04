@@ -26,6 +26,8 @@ public:
     void seek(qint64 positionMs, int generation);
     void stopDecoding();
     void setVideoToolboxDirectRenderingEnabled(bool enabled);
+    void setVolume(float volume);
+    void setMuted(bool muted);
 
 signals:
     void mediaInfoReady(qint64 durationMs, int width, int height,
@@ -64,4 +66,6 @@ private:
     std::uint64_t m_eventSerial = 0;
     bool m_directNativeVideoEnabled = false;
     bool m_paused = false;
+    float m_volume = 1.0f;
+    bool m_muted = false;
 };

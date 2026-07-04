@@ -28,6 +28,7 @@ struct RuntimePlayerConfig {
         .channels = 2,
         .sampleFormat = AudioSampleFormat::Float32,
     };
+    RuntimeAudioControls audioControls {};
     VideoOutputPolicy outputPolicy = VideoOutputPolicy::PreferNative;
     RuntimeSyncConfig syncConfig {};
     bool audioClockEnabled = true;
@@ -63,6 +64,7 @@ public:
     void enqueueEndOfStream(SessionId sessionId, Generation generation);
     void pause();
     void resume();
+    void setAudioControls(RuntimeAudioControls controls);
     void seek(std::chrono::microseconds position);
     void completeSeek(SessionId sessionId, Generation generation);
     void stop();

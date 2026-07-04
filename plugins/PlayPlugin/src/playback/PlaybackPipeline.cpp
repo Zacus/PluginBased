@@ -66,12 +66,14 @@ void PlaybackPipeline::setPaused(bool paused)
 
 void PlaybackPipeline::setVolume(float volume)
 {
-    Q_UNUSED(volume);
+    if (m_sdkAdapter)
+        m_sdkAdapter->setVolume(volume);
 }
 
 void PlaybackPipeline::setMuted(bool muted)
 {
-    Q_UNUSED(muted);
+    if (m_sdkAdapter)
+        m_sdkAdapter->setMuted(muted);
 }
 
 void PlaybackPipeline::stopComponents()

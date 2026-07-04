@@ -9,6 +9,7 @@ extern "C" {
 #include <libavutil/samplefmt.h>
 }
 
+#include <algorithm>
 #include <filesystem>
 #include <memory>
 #include <optional>
@@ -225,6 +226,58 @@ void SdkPlaybackAdapter::setVideoToolboxDirectRenderingEnabled(bool enabled)
     m_directNativeVideoEnabled = enabled;
 }
 
+void SdkPlaybackAdapter::setVolume(float volume)
+{
+    if (!isObjectThread(*this)) {
+        QMetaObject::invokeMethod(this,
+                                  [this, volume]() {
+                                      setVolume(volume);
+                                  },
+                                  Qt::QueuedConnection);
+        return;
+    }
+
+    media_sdk::session::PlaybackSession* session = nullptr;
+    media_sdk::runtime::RuntimeAudioControls controls;
+    {
+        std::lock_guard lock(m_mutex);
+        m_volume = std::clamp(volume, 0.0f, 1.0f);
+        controls = {
+            .volume = m_volume,
+            .muted = m_muted,
+        };
+        session = m_session.get();
+    }
+    if (session)
+        session->setAudioControls(controls);
+}
+
+void SdkPlaybackAdapter::setMuted(bool muted)
+{
+    if (!isObjectThread(*this)) {
+        QMetaObject::invokeMethod(this,
+                                  [this, muted]() {
+                                      setMuted(muted);
+                                  },
+                                  Qt::QueuedConnection);
+        return;
+    }
+
+    media_sdk::session::PlaybackSession* session = nullptr;
+    media_sdk::runtime::RuntimeAudioControls controls;
+    {
+        std::lock_guard lock(m_mutex);
+        m_muted = muted;
+        controls = {
+            .volume = m_volume,
+            .muted = m_muted,
+        };
+        session = m_session.get();
+    }
+    if (session)
+        session->setAudioControls(controls);
+}
+
 void SdkPlaybackAdapter::postSessionEvent(const media_sdk::PlayerEvent& event,
                                           std::uint64_t eventSerial)
 {
@@ -350,6 +403,10 @@ media_sdk::session::PlaybackSessionConfig SdkPlaybackAdapter::sessionConfig() co
     media_sdk::session::PlaybackSessionConfig config;
     config.core.preferNativeVideoFrames = m_directNativeVideoEnabled;
     config.preferNativeVideoFrames = m_directNativeVideoEnabled;
+    config.runtime.audioControls = {
+        .volume = m_volume,
+        .muted = m_muted,
+    };
     return config;
 }
 

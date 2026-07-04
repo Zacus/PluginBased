@@ -234,6 +234,7 @@ public:
                             media_sdk::runtime::Generation generation) override;
     void pause() override;
     void resume() override;
+    void setAudioControls(media_sdk::runtime::RuntimeAudioControls controls) override;
     void seek(std::chrono::microseconds position) override;
     void completeSeek(media_sdk::runtime::SessionId sessionId,
                       media_sdk::runtime::Generation generation) override;
@@ -256,6 +257,7 @@ public:
     int completeSeekCount = 0;
     int stopCount = 0;
     bool paused = false;
+    media_sdk::runtime::RuntimeAudioControls lastAudioControls {};
     media_sdk::runtime::RuntimeVideoFrame lastVideo {};
     media_sdk::runtime::RuntimeTimeline currentTimeline = runtimeTimeline(100, 1);
     std::chrono::microseconds lastSeekPosition { 0 };
@@ -269,6 +271,7 @@ struct TestContext {
     std::vector<std::string> operations;
     std::shared_ptr<FakeCorePlayer> core;
     std::shared_ptr<FakeRuntimePlayer> runtime;
+    std::vector<media_sdk::runtime::RuntimePlayerConfig> runtimeConfigs;
     media_sdk::runtime::RuntimeDiagnostics diagnostics {};
 };
 
@@ -348,6 +351,11 @@ void FakeRuntimePlayer::resume()
     m_context.operations.push_back("runtime.resume");
 }
 
+void FakeRuntimePlayer::setAudioControls(media_sdk::runtime::RuntimeAudioControls controls)
+{
+    lastAudioControls = controls;
+}
+
 void FakeRuntimePlayer::seek(std::chrono::microseconds position)
 {
     ++seekCount;
@@ -390,8 +398,9 @@ media_sdk::session::detail::PlaybackSessionFactories factoriesFor(TestContext& c
                 return context.core;
             },
         .createRuntime =
-            [&context](media_sdk::runtime::RuntimePlayerConfig,
+            [&context](media_sdk::runtime::RuntimePlayerConfig config,
                        media_sdk::runtime::RuntimePlayerDependencies dependencies) {
+                context.runtimeConfigs.push_back(config);
                 context.runtime = std::make_shared<FakeRuntimePlayer>(context);
                 context.runtime->m_events = dependencies.events;
                 return context.runtime;
@@ -761,6 +770,32 @@ void diagnosticsAndTimelineForwardRuntimeValues()
     assert(session->diagnostics().videoPresented == 42);
 }
 
+void audioControlsAreAppliedBeforeAndAfterRuntimeOpen()
+{
+    TestContext context;
+    DummyAudioOutput audio;
+    DummyVideoPresenter presenter;
+    auto session = makeSession(context, &audio, &presenter);
+    session->setAudioControls({
+        .volume = 0.25f,
+        .muted = true,
+    });
+
+    assert(session->open("sample.mov").ok());
+    context.core->emitMediaInfo(coreTimeline(10, 3));
+
+    assert(context.runtimeConfigs.size() == 1);
+    assert(context.runtimeConfigs.back().audioControls.volume == 0.25f);
+    assert(context.runtimeConfigs.back().audioControls.muted);
+
+    session->setAudioControls({
+        .volume = 0.75f,
+        .muted = false,
+    });
+    assert(context.runtime->lastAudioControls.volume == 0.75f);
+    assert(!context.runtime->lastAudioControls.muted);
+}
+
 void diagnosticsExposePerformanceGuardrailsAndForwardSnapshots()
 {
     TestContext context;
@@ -821,5 +856,6 @@ int main()
     coreEofWaitsForRuntimeEndOfStreamBeforeExternalEof();
     stopStopsCoreAndRuntimeExactlyOnce();
     diagnosticsAndTimelineForwardRuntimeValues();
+    audioControlsAreAppliedBeforeAndAfterRuntimeOpen();
     diagnosticsExposePerformanceGuardrailsAndForwardSnapshots();
 }

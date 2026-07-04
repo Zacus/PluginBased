@@ -68,6 +68,11 @@ def main() -> None:
             "PlaybackPipeline should own only the SDK adapter for playback")
     require("QtRhiVideoPresenter" in pipeline_h + pipeline_cpp,
             "PlaybackPipeline should keep only Qt presentation as PlayPlugin responsibility")
+    require("m_sdkAdapter->setVolume(volume)" in pipeline_cpp
+            and "m_sdkAdapter->setMuted(muted)" in pipeline_cpp,
+            "PlaybackPipeline volume/mute controls should forward to SDK adapter")
+    require("Q_UNUSED(volume)" not in pipeline_cpp and "Q_UNUSED(muted)" not in pipeline_cpp,
+            "PlaybackPipeline volume/mute controls must not be no-op")
     require("CoreAudioAudioOutput" in pipeline_cpp,
             "PlaybackPipeline should inject the platform audio output into SDK session")
     require("PlaybackRuntimeMode" not in pipeline_h + pipeline_cpp + engine_h,

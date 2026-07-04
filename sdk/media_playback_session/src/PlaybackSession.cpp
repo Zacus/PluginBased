@@ -136,6 +136,11 @@ public:
         m_player.resume();
     }
 
+    void setAudioControls(runtime::RuntimeAudioControls controls) override
+    {
+        m_player.setAudioControls(controls);
+    }
+
     void seek(std::chrono::microseconds position) override
     {
         m_player.seek(position);
@@ -306,6 +311,18 @@ struct PlaybackSession::Impl final
             handles.runtimePlayer->pause();
         if (handles.corePlayer)
             handles.corePlayer->pause();
+    }
+
+    void setAudioControls(runtime::RuntimeAudioControls controls)
+    {
+        std::shared_ptr<detail::IPlaybackSessionRuntimePlayer> currentRuntime;
+        {
+            std::lock_guard lock(m_mutex);
+            config.runtime.audioControls = controls;
+            currentRuntime = runtimePlayer;
+        }
+        if (currentRuntime)
+            currentRuntime->setAudioControls(controls);
     }
 
     void stop()
@@ -667,6 +684,11 @@ void PlaybackSession::play()
 void PlaybackSession::pause()
 {
     m_impl->pause();
+}
+
+void PlaybackSession::setAudioControls(runtime::RuntimeAudioControls controls)
+{
+    m_impl->setAudioControls(controls);
 }
 
 void PlaybackSession::stop()

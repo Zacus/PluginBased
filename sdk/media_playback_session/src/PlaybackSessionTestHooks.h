@@ -39,6 +39,7 @@ public:
     virtual void enqueueEndOfStream(runtime::SessionId sessionId, runtime::Generation generation) = 0;
     virtual void pause() = 0;
     virtual void resume() = 0;
+    virtual void setAudioControls(runtime::RuntimeAudioControls controls) = 0;
     virtual void seek(std::chrono::microseconds position) = 0;
     virtual void completeSeek(runtime::SessionId sessionId, runtime::Generation generation) = 0;
     virtual void stop() = 0;

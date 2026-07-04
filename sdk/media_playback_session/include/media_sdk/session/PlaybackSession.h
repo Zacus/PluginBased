@@ -29,6 +29,7 @@ public:
     void play();
     void pause();
     void stop();
+    void setAudioControls(runtime::RuntimeAudioControls controls);
     [[nodiscard("seek result determines whether the seek command was accepted")]]
     Result<void> seek(std::chrono::milliseconds position);
     [[nodiscard("timeline is required for stale callback checks")]]

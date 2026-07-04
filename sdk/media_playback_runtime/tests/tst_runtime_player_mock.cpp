@@ -5,6 +5,7 @@
 #include <chrono>
 #include <condition_variable>
 #include <cstddef>
+#include <cstring>
 #include <functional>
 #include <future>
 #include <mutex>
@@ -36,6 +37,7 @@ public:
         }
         ++writeCount;
         writtenBytes += buffer.bytes.size();
+        lastWrittenBytes.assign(buffer.bytes.begin(), buffer.bytes.end());
         lastWritePts = buffer.pts;
         lastWriteGeneration = buffer.generation;
         return media_sdk::Result<void>::success();
@@ -116,6 +118,7 @@ public:
     std::atomic_int flushCount = 0;
     std::atomic_int closeCount = 0;
     std::size_t writtenBytes = 0;
+    std::vector<std::byte> lastWrittenBytes;
     std::chrono::microseconds lastWritePts { 0 };
     media_sdk::runtime::Generation lastWriteGeneration = 0;
     bool failResume = false;
@@ -255,6 +258,20 @@ media_sdk::AudioFrame makeAudioFrame(
     });
 }
 
+std::vector<std::byte> bytesFromFloats(std::vector<float> samples)
+{
+    std::vector<std::byte> bytes(samples.size() * sizeof(float));
+    std::memcpy(bytes.data(), samples.data(), bytes.size());
+    return bytes;
+}
+
+std::vector<float> floatsFromBytes(const std::vector<std::byte>& bytes)
+{
+    std::vector<float> samples(bytes.size() / sizeof(float));
+    std::memcpy(samples.data(), bytes.data(), samples.size() * sizeof(float));
+    return samples;
+}
+
 media_sdk::VideoFrame makeVideoFrame(
     std::chrono::microseconds pts,
     media_sdk::PixelFormat pixelFormat = media_sdk::PixelFormat::Yuv420P)
@@ -282,6 +299,19 @@ media_sdk::runtime::RuntimeAudioFrame runtimeAudio(
 {
     return {
         .frame = makeAudioFrame(pts),
+        .sessionId = sessionId,
+        .generation = generation,
+    };
+}
+
+media_sdk::runtime::RuntimeAudioFrame runtimeAudioWithSamples(
+    media_sdk::runtime::SessionId sessionId,
+    media_sdk::runtime::Generation generation,
+    std::chrono::microseconds pts,
+    std::vector<float> samples)
+{
+    return {
+        .frame = makeAudioFrame(pts, bytesFromFloats(std::move(samples))),
         .sessionId = sessionId,
         .generation = generation,
     };
@@ -423,6 +453,42 @@ void audioFramesAreWrittenToInjectedAudioOutput()
     assert(player.diagnostics().audioQueueHighWatermark >= 1);
     assert(player.diagnostics().audioBackpressureCount == 0);
     assert(player.diagnostics().audioWritten == 1);
+}
+
+void audioControlsApplyGainAndMuteBeforeAudioWrite()
+{
+    MockAudioOutput audio;
+    MockPresenter presenter;
+    auto player = makePlayer(audio, presenter);
+    assert(player.open().ok());
+
+    player.setAudioControls({
+        .volume = 0.5f,
+        .muted = false,
+    });
+    const auto gainResult = player.enqueueAudio(
+        runtimeAudioWithSamples(1, 1, 42ms, { 1.0f, -0.5f, 0.25f, -1.0f }));
+    assert(gainResult.status == media_sdk::runtime::RuntimeFramePushStatus::Accepted);
+    assert(waitUntil([&audio]() { return audio.writeCount == 1; }));
+    const auto gained = floatsFromBytes(audio.lastWrittenBytes);
+    assert(gained.size() == 4);
+    assert(gained[0] == 0.5f);
+    assert(gained[1] == -0.25f);
+    assert(gained[2] == 0.125f);
+    assert(gained[3] == -0.5f);
+
+    player.setAudioControls({
+        .volume = 1.0f,
+        .muted = true,
+    });
+    const auto muteResult = player.enqueueAudio(
+        runtimeAudioWithSamples(1, 1, 84ms, { 1.0f, -0.5f, 0.25f, -1.0f }));
+    assert(muteResult.status == media_sdk::runtime::RuntimeFramePushStatus::Accepted);
+    assert(waitUntil([&audio]() { return audio.writeCount == 2; }));
+    const auto muted = floatsFromBytes(audio.lastWrittenBytes);
+    assert(muted.size() == 4);
+    for (float sample : muted)
+        assert(sample == 0.0f);
 }
 
 void audioQueueBackpressureIsReportedInDiagnostics()
@@ -854,6 +920,7 @@ int main()
     openFailsAndClosesAudioWhenResumeFails();
     timelineTracksSeekGeneration();
     audioFramesAreWrittenToInjectedAudioOutput();
+    audioControlsApplyGainAndMuteBeforeAudioWrite();
     audioQueueBackpressureIsReportedInDiagnostics();
     videoFramesAreScheduledAgainstAudioClock();
     videoWaitDecisionDelaysAndEventuallyPresentsSameFrame();

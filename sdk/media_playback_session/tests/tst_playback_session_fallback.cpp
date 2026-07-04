@@ -228,6 +228,7 @@ public:
                             media_sdk::runtime::Generation) override {}
     void pause() override {}
     void resume() override {}
+    void setAudioControls(media_sdk::runtime::RuntimeAudioControls) override {}
     void seek(std::chrono::microseconds) override {}
     void completeSeek(media_sdk::runtime::SessionId sessionId,
                       media_sdk::runtime::Generation generation) override;

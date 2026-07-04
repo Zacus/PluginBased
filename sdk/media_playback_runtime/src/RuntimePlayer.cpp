@@ -7,10 +7,14 @@
 #include "media_sdk/Error.h"
 
 #include <algorithm>
+#include <atomic>
+#include <cmath>
 #include <condition_variable>
+#include <cstring>
 #include <mutex>
 #include <thread>
 #include <utility>
+#include <vector>
 
 namespace media_sdk::runtime {
 namespace {
@@ -39,6 +43,38 @@ Result<void> dependencyError(const char* message)
         .message = message,
         .detail = {},
     });
+}
+
+RuntimeAudioControls sanitizeAudioControls(RuntimeAudioControls controls)
+{
+    if (!std::isfinite(controls.volume))
+        controls.volume = 1.0f;
+    controls.volume = std::clamp(controls.volume, 0.0f, 1.0f);
+    return controls;
+}
+
+std::vector<std::byte> applyAudioControls(std::span<const std::byte> samples,
+                                          RuntimeAudioControls controls)
+{
+    std::vector<std::byte> output(samples.begin(), samples.end());
+    if (output.empty())
+        return output;
+
+    if (controls.muted || controls.volume == 0.0f) {
+        std::fill(output.begin(), output.end(), std::byte { 0 });
+        return output;
+    }
+
+    if (output.size() % sizeof(float) != 0)
+        return output;
+
+    for (std::size_t offset = 0; offset < output.size(); offset += sizeof(float)) {
+        float sample = 0.0f;
+        std::memcpy(&sample, output.data() + offset, sizeof(sample));
+        sample *= controls.volume;
+        std::memcpy(output.data() + offset, &sample, sizeof(sample));
+    }
+    return output;
 }
 
 } // namespace
@@ -232,6 +268,13 @@ struct RuntimePlayer::Impl {
         m_presentCapacityChanged.notify_all();
     }
 
+    void setAudioControls(RuntimeAudioControls controls)
+    {
+        const auto sanitized = sanitizeAudioControls(controls);
+        audioVolume.store(sanitized.volume, std::memory_order_relaxed);
+        audioMuted.store(sanitized.muted, std::memory_order_relaxed);
+    }
+
     void completeSeek(SessionId completedSessionId, Generation completedGeneration)
     {
         bool shouldResume = false;
@@ -389,8 +432,15 @@ struct RuntimePlayer::Impl {
                 continue;
 
             const auto samples = queuedFrame.frame.samples();
+            const auto controls = currentAudioControls();
+            std::vector<std::byte> controlledSamples;
+            std::span<const std::byte> outputSamples = samples;
+            if (controls.muted || controls.volume != 1.0f) {
+                controlledSamples = applyAudioControls(samples, controls);
+                outputSamples = controlledSamples;
+            }
             const auto writeResult = dependencies.audioOutput->write({
-                .bytes = samples,
+                .bytes = outputSamples,
                 .pts = queuedFrame.frame.pts(),
                 .generation = queuedFrame.generation,
             });
@@ -399,6 +449,14 @@ struct RuntimePlayer::Impl {
                 ++diagnostics.audioWritten;
             }
         }
+    }
+
+    RuntimeAudioControls currentAudioControls() const
+    {
+        return {
+            .volume = audioVolume.load(std::memory_order_relaxed),
+            .muted = audioMuted.load(std::memory_order_relaxed),
+        };
     }
 
     void videoLoop()
@@ -681,6 +739,8 @@ struct RuntimePlayer::Impl {
     AvSyncScheduler scheduler;
     PresentTracker presentTracker;
     NativeFallbackController fallbackController;
+    std::atomic<float> audioVolume { sanitizeAudioControls(config.audioControls).volume };
+    std::atomic_bool audioMuted { sanitizeAudioControls(config.audioControls).muted };
     mutable std::mutex m_mutex;
     std::condition_variable m_controlChanged;
     std::condition_variable m_presentCapacityChanged;
@@ -733,6 +793,11 @@ void RuntimePlayer::pause()
 void RuntimePlayer::resume()
 {
     m_impl->resume();
+}
+
+void RuntimePlayer::setAudioControls(RuntimeAudioControls controls)
+{
+    m_impl->setAudioControls(controls);
 }
 
 void RuntimePlayer::seek(std::chrono::microseconds position)
