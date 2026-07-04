@@ -208,23 +208,19 @@ def check_runtime_mode_switch_contract() -> None:
     playplugin_cmake = read(PLAYPLUGIN_CMAKE)
     combined = "\n".join((pipeline_header, pipeline_source, engine_header, engine_source))
 
-    for token in ("PlaybackRuntimeMode", "LegacyQt", "SdkRuntime"):
-        assert_contains(combined, token, PLAYBACK_PIPELINE_H)
+    for token in ("PlaybackRuntimeMode", "LegacyQt"):
+        assert_not_contains(combined, token, PLAYBACK_PIPELINE_H)
 
-    assert_contains(engine_header, "playbackRuntimeMode", PLAYER_ENGINE_H)
-    assert_contains(engine_source, "setPlaybackRuntimeMode", PLAYER_ENGINE_CPP)
-    assert_contains(engine_source, "stop();", PLAYER_ENGINE_CPP)
-    assert_contains(engine_source, "m_completion.resetForStop()", PLAYER_ENGINE_CPP)
-    assert_contains(engine_source, "m_errorString.clear()", PLAYER_ENGINE_CPP)
+    assert_not_contains(engine_header, "playbackRuntimeMode", PLAYER_ENGINE_H)
+    assert_not_contains(engine_source, "setPlaybackRuntimeMode", PLAYER_ENGINE_CPP)
 
-    assert_contains(pipeline_source, "setRuntimeMode", PLAYBACK_PIPELINE_CPP)
-    assert_contains(pipeline_source, "stopComponents();", PLAYBACK_PIPELINE_CPP)
-    assert_contains(pipeline_source, "clearSurface();", PLAYBACK_PIPELINE_CPP)
-    assert_contains(pipeline_source, "m_videoQueue.flush()", PLAYBACK_PIPELINE_CPP)
-    assert_contains(pipeline_source, "m_audioQueue.flush()", PLAYBACK_PIPELINE_CPP)
+    assert_not_contains(pipeline_source, "setRuntimeMode", PLAYBACK_PIPELINE_CPP)
+    assert_contains(pipeline_source, "void PlaybackPipeline::clearSurface()", PLAYBACK_PIPELINE_CPP)
+    assert_not_contains(pipeline_source, "m_videoQueue", PLAYBACK_PIPELINE_CPP)
+    assert_not_contains(pipeline_source, "m_audioQueue", PLAYBACK_PIPELINE_CPP)
 
-    assert_contains(pipeline_source, "connectLegacySurface", PLAYBACK_PIPELINE_CPP)
-    assert_contains(pipeline_source, "disconnectLegacySurface", PLAYBACK_PIPELINE_CPP)
+    assert_not_contains(pipeline_source, "connectLegacySurface", PLAYBACK_PIPELINE_CPP)
+    assert_not_contains(pipeline_source, "disconnectLegacySurface", PLAYBACK_PIPELINE_CPP)
     assert_contains(pipeline_source, "createSdkRuntimeChain", PLAYBACK_PIPELINE_CPP)
     assert_contains(pipeline_source, "destroySdkRuntimeChain", PLAYBACK_PIPELINE_CPP)
     assert_contains(pipeline_source, "SdkPlaybackAdapter", PLAYBACK_PIPELINE_CPP)

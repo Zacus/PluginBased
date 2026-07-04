@@ -15,126 +15,70 @@ def require(condition: bool, message: str) -> None:
 
 
 def main() -> None:
-    adapter_h_path = ROOT / "plugins/PlayPlugin/src/playback/QtPlaybackAdapter.h"
-    adapter_cpp_path = ROOT / "plugins/PlayPlugin/src/playback/QtPlaybackAdapter.cpp"
-    require(adapter_h_path.exists(), "QtPlaybackAdapter.h should exist")
-    require(adapter_cpp_path.exists(), "QtPlaybackAdapter.cpp should exist")
-
-    adapter_h = read("plugins/PlayPlugin/src/playback/QtPlaybackAdapter.h")
-    adapter_cpp = read("plugins/PlayPlugin/src/playback/QtPlaybackAdapter.cpp")
-    bridge_h = read("plugins/PlayPlugin/src/playback/PlaybackDataBridge.h")
-    bridge_cpp = read("plugins/PlayPlugin/src/playback/PlaybackDataBridge.cpp")
-    pipeline_h = read("plugins/PlayPlugin/src/playback/PlaybackPipeline.h")
-    pipeline_cpp = read("plugins/PlayPlugin/src/playback/PlaybackPipeline.cpp")
-    cmake = read("plugins/PlayPlugin/CMakeLists.txt")
     sdk_adapter_h = read("plugins/PlayPlugin/src/playback/SdkPlaybackAdapter.h")
     sdk_adapter_cpp = read("plugins/PlayPlugin/src/playback/SdkPlaybackAdapter.cpp")
+    pipeline_h = read("plugins/PlayPlugin/src/playback/PlaybackPipeline.h")
+    pipeline_cpp = read("plugins/PlayPlugin/src/playback/PlaybackPipeline.cpp")
+    engine_h = read("plugins/PlayPlugin/src/playback/PlayerEngine.h")
+    cmake = read("plugins/PlayPlugin/CMakeLists.txt")
 
-    require("media_sdk::IEventSink" in adapter_h,
-            "QtPlaybackAdapter should implement the SDK IEventSink boundary")
-    require("Q_OBJECT" in adapter_h,
-            "QtPlaybackAdapter should be a QObject so Qt signals are GUI-thread owned")
-    require("media_sdk::Player" in adapter_h or "media_sdk::Player" in adapter_cpp,
-            "QtPlaybackAdapter should own media_sdk::Player")
-    require("QMetaObject::invokeMethod" in adapter_cpp and "Qt::QueuedConnection" in adapter_cpp,
-            "QtPlaybackAdapter should marshal SDK events to the Qt object thread")
-    require("PlaybackDataBridge" in adapter_h and "m_dataBridge" in adapter_cpp,
-            "QtPlaybackAdapter should route data events through PlaybackDataBridge")
-    require("QObject" not in bridge_h and "Q_OBJECT" not in bridge_h,
-            "PlaybackDataBridge should not be a QObject or GUI-thread object")
-    require("pushAudio(" in bridge_h and "pushVideo(" in bridge_h and "finish(" in bridge_h,
-            "PlaybackDataBridge should expose audio/video/drain data-path methods")
-    require("m_audioQueue->pushWithResultIfCancelSerial(" in bridge_cpp and
-            "m_videoQueue->pushWithResultIfCancelSerial(" in bridge_cpp,
-            "PlaybackDataBridge should use structured cancel-epoch queue push results off the GUI thread")
-    require("m_audioQueue->finishIfCancelSerial(" in bridge_cpp and
-            "m_videoQueue->finishIfCancelSerial(" in bridge_cpp,
-            "PlaybackDataBridge should use cancel-epoch FrameQueue finish APIs for EOF")
-    required_bridge_stats = (
-        "PlaybackDataBridgeStats",
-        "audioAccepted",
-        "videoAccepted",
-        "audioRejectedStale",
-        "videoRejectedStale",
-        "eofAccepted",
-        "queueAbortFailures",
-    )
-    for token in required_bridge_stats:
-        require(token in bridge_h + bridge_cpp,
-                f"PlaybackDataBridge should expose diagnostic counter: {token}")
-    require("PlayDataBridge: session=" in bridge_cpp,
-            "PlaybackDataBridge should log one summary line for EOF/stop diagnostics")
-    require("VideoFrameQueue" in adapter_h and "AudioFrameQueue" in adapter_h,
-            "QtPlaybackAdapter should bridge SDK frames into existing PlayPlugin queues")
-    require("if (m_paused)" not in adapter_cpp,
-            "QtPlaybackAdapter should not drop decoded data events while playback is paused")
-    handle_start = adapter_cpp.find("void QtPlaybackAdapter::handleEvent")
-    make_audio_start = adapter_cpp.find("AVFramePtr QtPlaybackAdapter::makeAudioFrame")
-    handle_event_body = adapter_cpp[handle_start:make_audio_start]
-    require("AudioFrameEvent" not in handle_event_body and "VideoFrameEvent" not in handle_event_body,
-            "QtPlaybackAdapter::handleEvent should not enqueue audio/video frames on the GUI thread")
-    require("dropped audio frame because queue is full" not in adapter_cpp and
-            "dropped video frame because queue is full" not in adapter_cpp,
-            "QtPlaybackAdapter should not silently drop data frames when queues are full")
-    eof_block = adapter_cpp[adapter_cpp.find("EndOfFileEvent"):
-                            adapter_cpp.find("PositionChangedEvent")]
-    require("m_dataBridge.finish" in adapter_cpp and ".flush()" not in eof_block,
-            "QtPlaybackAdapter should route EOF through the data bridge without flushing queues")
-    for path in (
-        "plugins/PlayPlugin/src/playback/SdkPlaybackAdapter.cpp",
+    for removed in (
+        "plugins/PlayPlugin/src/playback/QtPlaybackAdapter.h",
         "plugins/PlayPlugin/src/playback/QtPlaybackAdapter.cpp",
+        "plugins/PlayPlugin/src/playback/PlaybackDataBridge.h",
+        "plugins/PlayPlugin/src/playback/PlaybackDataBridge.cpp",
+        "plugins/PlayPlugin/src/audio/AudioRenderer.h",
+        "plugins/PlayPlugin/src/video/VideoRenderer.h",
+        "plugins/PlayPlugin/src/video/VideoFrameScheduler.h",
+        "plugins/PlayPlugin/src/sync/ClockSync.h",
+        "plugins/PlayPlugin/src/common/FrameQueue.h",
     ):
-        text = read(path)
-        require("AudioFrameEvent" not in text and "VideoFrameEvent" not in text,
-                f"{path} must not depend on frame events")
-    require("int videoRowBytes(media_sdk::PixelFormat format, int width)" in adapter_cpp and
-            "return width;" in adapter_cpp and
-            "(width + 1) / 2" not in adapter_cpp[adapter_cpp.find("int videoRowBytes"):
-                                                  adapter_cpp.find("} // namespace")],
-            "QtPlaybackAdapter should copy each SDK plane using that plane's byte width")
-    require("mediaInfoReady" in adapter_h and "endOfFile" in adapter_h and "seekCompleted" in adapter_h,
-            "QtPlaybackAdapter should expose decoder-compatible Qt signals")
+        require(not (ROOT / removed).exists(), f"{removed} should be removed after SDK session switch")
 
-    require("media_sdk::IDecodeFrameSink" not in sdk_adapter_h,
-            "SdkPlaybackAdapter must not implement IDecodeFrameSink after switching to PlaybackSession")
-    require("media_sdk::IEventSink" not in sdk_adapter_h,
-            "SdkPlaybackAdapter must not implement IEventSink after switching to PlaybackSession")
-    require("media_sdk::runtime::IRuntimePlayerEvents" not in sdk_adapter_h,
-            "SdkPlaybackAdapter must not implement runtime events after switching to PlaybackSession")
-    require("std::unique_ptr<media_sdk::session::PlaybackSession>" in sdk_adapter_h,
-            "SdkPlaybackAdapter should own a PlaybackSession")
     require("media_sdk::session::ISessionEvents" in sdk_adapter_h,
-            "SdkPlaybackAdapter should convert session events to Qt signals")
-    require("onRuntimeDiagnostics" in sdk_adapter_h and "handleRuntimeDiagnostics" in sdk_adapter_cpp,
-            "SdkPlaybackAdapter should bridge SDK runtime diagnostics into PlayPlugin logging")
-    require("PlayPerf: sdk" in sdk_adapter_cpp,
-            "SdkPlaybackAdapter should log SDK runtime diagnostics without changing playback policy")
-    require("std::make_unique<media_sdk::Player>" not in sdk_adapter_cpp,
-            "SdkPlaybackAdapter must not create media_sdk::Player directly")
-    require("std::make_shared<media_sdk::runtime::RuntimePlayer>" not in sdk_adapter_cpp,
-            "SdkPlaybackAdapter must not create RuntimePlayer directly")
-    require("float32InterleavedSamples" not in sdk_adapter_cpp,
-            "SdkPlaybackAdapter must not convert PCM samples after switching to PlaybackSession")
-    require("AudioFrameEvent" not in sdk_adapter_cpp and "VideoFrameEvent" not in sdk_adapter_cpp,
-            "SdkPlaybackAdapter must not route decoded frames through PlayerEvent data handling")
+            "SdkPlaybackAdapter should implement SDK session events")
+    require("std::unique_ptr<media_sdk::session::PlaybackSession>" in sdk_adapter_h,
+            "SdkPlaybackAdapter should own PlaybackSession")
+    require("onRuntimeDiagnostics" in sdk_adapter_h and "PlayPerf: sdk" in sdk_adapter_cpp,
+            "SdkPlaybackAdapter should bridge SDK diagnostics to PlayPlugin logging")
 
-    require("src/playback/PlaybackDataBridge.h" in cmake and
-            "src/playback/PlaybackDataBridge.cpp" in cmake,
-            "PlayPlugin CMake should compile PlaybackDataBridge")
-    require("src/playback/QtPlaybackAdapter.h" in cmake and
-            "src/playback/QtPlaybackAdapter.cpp" in cmake,
-            "PlayPlugin CMake should compile QtPlaybackAdapter")
-    require("media_sdk_core" in cmake or "media_sdk::core" in cmake,
-            "PlayPlugin should link the media SDK core target")
+    for token in (
+        "media_sdk::IDecodeFrameSink",
+        "media_sdk::IEventSink",
+        "media_sdk::runtime::IRuntimePlayerEvents",
+        "std::make_unique<media_sdk::Player>",
+        "std::make_shared<media_sdk::runtime::RuntimePlayer>",
+        "AudioFrameEvent",
+        "VideoFrameEvent",
+        "float32InterleavedSamples",
+    ):
+        require(token not in sdk_adapter_h + sdk_adapter_cpp,
+                f"SdkPlaybackAdapter should not depend on old orchestration token: {token}")
+
+    require("std::unique_ptr<SdkPlaybackAdapter>" in pipeline_h,
+            "PlaybackPipeline should own only the SDK adapter for playback")
+    require("QtRhiVideoPresenter" in pipeline_h + pipeline_cpp,
+            "PlaybackPipeline should keep only Qt presentation as PlayPlugin responsibility")
+    require("CoreAudioAudioOutput" in pipeline_cpp,
+            "PlaybackPipeline should inject the platform audio output into SDK session")
+    require("PlaybackRuntimeMode" not in pipeline_h + pipeline_cpp + engine_h,
+            "PlayPlugin should no longer expose a LegacyQt/SdkRuntime switch")
+
+    for token in (
+        "QtPlaybackAdapter",
+        "PlaybackDataBridge",
+        "AudioRenderer",
+        "VideoRenderer",
+        "VideoFrameScheduler",
+        "ClockSync",
+        "FrameQueue",
+    ):
+        require(token not in cmake, f"PlayPlugin CMake should not compile removed legacy component: {token}")
+
     require("media_sdk::playback_session" in cmake,
             "PlayPlugin should link the playback session SDK target")
-
-    require("QtPlaybackAdapter" in pipeline_h + pipeline_cpp,
-            "PlaybackPipeline should use QtPlaybackAdapter")
-    require("std::unique_ptr<FFmpegDecoder>" not in pipeline_h,
-            "PlaybackPipeline should no longer directly own FFmpegDecoder")
-    require("PlaybackSeekCoordinator" not in pipeline_h,
-            "PlaybackPipeline should own seek coordination after switching to the SDK adapter")
+    require("media_sdk::playback_runtime" in cmake,
+            "PlayPlugin should link runtime interfaces for presenter/audio injection")
 
 
 if __name__ == "__main__":

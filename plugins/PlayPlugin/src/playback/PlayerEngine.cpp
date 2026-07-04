@@ -71,24 +71,6 @@ void PlayerEngine::setMuted(bool m)
     emit mutedChanged(m_muted);
 }
 
-void PlayerEngine::setPlaybackRuntimeMode(int mode)
-{
-    if (mode != LegacyQt && mode != SdkRuntime)
-        return;
-    if (m_playbackRuntimeMode == mode)
-        return;
-
-    stop();
-    m_pipeline->clearSurface();
-    m_completion.resetForStop();
-    m_errorString.clear();
-    m_playbackRuntimeMode = mode;
-    m_pipeline->setRuntimeMode(mode == SdkRuntime
-                                   ? ::PlaybackRuntimeMode::SdkRuntime
-                                   : ::PlaybackRuntimeMode::LegacyQt);
-    emit playbackRuntimeModeChanged(m_playbackRuntimeMode);
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
 // 播放控制
 // ─────────────────────────────────────────────────────────────────────────────
@@ -114,9 +96,6 @@ void PlayerEngine::play()
     if (m_state == Playing)
         return;
     m_pipeline->setPaused(false);
-    // VideoRenderer 定时器持续运行：
-    //   暂停期间音频时钟冻结，held 帧的 decide() 始终返回 Wait，定时器空转不渲染。
-    //   恢复后时钟继续，held 帧正常渲染，无需额外控制定时器。
     setState(Playing);
     LOG_INFO("PlayerEngine: play");
 }
@@ -126,10 +105,6 @@ void PlayerEngine::pause()
     if (m_state != Playing)
         return;
     m_pipeline->setPaused(true);
-    // VideoRenderer 定时器刻意不停：
-    //   音频 sink suspend 后 processedUSecs() 冻结，m_heldEntry 的 PTS 超前于冻结时钟，
-    //   decide() 持续返回 Wait，不会渲染新帧，也不会丢帧。
-    //   FFmpegSurface 保持最后一帧的 GPU 纹理，画面不黑屏。
     setState(Paused);
     LOG_INFO("PlayerEngine: pause");
 }
@@ -206,8 +181,6 @@ void PlayerEngine::onMediaInfoReady(qint64 durationMs, int width, int height, do
     m_duration = durationMs;
     emit durationChanged(m_duration);
 
-    // VideoRenderer 会在真正消费 AVFrame 时读取颜色范围 / 色彩空间等信息，
-    // 这里不再提前做 CPU 侧的视频格式初始化。
     m_completion.setStreams(sampleRate > 0 && channels > 0,
                             width > 0 && height > 0);
     m_pipeline->startRenderersForMedia(m_completion.hasAudio(),
@@ -240,17 +213,13 @@ void PlayerEngine::onDecoderError(const QString& msg)
 void PlayerEngine::onEndOfFile()
 {
     LOG_INFO("PlayerEngine: end of file");
-    // 不立即 stop，等 VideoRenderer 处理完剩余帧后发 endOfVideo
-    // 如果有音频，也要等 AudioRenderer 消费到 EOF，避免截断音频缓冲。
+    // 不立即 stop，等 SDK runtime 完成音频/视频 drain 后再收尾。
     m_completion.markDecoderFinished();
     maybeFinishMedia();
 }
 
 void PlayerEngine::onDecoderPosition(qint64 posMs)
 {
-    if (m_completion.hasAudio() || m_completion.hasVideo())
-        return;
-
     m_position = posMs;
     emit positionChanged(m_position);
 }
@@ -262,7 +231,7 @@ void PlayerEngine::onDecoderSeekCompleted(int generation, int serial)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 来自 AudioRenderer 的信号处理
+// 来自 SDK runtime 音频 drain/position 信号处理
 // ─────────────────────────────────────────────────────────────────────────────
 void PlayerEngine::onAudioPosition(qint64 posMs)
 {
@@ -278,7 +247,7 @@ void PlayerEngine::onEndOfAudio()
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 来自 VideoRenderer 的信号处理
+// 来自 SDK runtime 视频 drain/position 信号处理
 // ─────────────────────────────────────────────────────────────────────────────
 void PlayerEngine::onVideoPosition(qint64 posMs)
 {

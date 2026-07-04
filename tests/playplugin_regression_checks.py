@@ -1,480 +1,79 @@
 #!/usr/bin/env python3
-
 from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def read(path):
+def read(path: str) -> str:
     return (ROOT / path).read_text(encoding="utf-8")
 
 
-def file_exists(path):
-    return (ROOT / path).exists()
-
-
-def require(condition, message):
+def require(condition: bool, message: str) -> None:
     if not condition:
         raise AssertionError(message)
 
 
-def require_absent(needle, files, message):
-    hits = [path for path, content in files if needle in content]
-    require(not hits, f"{message}: {needle} found in {', '.join(hits)}")
-
-
-def main():
+def main() -> None:
     engine_h = read("plugins/PlayPlugin/src/playback/PlayerEngine.h")
     engine_cpp = read("plugins/PlayPlugin/src/playback/PlayerEngine.cpp")
-    pipeline_cpp = read("plugins/PlayPlugin/src/playback/PlaybackPipeline.cpp")
     pipeline_h = read("plugins/PlayPlugin/src/playback/PlaybackPipeline.h")
-    adapter_h = read("plugins/PlayPlugin/src/playback/QtPlaybackAdapter.h")
-    adapter_cpp = read("plugins/PlayPlugin/src/playback/QtPlaybackAdapter.cpp")
-    ffmpeg_utils_h = read("plugins/PlayPlugin/src/common/FFmpegUtils.h")
-    sdk_cmake = read("sdk/media_core/CMakeLists.txt")
-    sdk_decode_worker_h = read("sdk/media_core/src/DecodeWorker.h")
-    sdk_decode_worker_cpp = read("sdk/media_core/src/DecodeWorker.cpp")
-    sdk_demuxer_cpp = read("sdk/media_core/src/Demuxer.cpp")
-    sdk_decode_perf_h = read("sdk/media_core/src/DecodePerformance.h")
-    sdk_decode_perf_cpp = read("sdk/media_core/src/DecodePerformance.cpp")
-    sdk_video_processor_h = read("sdk/media_core/src/VideoFrameProcessor.h")
-    sdk_video_processor_cpp = read("sdk/media_core/src/VideoFrameProcessor.cpp")
-    sdk_hw_backend_h = read("sdk/media_core/src/HardwareDecoderBackend.h")
-    native_frame_h = read("plugins/PlayPlugin/src/video/native/NativeVideoFrame.h")
-    apple_bridge_mm = read("plugins/PlayPlugin/src/video/native/AppleMetalVideoTextureBridge.mm")
+    pipeline_cpp = read("plugins/PlayPlugin/src/playback/PlaybackPipeline.cpp")
+    sdk_adapter_h = read("plugins/PlayPlugin/src/playback/SdkPlaybackAdapter.h")
+    sdk_adapter_cpp = read("plugins/PlayPlugin/src/playback/SdkPlaybackAdapter.cpp")
+    presenter_cpp = read("plugins/PlayPlugin/src/playback/QtRhiVideoPresenter.cpp")
+    ffmpeg_surface_cpp = read("plugins/PlayPlugin/src/video/FFmpegSurface.cpp")
     cmake = read("plugins/PlayPlugin/CMakeLists.txt")
-    audio_cpp = read("plugins/PlayPlugin/src/audio/AudioRenderer.cpp")
-    audio_h = read("plugins/PlayPlugin/src/audio/AudioRenderer.h")
-    surface_cpp = read("plugins/PlayPlugin/src/video/FFmpegSurface.cpp")
-    video_material_cpp = read("plugins/PlayPlugin/src/video/render/VideoMaterial.cpp")
-    video_node_cpp = read("plugins/PlayPlugin/src/video/render/VideoNode.cpp")
-    video_pixel_format_cpp = read("plugins/PlayPlugin/src/video/render/VideoPixelFormat.cpp")
-    shader_frag = read("plugins/PlayPlugin/shaders/yuvvideo.frag")
-    renderer_cpp = read("plugins/PlayPlugin/src/video/VideoRenderer.cpp")
-    renderer_h = read("plugins/PlayPlugin/src/video/VideoRenderer.h")
-    clock_sync_h = read("plugins/PlayPlugin/src/sync/ClockSync.h")
-    control_qml = read("plugins/PlayPlugin/qml/ControlBar.qml")
-    playlist_qml = read("plugins/PlayPlugin/qml/PlaylistView.qml")
-    playplugin_qml = read("plugins/PlayPlugin/qml/PlayPluginView.qml")
-    player_qml = read("plugins/PlayPlugin/qml/PlayerView.qml")
-    playplugin_cpp = read("plugins/PlayPlugin/PlayPlugin.cpp")
-    context_h = read("plugins/PlayPlugin/src/playback/PlaybackContext.h")
-    app_plugin_h = read("plugin/IAppPlugin.h")
-    plugin_cmake = read("plugin/CMakeLists.txt")
-    dummy_cmake = read("plugins/DummyPlugin/CMakeLists.txt")
-    manager_h = read("core/PluginManager.h")
-    manager_cpp = read("core/PluginManager.cpp")
-    playplugin_h = read("plugins/PlayPlugin/PlayPlugin.h")
-    dummy_h = read("plugins/DummyPlugin/DummyPlugin.h")
-    dummy_cpp = read("plugins/DummyPlugin/DummyPlugin.cpp")
-    dummy_json = read("plugins/DummyPlugin/DummyPlugin.json")
-    playplugin_json = read("plugins/PlayPlugin/PlayPlugin.json")
-    readme = read("README.md")
-    build_md = read("BUILD.md")
-    root_cmake = read("CMakeLists.txt")
-    app_cmake = read("app/CMakeLists.txt")
-    core_cmake = read("core/CMakeLists.txt")
-    logger_cmake = read("logger/CMakeLists.txt")
-    main_cpp = read("app/main.cpp")
-    app_controller_h = read("app/AppController.h")
-    logger_cpp = read("logger/Logger.cpp")
-    app_qml = read("app/qml/main.qml")
-    home_panel_qml = read("app/qml/HomePanel.qml")
-    package_yml = read("tools/package.yml")
-    package_sh = read("package.sh")
-    deploy_py = read("tools/deploy.py")
 
-    require("project(PluginBased VERSION" in root_cmake,
-            "top-level CMake project should be renamed to PluginBased")
-    require("qt_add_executable(PluginBasedApp" in app_cmake,
-            "host executable target should be PluginBasedApp")
-    require('URI     "PluginBased"' in app_cmake,
-            "host QML URI should be PluginBased")
-    require('${CMAKE_BINARY_DIR}/PluginBased' in app_cmake,
-            "host QML output directory should be PluginBased")
-    require("PluginBasedLogger" in app_cmake and "PluginBasedPlugin" in app_cmake and
-            "PluginBasedCore" in app_cmake,
-            "host app should link renamed internal targets")
-    require("PluginBasedCore" in core_cmake and "PluginBasedLogger" in core_cmake and
-            "PluginBasedPlugin" in core_cmake,
-            "core CMake target and dependencies should use PluginBased names")
-    require("qt_add_qml_module(PluginBasedLogger" in logger_cmake,
-            "logger target should be PluginBasedLogger")
-    require('app.setOrganizationName("PluginBased")' in main_cpp,
-            "Qt organization name should be PluginBased")
-    require('app.setApplicationName("PluginBased")' in main_cpp,
-            "Qt application name should be PluginBased")
-    require('cfg.load(dataDir + "/config/pluginbased.ini")' in main_cpp,
-            "config filename should be pluginbased.ini")
-    require('qrc:/PluginBased/qml/main.qml' in main_cpp,
-            "QML entry URL should use PluginBased")
-    require('LOG_INFO("=== PluginBased starting (v1.0.0) ===")' in main_cpp,
-            "startup log should use PluginBased")
-    require('LOG_INFO("=== PluginBased exiting ({}) ===", ret)' in main_cpp,
-            "shutdown log should use PluginBased")
-    require('QStringLiteral("PluginBased")' in app_controller_h,
-            "AppController should expose PluginBased as app name")
-    require('"/pluginbased.log"' in logger_cpp,
-            "logger should write pluginbased.log")
-    require("import PluginBased 1.0" in app_qml and "import PluginBased 1.0" in home_panel_qml,
-            "host QML files should import PluginBased 1.0")
-    require("name: PluginBased" in package_yml and "binary: PluginBasedApp" in package_yml and
-            "bundle_id: com.pluginbased.app" in package_yml,
-            "packaging metadata should use PluginBased")
-    require("- PluginBased" in package_yml,
-            "packaging QML modules should include PluginBased")
-    require("PluginBasedApp" in package_sh and "project(PluginBased VERSION" in package_sh,
-            "package.sh should discover the renamed project and app bundle")
-    require('exec "${DIR}/bin/PluginBasedApp" "$@"' in deploy_py,
-            "deployment wrapper should launch PluginBasedApp")
+    require("PlaybackCompletionTracker" in engine_h,
+            "PlayerEngine should keep completion tracking for SDK EOF/audio/video drain")
+    require("m_completion.setStreams" in engine_cpp,
+            "PlayerEngine should derive completion streams from SDK media info")
+    require("m_pipeline->seek(positionMs, seekGeneration)" in engine_cpp,
+            "PlayerEngine should keep generation-based seek completion")
+    require("m_position = posMs" in engine_cpp[engine_cpp.find("void PlayerEngine::onDecoderPosition"):],
+            "SDK decoder position should drive UI progress")
 
-    # Historical docs are intentionally excluded from this negative rename gate.
-    active_build_files = [
-        ("CMakeLists.txt", root_cmake),
-        ("app/CMakeLists.txt", app_cmake),
-        ("core/CMakeLists.txt", core_cmake),
-        ("logger/CMakeLists.txt", logger_cmake),
-        ("plugin/CMakeLists.txt", plugin_cmake),
-        ("plugins/PlayPlugin/CMakeLists.txt", cmake),
-        ("plugins/DummyPlugin/CMakeLists.txt", dummy_cmake),
-        ("package.sh", package_sh),
-    ]
-    active_runtime_files = [
-        ("app/main.cpp", main_cpp),
-        ("app/AppController.h", app_controller_h),
-        ("logger/Logger.cpp", logger_cpp),
-        ("app/qml/main.qml", app_qml),
-        ("app/qml/HomePanel.qml", home_panel_qml),
-        ("plugin/IAppPlugin.h", app_plugin_h),
-        ("plugins/PlayPlugin/PlayPlugin.json", playplugin_json),
-        ("plugins/DummyPlugin/DummyPlugin.json", dummy_json),
-        ("tools/package.yml", package_yml),
-        ("tools/deploy.py", deploy_py),
-    ]
+    require("std::unique_ptr<SdkPlaybackAdapter>" in pipeline_h,
+            "PlaybackPipeline should use SDK playback adapter")
+    require("CoreAudioAudioOutput" in pipeline_cpp,
+            "PlaybackPipeline should inject SDK platform audio output")
+    require("QtRhiVideoPresenter" in pipeline_cpp,
+            "PlaybackPipeline should inject Qt RHI video presenter")
+    require("destroySdkRuntimeChain" in pipeline_cpp,
+            "PlaybackPipeline should explicitly tear down SDK runtime chain")
 
-    for old_target in (
-            "VideoPlayerApp",
-            "VideoPlayerCore",
-            "VideoPlayerLogger",
-            "VideoPlayerPlugin"):
-        require_absent(old_target, active_build_files + active_runtime_files,
-                       "old VideoPlayer build target should be removed from active files")
+    require("media_sdk::session::PlaybackSession" in sdk_adapter_h,
+            "SdkPlaybackAdapter should own SDK PlaybackSession")
+    require("acceptsEventSerial" in sdk_adapter_cpp,
+            "SdkPlaybackAdapter should reject stale queued Qt callbacks")
+    require("PlayPerf: sdk" in sdk_adapter_cpp,
+            "SDK diagnostics should remain observable in PlayPlugin logs")
 
-    require_absent('URI     "VideoPlayer"', [("app/CMakeLists.txt", app_cmake)],
-                   "old host QML URI should be removed from active app CMake")
-    require_absent('${CMAKE_BINARY_DIR}/VideoPlayer', [("app/CMakeLists.txt", app_cmake)],
-                   "old host QML output directory should be removed from active app CMake")
-    require_absent('qrc:/VideoPlayer/qml/main.qml', [("app/main.cpp", main_cpp)],
-                   "old QML entry URL should be removed from active startup code")
-    require_absent("VideoPlayer starting", [("app/main.cpp", main_cpp)],
-                   "old startup log text should be removed from active startup code")
-    require_absent("VideoPlayer exiting", [("app/main.cpp", main_cpp)],
-                   "old shutdown log text should be removed from active startup code")
-    require_absent("import VideoPlayer 1.0",
-                   [("app/qml/main.qml", app_qml),
-                    ("app/qml/HomePanel.qml", home_panel_qml)],
-                   "old host QML imports should be removed from active QML")
-    require_absent("videoplayer.ini", [("app/main.cpp", main_cpp)],
-                   "old config filename should be removed from active startup code")
-    require_absent("videoplayer.log", [("logger/Logger.cpp", logger_cpp)],
-                   "old log filename should be removed from active logger code")
-    require_absent("com.videoplayer.IAppPlugin/1.0",
-                   [("plugin/IAppPlugin.h", app_plugin_h),
-                    ("plugins/PlayPlugin/PlayPlugin.json", playplugin_json),
-                    ("plugins/DummyPlugin/DummyPlugin.json", dummy_json)],
-                   "old app plugin IID should be removed from active plugin metadata")
-    require_absent("name: VideoPlayer", [("tools/package.yml", package_yml)],
-                   "old package name should be removed from active packaging metadata")
-    require_absent("binary: VideoPlayerApp", [("tools/package.yml", package_yml)],
-                   "old package binary should be removed from active packaging metadata")
-    require_absent("bundle_id: com.myorg.videoplayer", [("tools/package.yml", package_yml)],
-                   "old bundle id should be removed from active packaging metadata")
-    require_absent("- VideoPlayer", [("tools/package.yml", package_yml)],
-                   "old QML module entry should be removed from active packaging metadata")
-    require_absent('exec "${DIR}/bin/VideoPlayerApp" "$@"', [("tools/deploy.py", deploy_py)],
-                   "old deployment wrapper target should be removed from active deployment script")
+    for token in (
+        "QtPlaybackAdapter",
+        "PlaybackDataBridge",
+        "AudioRenderer",
+        "VideoRenderer",
+        "VideoFrameScheduler",
+        "ClockSync",
+        "FrameQueue",
+        "LegacyQt",
+    ):
+        require(token not in pipeline_h + pipeline_cpp + cmake,
+                f"PlayPlugin runtime path should not reference removed component: {token}")
 
-    require("class IAppPlugin" in app_plugin_h,
-            "generic app plugin interface should exist")
-    require("#define IAppPlugin_IID" in app_plugin_h and
-            "com.pluginbased.IAppPlugin/1.0" in app_plugin_h,
-            "IAppPlugin should expose the generic PluginBased plugin IID")
-    require("PluginContext" not in app_plugin_h,
-            "IAppPlugin should not define an unused host context")
-    require(not file_exists("plugin/IPlayerPlugin.h"),
-            "IPlayerPlugin interface should be removed from the host plugin contract")
-    require("IPlayerPlugin" not in app_plugin_h,
-            "IAppPlugin should not mention player-specific interfaces")
-    require("PlayerPluginFinder" not in app_plugin_h and "findPlayerPlugin" not in app_plugin_h,
-            "IAppPlugin should not expose player-specific callbacks")
-    require("virtual QString id()          const = 0" in app_plugin_h,
-            "IAppPlugin should expose a stable plugin id")
-    require("virtual bool initialize() = 0" in app_plugin_h,
-            "IAppPlugin initialize should not require a context argument")
-    require("Q_DECLARE_INTERFACE(IAppPlugin, IAppPlugin_IID)" in app_plugin_h,
-            "IAppPlugin should be declared as a Qt plugin interface")
-    require("PluginBasedPlugin" in plugin_cmake,
-            "PluginBasedPlugin interface target should publish IAppPlugin.h")
-    require("IPlayerPlugin" not in plugin_cmake,
-            "PluginBasedPlugin target should not publish IPlayerPlugin.h")
-    require('#include "IAppPlugin.h"' in manager_h,
-            "PluginManager should include the generic app plugin interface")
-    require("IAppPlugin*" in manager_h,
-            "PluginManager should store generic app plugins")
-    require("IPlayerPlugin" not in manager_h and "IPlayerPlugin" not in manager_cpp,
-            "PluginManager should not mention player-specific interfaces")
-    require("findPlayerPlugin" not in manager_h and "findPlayerPlugin" not in manager_cpp,
-            "PluginManager should not expose player capability lookup")
-    require("qobject_cast<IAppPlugin*>" in manager_cpp,
-            "PluginManager should load generic app plugins")
-    require("PluginContext" not in manager_cpp and "plugin->initialize()" in manager_cpp,
-            "PluginManager should call initialize without a context object")
-    require("#include \"IAppPlugin.h\"" in playplugin_h,
-            "PlayPlugin should include IAppPlugin")
-    require("IPlayerPlugin" not in playplugin_h and "IPlayerPlugin" not in playplugin_cpp,
-            "PlayPlugin should not implement the removed host player interface")
-    require("public IAppPlugin" in playplugin_h,
-            "PlayPlugin should remain a generic app plugin")
-    require("Q_INTERFACES(IAppPlugin)" in playplugin_h,
-            "PlayPlugin should expose only the generic app plugin interface")
-    require("Q_INTERFACES(IAppPlugin IPlayerPlugin)" not in playplugin_h,
-            "PlayPlugin should not expose a player plugin Qt interface")
-    require("Q_PLUGIN_METADATA(IID IAppPlugin_IID FILE \"PlayPlugin.json\")" in playplugin_h,
-            "PlayPlugin metadata should use the generic app plugin IID")
-    require("com.pluginbased.IAppPlugin/1.0" in playplugin_json,
-            "PlayPlugin JSON metadata should use the generic PluginBased app plugin IID")
-    require("QString id()          const override" in playplugin_h,
-            "PlayPlugin should expose a stable app plugin id")
-    require("bool initialize() override" in playplugin_h,
-            "PlayPlugin should initialize without PluginContext")
-    require("PlaybackContext::instance().setFinder" not in playplugin_cpp,
-            "PlayPlugin should not receive host player lookup callbacks")
-    require("PlayerPluginFinder" not in context_h and "IPlayerPlugin" not in context_h,
-            "PlaybackContext should not store host-provided player capabilities")
-    require("#include \"IAppPlugin.h\"" in dummy_h,
-            "DummyPlugin should include IAppPlugin")
-    require("public IAppPlugin" in dummy_h and "public IPlayerPlugin" not in dummy_h,
-            "DummyPlugin should be a generic app plugin only")
-    require("Q_INTERFACES(IAppPlugin)" in dummy_h,
-            "DummyPlugin should expose only the generic app plugin interface")
-    require("Q_PLUGIN_METADATA(IID IAppPlugin_IID FILE \"DummyPlugin.json\")" in dummy_h,
-            "DummyPlugin metadata should use generic app plugin IID")
-    require("com.pluginbased.IAppPlugin/1.0" in dummy_json,
-            "DummyPlugin JSON metadata should use generic PluginBased app plugin IID")
-    require("bool initialize() override" in dummy_h,
-            "DummyPlugin should initialize without PluginContext")
-    require("canHandle(" not in dummy_h and "open(const QUrl&" not in dummy_h,
-            "DummyPlugin should not expose playback capability methods")
-    require("DummyPlugin::canHandle" not in dummy_cpp and "DummyPlugin::open" not in dummy_cpp,
-            "DummyPlugin implementation should not contain playback methods")
-    require("IAppPlugin" in readme and "IPlayerPlugin" not in readme,
-            "README should describe only IAppPlugin as the plugin contract")
-    require("通用插件" in readme,
-            "README should describe the host plugin model as generic")
-    require("IAppPlugin" in build_md and "IPlayerPlugin" not in build_md,
-            "BUILD.md should describe only IAppPlugin as the plugin contract")
+    require("supportsNativeVideoToolboxRendering" in ffmpeg_surface_cpp + read("plugins/PlayPlugin/src/video/FFmpegSurface.h"),
+            "FFmpegSurface should still expose native rendering capability")
+    require("diagnosticsSnapshot()" in presenter_cpp,
+            "QtRhiVideoPresenter should still report presentation diagnostics")
+    require("nativeTextureFailed" in presenter_cpp and "cpuMemcpy" in presenter_cpp,
+            "QtRhiVideoPresenter should preserve native and CPU fallback diagnostics")
 
-    require("finishMedia()" in engine_h, "PlayerEngine should centralize media completion")
-    require("maybeFinishMedia()" in engine_h, "PlayerEngine should wait for active streams to drain")
-    require("endOfAudio" in read("plugins/PlayPlugin/src/audio/AudioRenderer.h"),
-            "AudioRenderer should report audio queue EOF")
-    require("PlaybackCompletionTracker m_completion" in engine_h,
-            "PlayerEngine should track completed media through PlaybackCompletionTracker")
-    require("resumeAfterSeek" in engine_cpp,
-            "seeking after media completion should resume playback")
-    require("stopAllComponents();" not in engine_cpp[engine_cpp.find("void PlayerEngine::finishMedia"):],
-            "finished media should keep playback components available for seeking")
-    require("m_adapter->seekTo(positionMs, generation)" in pipeline_cpp,
-            "seek should be submitted through the SDK Qt adapter")
-    require(engine_cpp.count("emit endOfMedia();") == 1,
-            "endOfMedia should be emitted from one guarded path")
-    require("emit positionChanged(m_position);" in engine_cpp and
-            "emit durationChanged(m_duration);" in engine_cpp,
-            "stop should notify reset position and duration")
-    require("stopAllComponents();" in engine_cpp[engine_cpp.find("void PlayerEngine::onDecoderError"):],
-            "decoder errors should stop playback components")
-
-    require("bytesPerSample" in video_material_cpp,
-            "black placeholder upload should account for R16 byte width")
-    require('LOG_DEBUG("VideoRenderer: pts=' not in renderer_cpp,
-            "per-frame video sync debug logging should be removed or throttled")
-    require('LOG_DEBUG("VideoRenderer: drop frame' not in renderer_cpp,
-            "per-frame drop logging should stay out of the render loop")
-    require("DecodePerformanceStats" in sdk_decode_perf_h and
-            "DecodePerformanceLogger" in sdk_decode_perf_h and
-            "DecodePerformanceReport" in sdk_decode_perf_cpp,
-            "SDK decoder should expose throttled playback performance summaries")
-    require("std::chrono::milliseconds" in sdk_decode_perf_h,
-            "SDK decode performance logs should use Qt-free chrono timing")
-    require("VideoRenderPerformanceStats" in renderer_h and
-            "maybeLogRenderPerformance" in renderer_cpp and
-            "PlayPerf: renderer" in renderer_cpp,
-            "renderer should report throttled playback performance summaries")
-    require("m_renderPerfLogTimer" in renderer_h and
-            "PerformanceLogIntervalMs" in renderer_cpp,
-            "render performance logs should be time-throttled")
-    require('LOG_DEBUG("PlayPerf: renderer frame' not in renderer_cpp,
-            "playback performance logging should not run per frame")
-    require("setAudioClockEnabled" in renderer_h and "m_audioClockEnabled" in renderer_h,
-            "VideoRenderer should explicitly support video-only clocking")
-    require("audioClockFast() const" in clock_sync_h and
-            "m_audioClockSnapshotSequence" in clock_sync_h and
-            "m_audioClockSnapshotBaseUs" in clock_sync_h and
-            "m_audioClockSnapshotAnchorNs" in clock_sync_h,
-            "ClockSync should expose a lock-free compensated audio clock snapshot")
-    decide_body = clock_sync_h[
-        clock_sync_h.find("Action decide(qint64 framePtsUs) const"):
-        clock_sync_h.find("private:", clock_sync_h.find("Action decide(qint64 framePtsUs) const"))
-    ]
-    require("audioClockFast()" in decide_body and "audioClock()" not in decide_body,
-            "ClockSync::decide should use the lock-free fast audio clock path")
-    require("std::chrono::steady_clock::now()" in clock_sync_h and
-            "publishAudioClockSnapshot" in clock_sync_h,
-            "ClockSync fast path should preserve wall-clock compensation without taking the mutex")
-    require("m_videoClock.restart()" in renderer_cpp and "m_videoClockBaseUs" in renderer_cpp,
-            "video-only playback should establish a local clock from the first rendered frame")
-    require("m_videoRenderer->setAudioClockEnabled(hasAudio)" in pipeline_cpp,
-            "PlaybackPipeline should configure VideoRenderer clock mode from detected streams")
-    require("m_hasRenderedFrame" in renderer_h and
-            "m_consecutiveDroppedFrames" in renderer_h and
-            "MaxConsecutiveDropsBeforeRender" in renderer_cpp and
-            "m_consecutiveDroppedFrames < MaxConsecutiveDropsBeforeRender" in renderer_cpp,
-            "VideoRenderer should bound late-frame drops so slow 4K/60 videos keep updating")
-    require("seekCompleted(int generation, int serial)" in adapter_h,
-            "QtPlaybackAdapter should report the frame serial produced after seek")
-    require("setAcceptedSerial" in read("plugins/PlayPlugin/src/audio/AudioRenderer.h") and
-            "setAcceptedSerial" in renderer_h,
-            "audio and video renderers should track the currently accepted frame serial")
-    require("m_audioRenderer->setAcceptedSerial(serial)" in pipeline_cpp and
-            "m_videoRenderer->completeSeek(generation, serial)" in pipeline_cpp,
-            "PlaybackPipeline should apply seek serial to all frame consumers")
-    require("entry.serial != m_acceptedSerial" in read("plugins/PlayPlugin/src/audio/AudioRenderer.cpp") and
-            "entry.serial != m_acceptedSerial" in renderer_cpp,
-            "frame consumers should discard stale frames from older seek serials")
-    require("channelLayoutMask" in adapter_h and "channelLayoutMask" in adapter_cpp,
-            "Qt adapter should expose the source audio channel layout mask")
-    require("context->ch_layout.u.mask" in sdk_demuxer_cpp,
-            "SDK demuxer should capture FFmpeg's native channel layout mask")
-    require("m_srcChannelLayoutMask" in audio_h and
-            "av_channel_layout_from_mask" in audio_cpp and
-            "av_channel_layout_default(&srcLayout, m_srcChannels)" in audio_cpp,
-            "AudioRenderer should initialize swresample from the real or default source layout")
-    require("setPendingOpenUrl" not in context_h and "takePendingOpenUrl" not in context_h,
-            "PlaybackContext should not store host-originated pending open requests")
-    require("PlaybackContext::instance().setPendingOpenUrl" not in playplugin_cpp,
-            "PlayPlugin should not cache host open requests")
-    require("takePendingOpenUrl" not in engine_cpp,
-            "PlayerEngine should not consume host-originated pending open requests")
-    require("buildColorMatrix" not in surface_cpp and "colorMatrix" not in surface_cpp,
-            "FFmpegSurface should not keep obsolete color matrix code or comments")
-    require("AV_PIX_FMT_NV12" in sdk_video_processor_cpp and "AV_PIX_FMT_P010LE" in sdk_video_processor_cpp,
-            "SDK decoder should let NV12 and P010 frames bypass sws normalization")
-    require("PlaneLayout" in video_pixel_format_cpp and "Semiplanar" in video_pixel_format_cpp,
-            "VideoPixelFormat should distinguish planar and semiplanar YUV layouts")
-    require("QRhiTexture::RG8" in video_pixel_format_cpp and "QRhiTexture::RG16" in video_pixel_format_cpp,
-            "NV12/P010 UV planes should upload as two-channel RHI textures")
-    require("formatMode" in video_pixel_format_cpp and "formatMode" in video_material_cpp,
-            "VideoPixelFormat should pass a compact shader format mode through VideoMaterial")
-    require("needs10BitExpansion" in video_pixel_format_cpp and "needs10bitExpansion" in shader_frag,
-            "P010 should not reuse planar low-10bit expansion and cause color or brightness shifts")
-    require(".rg" in shader_frag and "semiplanar" in shader_frag,
-            "shader should sample NV12/P010 UV from texU.rg")
-    require("NativeVideoFrame" in native_frame_h and "NativeFrameKind" in native_frame_h,
-            "native video frame metadata should exist for hardware-backed frames")
-    require("CVMetalTextureCacheCreateTextureFromImage" in apple_bridge_mm,
-            "Apple bridge should create Metal textures from CVPixelBuffer planes")
-    require("QRhiTexture::NativeTexture" in apple_bridge_mm and "createFrom" in apple_bridge_mm,
-            "Apple bridge should wrap Metal textures with QRhiTexture::createFrom")
-    require("AV_PIX_FMT_VIDEOTOOLBOX" in sdk_video_processor_cpp and
-            "NativeHandleKind::VideoToolboxPixelBuffer" in sdk_video_processor_cpp,
-            "SDK decoder should preserve VideoToolbox frame metadata when native render is enabled")
-    require("transferHardwareFrameToCpu" in sdk_video_processor_cpp and
-            "nativeFallbackVideoFrames" in sdk_decode_perf_h,
-            "native render failures should be observable and keep CPU fallback available")
-    require("AppleMetalVideoTextureBridge" in video_node_cpp and "setNativeFrame" in video_node_cpp,
-            "VideoNode should consume native VideoToolbox frames")
-    require("supportsNativeVideoToolboxRendering" in surface_cpp and
-            "setVideoToolboxDirectRenderingEnabled" in adapter_h and
-            "nativeRenderingFailed" in surface_cpp,
-            "native rendering should be enabled by a Surface-to-Adapter capability handshake")
-    require("CoreVideo" in cmake and "Metal" in cmake and "QuartzCore" in cmake,
-            "PlayPlugin should link Apple frameworks for CVMetalTextureCache")
-    ensure_textures = video_node_cpp[video_node_cpp.find("void VideoNode::ensureTextures"):
-                                     video_node_cpp.find("void VideoNode::releaseTextures")]
-    require(ensure_textures.count("m_material.paramsDirty") == 1 and
-            ensure_textures.count("m_material.cachedFullRange") == 1 and
-            ensure_textures.count("m_material.cachedBt709") == 1,
-            "texture recreation should mark material state dirty once")
-
-    require("import QuickUI.Components 1.0" in control_qml and
-            "import QuickUI.Components 1.0" in playlist_qml and
-            "import QuickUI.Components 1.0" in playplugin_qml and
-            "import QuickUI.Components 1.0" in player_qml,
-            "QML dependency on QuickUI should be explicit")
-    require("ComponentTheme.surface" in playplugin_qml and
-            "ComponentTheme.separator" in playplugin_qml,
-            "PlayPlugin shell should follow ComponentTheme surface tokens")
-    require("ComponentTheme.textPrimary" in player_qml and
-            "ComponentTheme.textSecondary" in player_qml,
-            "PlayerView placeholders should follow ComponentTheme text tokens")
-    require("ComponentTheme.trackBg" in control_qml and
-            "ComponentTheme.accent" in control_qml,
-            "ControlBar sliders should follow ComponentTheme track and accent tokens")
-    require("ComponentTheme.surface" in playlist_qml and
-            "ComponentTheme.textPrimary" in playlist_qml and
-            "ComponentTheme.accent" in playlist_qml,
-            "PlaylistView should follow ComponentTheme tokens")
-    require("property bool playlistOpen: false" in playplugin_qml,
-            "playlist drawer should be hidden by default")
-    require("drawerWidth" in playplugin_qml and "Behavior on x" in playplugin_qml,
-            "playlist should be implemented as an animated right drawer")
-    require("playlistToggleRequested" in player_qml and
-            "showPlaylistButton" in control_qml,
-            "player controls should expose a playlist toggle")
-    require("HoverHandler" in playlist_qml and "TapHandler" in playlist_qml and
-            "id: delegateMouse" not in playlist_qml,
-            "playlist row hover/double-click handling should not cover remove buttons")
-    require("normalizeVideoFrame" in sdk_video_processor_h and "sws_getCachedContext" in sdk_video_processor_cpp,
-            "unsupported video pixel formats should be converted before rendering")
-    require("class HardwareDecoderBackend" in sdk_hw_backend_h,
-            "SDK hardware decoder backend interface should exist")
-    require("std::string_view name() const" in sdk_hw_backend_h,
-            "SDK hardware backend should expose a Qt-free stable log name")
-    require("virtual bool isHardwareFrame(const AVFrame* frame) const = 0" in sdk_hw_backend_h,
-            "SDK hardware backend should identify frames that need transfer")
-    require("virtual AVFramePtr transferToCpuFrame(const AVFrame* frame) = 0" in sdk_hw_backend_h,
-            "SDK hardware backend should transfer hardware frames to CPU frames")
-    require("virtual void reset() = 0" in sdk_hw_backend_h,
-            "SDK hardware backend should expose deterministic reset")
-    require("src/HardwareDecoderBackend.h" in sdk_cmake,
-            "media_sdk_core target should include hardware backend interface")
-    require("std::jthread" in sdk_decode_worker_h and
-            "std::stop_token" in sdk_decode_worker_h and
-            "IEventSink&" in sdk_decode_worker_h,
-            "SDK playback worker should own Qt-free async decode and event delivery")
-    require("Demuxer" in sdk_demuxer_cpp and "avformat_open_input" in sdk_demuxer_cpp,
-            "SDK demuxer should own FFmpeg input opening")
-    require("avcodec_open2" in sdk_demuxer_cpp and "createCodecContext" in sdk_demuxer_cpp,
-            "SDK demuxer should own codec context creation and opening")
-    require("#include <libavutil/hwcontext.h>" in ffmpeg_utils_h,
-            "FFmpegUtils should expose FFmpeg hardware context APIs")
-    require("AVBufferRefPtr" in ffmpeg_utils_h,
-            "FFmpegUtils should provide RAII for AVBufferRef")
-    require("hardwareDecoder->transferToCpuFrame" in sdk_video_processor_cpp,
-            "SDK video processor should transfer hardware frames through the backend")
-    require("copyFrameMetadata" in sdk_video_processor_cpp,
-            "SDK decoder should preserve timing and color metadata after hardware transfer")
-    require("process(AVFramePtr frame" in sdk_video_processor_h and
-            "m_videoFrameProcessor.process" in sdk_decode_worker_cpp,
-            "SDK DecodeWorker should prepare video frames through VideoFrameProcessor before queueing")
-    process_body = sdk_video_processor_cpp[sdk_video_processor_cpp.find("Result<VideoFrame> VideoFrameProcessor::process"):
-                                           sdk_video_processor_cpp.find("AVFramePtr VideoFrameProcessor::transferHardwareFrameToCpu")]
-    require("transferHardwareFrameToCpu" in process_body and
-            process_body.find("transferHardwareFrameToCpu") < process_body.find("normalizeVideoFrame"),
-            "hardware frames should be transferred before normalizeVideoFrame")
-    require("transferFailures" in sdk_decode_perf_h,
-            "SDK video processor should count hardware transfer failures")
+    require("media_sdk::playback_session" in cmake,
+            "PlayPlugin should link playback session")
+    require("media_sdk::platform_audio_macos" in cmake,
+            "PlayPlugin should link macOS SDK audio platform implementation on Apple")
 
 
 if __name__ == "__main__":

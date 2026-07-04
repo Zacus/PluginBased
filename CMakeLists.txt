@@ -286,21 +286,6 @@ if(BUILD_TESTING)
         WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
     )
     set(PLAYPLUGIN_TEST_PLUGIN_ROOT "${CMAKE_SOURCE_DIR}/plugins")
-    add_executable(PlayPluginVideoFrameSchedulerTest
-        tests/tst_playplugin_video_frame_scheduler.cpp
-        "${PLAYPLUGIN_TEST_PLUGIN_ROOT}/PlayPlugin/src/video/VideoFrameScheduler.cpp"
-    )
-    target_include_directories(PlayPluginVideoFrameSchedulerTest PRIVATE
-        "${PLAYPLUGIN_TEST_PLUGIN_ROOT}/PlayPlugin/src"
-    )
-    target_link_libraries(PlayPluginVideoFrameSchedulerTest PRIVATE
-        Qt6::Core
-        Qt6::Test
-    )
-    add_test(NAME playplugin_video_frame_scheduler
-        COMMAND $<TARGET_FILE:PlayPluginVideoFrameSchedulerTest>
-        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
-    )
     add_executable(PlayPluginPlaybackCompletionTest
         tests/tst_playplugin_playback_completion.cpp
         "${PLAYPLUGIN_TEST_PLUGIN_ROOT}/PlayPlugin/src/playback/PlaybackCompletionTracker.cpp"
@@ -328,37 +313,6 @@ if(BUILD_TESTING)
     )
     add_test(NAME playplugin_pending_seek_requests
         COMMAND $<TARGET_FILE:PlayPluginPendingSeekRequestsTest>
-        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
-    )
-    add_executable(PlayPluginFrameQueueTest
-        tests/tst_playplugin_frame_queue.cpp
-    )
-    target_include_directories(PlayPluginFrameQueueTest PRIVATE
-        "${PLAYPLUGIN_TEST_PLUGIN_ROOT}/PlayPlugin/src"
-    )
-    target_link_libraries(PlayPluginFrameQueueTest PRIVATE
-        Qt6::Core
-        Qt6::Test
-        FFmpeg::all
-    )
-    add_test(NAME playplugin_frame_queue
-        COMMAND $<TARGET_FILE:PlayPluginFrameQueueTest>
-        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
-    )
-    add_executable(PlayPluginPlaybackDataBridgeTest
-        tests/tst_playplugin_playback_data_bridge.cpp
-        "${PLAYPLUGIN_TEST_PLUGIN_ROOT}/PlayPlugin/src/playback/PlaybackDataBridge.cpp"
-    )
-    target_include_directories(PlayPluginPlaybackDataBridgeTest PRIVATE
-        "${PLAYPLUGIN_TEST_PLUGIN_ROOT}/PlayPlugin/src"
-    )
-    target_link_libraries(PlayPluginPlaybackDataBridgeTest PRIVATE
-        Qt6::Core
-        FFmpeg::all
-        PluginBasedLogger
-    )
-    add_test(NAME playplugin_playback_data_bridge
-        COMMAND $<TARGET_FILE:PlayPluginPlaybackDataBridgeTest>
         WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
     )
     add_test(NAME app_theme_service_checks
