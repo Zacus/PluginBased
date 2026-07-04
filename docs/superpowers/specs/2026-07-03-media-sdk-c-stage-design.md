@@ -431,6 +431,27 @@ C 阶段第一轮完成后必须满足：
   - native VideoToolbox path 可用时保持 native present。
   - native path 失败时 fallback 到 CPU path 且不会中断播放。
 
+## Task12 验收记录
+
+记录时间：2026-07-04。
+
+已完成自动验证：
+
+- `cmake --build build --parallel`：通过。
+- `ctest --test-dir build --output-on-failure`：通过，40/40 tests passed。
+
+待人工桌面环境确认：
+
+- 启动 `./build/app/PluginBasedApp`。
+- 打开 `/Users/zs/Downloads/6月29日.mov`。
+- 4K 60fps 播放相对 B+ baseline 无明显回退。
+- 随机 seek 超过 10 次后画面和声音可恢复，不冻结。
+- 反复 pause/resume 无死锁。
+- 先打开文件 A，再打开文件 B，UI 不出现 stale frame rejection 错误。
+- 支持 native path 时 diagnostics 显示 native presented。
+- 禁用或触发 native path failure 时 fallback 到 CPU path，播放不中断。
+- EOF 只在 runtime drain 后到达 UI。
+
 ## 风险和控制
 
 ### 风险：再次引入播放卡顿
