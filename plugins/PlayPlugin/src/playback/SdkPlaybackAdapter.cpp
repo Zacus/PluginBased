@@ -97,6 +97,7 @@ void SdkPlaybackAdapter::openFile(const QUrl& url)
     std::uint64_t eventSerial = 0;
     {
         std::lock_guard lock(m_mutex);
+        m_paused = false;
         eventSerial = ++m_eventSerial;
         eventBridge = std::make_unique<SessionEventBridge>(*this, eventSerial);
     }
@@ -123,8 +124,6 @@ void SdkPlaybackAdapter::openFile(const QUrl& url)
     }
 
     m_session->play();
-    if (m_paused)
-        m_session->pause();
 }
 
 void SdkPlaybackAdapter::setPaused(bool paused)

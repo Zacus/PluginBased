@@ -46,6 +46,10 @@ def main() -> None:
             "SdkPlaybackAdapter should bind each PlaybackSession to an immutable event bridge")
     require("currentEventSerial()" not in sdk_adapter_cpp,
             "SdkPlaybackAdapter callbacks must not read the current global serial dynamically")
+    require("m_paused = false;" in sdk_adapter_cpp,
+            "SdkPlaybackAdapter openFile should clear stale paused state before starting a new session")
+    require("if (m_paused)" not in sdk_adapter_cpp,
+            "SdkPlaybackAdapter openFile must not pause a newly opened file from stale paused state")
 
     for token in (
         "media_sdk::IDecodeFrameSink",
