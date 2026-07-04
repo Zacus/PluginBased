@@ -23,6 +23,7 @@ def main() -> None:
     sdk_adapter_cpp = read("plugins/PlayPlugin/src/playback/SdkPlaybackAdapter.cpp")
     presenter_cpp = read("plugins/PlayPlugin/src/playback/QtRhiVideoPresenter.cpp")
     ffmpeg_surface_cpp = read("plugins/PlayPlugin/src/video/FFmpegSurface.cpp")
+    control_bar_qml = read("plugins/PlayPlugin/qml/ControlBar.qml")
     cmake = read("plugins/PlayPlugin/CMakeLists.txt")
 
     require("PlaybackCompletionTracker" in engine_h,
@@ -70,6 +71,12 @@ def main() -> None:
             "QtRhiVideoPresenter should still report presentation diagnostics")
     require("nativeTextureFailed" in presenter_cpp and "cpuMemcpy" in presenter_cpp,
             "QtRhiVideoPresenter should preserve native and CPU fallback diagnostics")
+
+    require("onMoved: root.seekRequested" not in control_bar_qml,
+            "Seek bar should not flood SDK seek while dragging")
+    require("onPressedChanged:" in control_bar_qml
+            and "root.seekRequested(value * root.duration)" in control_bar_qml,
+            "Seek bar should submit one seek when the drag is released")
 
     require("media_sdk::playback_session" in cmake,
             "PlayPlugin should link playback session")

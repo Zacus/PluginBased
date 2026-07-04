@@ -62,7 +62,10 @@ Rectangle {
                 value: seekBar.pressed ? seekBar.value
                                       : (root.duration > 0 ? root.position / root.duration : 0)
                 enabled: root.duration > 0
-                onMoved: root.seekRequested(value * root.duration)
+                onPressedChanged: {
+                    if (!pressed && root.duration > 0)
+                        root.seekRequested(value * root.duration)
+                }
 
                 background: Rectangle {
                     x: seekBar.leftPadding
