@@ -566,6 +566,28 @@ void seekCallsRuntimeSeekBeforeCoreSeek()
     assert(std::holds_alternative<media_sdk::SeekCompletedEvent>(events.events.back().payload));
 }
 
+void seekWhilePlayingReappliesPlaybackAfterSeekCommand()
+{
+    TestContext context;
+    DummyAudioOutput audio;
+    DummyVideoPresenter presenter;
+    auto session = makeSession(context, &audio, &presenter);
+    assert(session->open("sample.mov").ok());
+    context.core->emitMediaInfo(coreTimeline(10, 3));
+    session->play();
+    context.operations.clear();
+
+    const auto result = session->seek(800ms);
+
+    assert(result.ok());
+    assert((context.operations == std::vector<std::string> {
+        "runtime.seek",
+        "core.seek",
+        "runtime.resume",
+        "core.play",
+    }));
+}
+
 void pauseBeforeMediaInfoPausesRuntimeAfterItOpens()
 {
     TestContext context;
@@ -858,6 +880,7 @@ int main()
     playCallsCorePlayAndRuntimeResume();
     pauseCallsCorePauseAndRuntimePause();
     seekCallsRuntimeSeekBeforeCoreSeek();
+    seekWhilePlayingReappliesPlaybackAfterSeekCommand();
     pauseBeforeMediaInfoPausesRuntimeAfterItOpens();
     playBeforeMediaInfoResumesRuntimeAfterItOpens();
     seekWhilePlayingCancelsOldFramePushUntilSeekCompletes();

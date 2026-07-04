@@ -372,6 +372,7 @@ struct PlaybackSession::Impl final
         if (!handles.corePlayer)
             return sessionFailure(MediaErrorCode::InternalStateError, "PlaybackSession is not open");
 
+        const auto stateBeforeSeek = playbackCommandState();
         if (handles.runtimePlayer) {
             handles.runtimePlayer->seek(std::chrono::duration_cast<std::chrono::microseconds>(position));
             eventRouter.beginSeek(handles.runtimePlayer->timeline(), position);
@@ -379,7 +380,16 @@ struct PlaybackSession::Impl final
             eventRouter.cancelFrameAcceptance();
         }
 
-        return handles.corePlayer->seek(position);
+        const auto seekResult = handles.corePlayer->seek(position);
+        if (!seekResult.ok())
+            return seekResult;
+
+        if (stateBeforeSeek == PlaybackCommandState::Playing) {
+            if (handles.runtimePlayer)
+                handles.runtimePlayer->resume();
+            handles.corePlayer->play();
+        }
+        return seekResult;
     }
 
     runtime::RuntimeTimeline timeline() const
