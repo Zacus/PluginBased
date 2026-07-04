@@ -353,7 +353,9 @@ void DecodeWorker::decodeSeekPreroll(WorkerStopToken stopToken)
             return;
         }
 
-        if (packet->stream_index == m_media.videoStreamIndex && m_media.videoCodecContext)
+        if (targetVideo
+            && packet->stream_index == m_media.videoStreamIndex
+            && m_media.videoCodecContext)
         {
             const auto result = decodePacket(m_media.videoCodecContext.get(),
                                              packet.get(),
@@ -368,7 +370,9 @@ void DecodeWorker::decodeSeekPreroll(WorkerStopToken stopToken)
                 emitState(PlayerState::Error);
             }
         }
-        else if (packet->stream_index == m_media.audioStreamIndex && m_media.audioCodecContext)
+        else if (targetAudio
+                 && packet->stream_index == m_media.audioStreamIndex
+                 && m_media.audioCodecContext)
         {
             const auto result = decodePacket(m_media.audioCodecContext.get(),
                                              packet.get(),
