@@ -11,9 +11,7 @@
 #include <memory>
 #include <mutex>
 
-class SdkPlaybackAdapter final
-    : public QObject
-    , public media_sdk::session::ISessionEvents
+class SdkPlaybackAdapter final : public QObject
 {
     Q_OBJECT
 
@@ -44,21 +42,24 @@ signals:
     void nativeRenderingFailed();
 
 private:
-    void onEvent(const media_sdk::PlayerEvent& event) override;
-    void onRuntimeDiagnostics(media_sdk::runtime::RuntimeDiagnostics diagnostics) override;
-    void onNativeRenderingFailed() override;
+    class SessionEventBridge;
+
+    void postSessionEvent(const media_sdk::PlayerEvent& event, std::uint64_t eventSerial);
+    void postRuntimeDiagnostics(media_sdk::runtime::RuntimeDiagnostics diagnostics,
+                                std::uint64_t eventSerial);
+    void postNativeRenderingFailed(std::uint64_t eventSerial);
     void handleSessionEvent(media_sdk::PlayerEvent event, std::uint64_t eventSerial);
     void handleRuntimeDiagnostics(media_sdk::runtime::RuntimeDiagnostics diagnostics,
                                   std::uint64_t eventSerial);
     void handleNativeRenderingFailed(std::uint64_t eventSerial);
     media_sdk::session::PlaybackSessionConfig sessionConfig() const;
-    std::uint64_t currentEventSerial() const;
     bool acceptsEventSerial(std::uint64_t eventSerial) const;
 
     mutable std::mutex m_mutex;
     media_sdk::runtime::IAudioOutput* m_audioOutput = nullptr;
     media_sdk::runtime::IVideoPresenter* m_videoPresenter = nullptr;
     std::unique_ptr<media_sdk::session::PlaybackSession> m_session;
+    std::unique_ptr<SessionEventBridge> m_sessionEventBridge;
     PendingSeekRequests<int> m_pendingSeekRequests;
     std::uint64_t m_eventSerial = 0;
     bool m_directNativeVideoEnabled = false;

@@ -35,12 +35,17 @@ def main() -> None:
     ):
         require(not (ROOT / removed).exists(), f"{removed} should be removed after SDK session switch")
 
-    require("media_sdk::session::ISessionEvents" in sdk_adapter_h,
-            "SdkPlaybackAdapter should implement SDK session events")
+    require("SessionEventBridge" in sdk_adapter_h
+            and "media_sdk::session::ISessionEvents" in sdk_adapter_cpp,
+            "SdkPlaybackAdapter should own a per-session SDK event bridge")
     require("std::unique_ptr<media_sdk::session::PlaybackSession>" in sdk_adapter_h,
             "SdkPlaybackAdapter should own PlaybackSession")
-    require("onRuntimeDiagnostics" in sdk_adapter_h and "PlayPerf: sdk" in sdk_adapter_cpp,
+    require("onRuntimeDiagnostics" in sdk_adapter_cpp and "PlayPerf: sdk" in sdk_adapter_cpp,
             "SdkPlaybackAdapter should bridge SDK diagnostics to PlayPlugin logging")
+    require("SessionEventBridge" in sdk_adapter_h + sdk_adapter_cpp,
+            "SdkPlaybackAdapter should bind each PlaybackSession to an immutable event bridge")
+    require("currentEventSerial()" not in sdk_adapter_cpp,
+            "SdkPlaybackAdapter callbacks must not read the current global serial dynamically")
 
     for token in (
         "media_sdk::IDecodeFrameSink",

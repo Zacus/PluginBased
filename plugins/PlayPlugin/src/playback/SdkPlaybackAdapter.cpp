@@ -35,6 +35,36 @@ bool isObjectThread(const QObject& object)
 
 } // namespace
 
+class SdkPlaybackAdapter::SessionEventBridge final
+    : public media_sdk::session::ISessionEvents
+{
+public:
+    SessionEventBridge(SdkPlaybackAdapter& adapter, std::uint64_t eventSerial)
+        : m_adapter(adapter)
+        , m_eventSerial(eventSerial)
+    {
+    }
+
+    void onEvent(const media_sdk::PlayerEvent& event) override
+    {
+        m_adapter.postSessionEvent(event, m_eventSerial);
+    }
+
+    void onRuntimeDiagnostics(media_sdk::runtime::RuntimeDiagnostics diagnostics) override
+    {
+        m_adapter.postRuntimeDiagnostics(diagnostics, m_eventSerial);
+    }
+
+    void onNativeRenderingFailed() override
+    {
+        m_adapter.postNativeRenderingFailed(m_eventSerial);
+    }
+
+private:
+    SdkPlaybackAdapter& m_adapter;
+    std::uint64_t m_eventSerial = 0;
+};
+
 SdkPlaybackAdapter::SdkPlaybackAdapter(
     media_sdk::runtime::IAudioOutput* audioOutput,
     media_sdk::runtime::IVideoPresenter* videoPresenter,
@@ -63,12 +93,20 @@ void SdkPlaybackAdapter::openFile(const QUrl& url)
 
     stopDecoding();
 
+    std::unique_ptr<SessionEventBridge> eventBridge;
+    std::uint64_t eventSerial = 0;
+    {
+        std::lock_guard lock(m_mutex);
+        eventSerial = ++m_eventSerial;
+        eventBridge = std::make_unique<SessionEventBridge>(*this, eventSerial);
+    }
+
     auto session = std::make_unique<media_sdk::session::PlaybackSession>(
         sessionConfig(),
         media_sdk::session::PlaybackSessionDependencies {
             .audioOutput = m_audioOutput,
             .videoPresenter = m_videoPresenter,
-            .events = this,
+            .events = eventBridge.get(),
         });
 
     const auto path = pathFromUrl(url);
@@ -81,6 +119,7 @@ void SdkPlaybackAdapter::openFile(const QUrl& url)
     {
         std::lock_guard lock(m_mutex);
         m_session = std::move(session);
+        m_sessionEventBridge = std::move(eventBridge);
     }
 
     m_session->play();
@@ -155,16 +194,21 @@ void SdkPlaybackAdapter::stopDecoding()
         return;
     }
 
+    std::unique_ptr<SessionEventBridge> eventBridge;
     std::unique_ptr<media_sdk::session::PlaybackSession> session;
     {
         std::lock_guard lock(m_mutex);
         ++m_eventSerial;
         m_pendingSeekRequests.clear();
         session = std::move(m_session);
+        eventBridge = std::move(m_sessionEventBridge);
     }
 
-    if (session)
+    if (session) {
         session->stop();
+        session.reset();
+    }
+    eventBridge.reset();
 }
 
 void SdkPlaybackAdapter::setVideoToolboxDirectRenderingEnabled(bool enabled)
@@ -182,10 +226,10 @@ void SdkPlaybackAdapter::setVideoToolboxDirectRenderingEnabled(bool enabled)
     m_directNativeVideoEnabled = enabled;
 }
 
-void SdkPlaybackAdapter::onEvent(const media_sdk::PlayerEvent& event)
+void SdkPlaybackAdapter::postSessionEvent(const media_sdk::PlayerEvent& event,
+                                          std::uint64_t eventSerial)
 {
     auto eventCopy = std::make_shared<media_sdk::PlayerEvent>(event);
-    const auto eventSerial = currentEventSerial();
     QMetaObject::invokeMethod(this,
                               [this, eventCopy, eventSerial]() {
                                   handleSessionEvent(*eventCopy, eventSerial);
@@ -193,10 +237,10 @@ void SdkPlaybackAdapter::onEvent(const media_sdk::PlayerEvent& event)
                               Qt::QueuedConnection);
 }
 
-void SdkPlaybackAdapter::onRuntimeDiagnostics(
-    media_sdk::runtime::RuntimeDiagnostics diagnostics)
+void SdkPlaybackAdapter::postRuntimeDiagnostics(
+    media_sdk::runtime::RuntimeDiagnostics diagnostics,
+    std::uint64_t eventSerial)
 {
-    const auto eventSerial = currentEventSerial();
     QMetaObject::invokeMethod(this,
                               [this, diagnostics, eventSerial]() {
                                   handleRuntimeDiagnostics(diagnostics, eventSerial);
@@ -204,9 +248,8 @@ void SdkPlaybackAdapter::onRuntimeDiagnostics(
                               Qt::QueuedConnection);
 }
 
-void SdkPlaybackAdapter::onNativeRenderingFailed()
+void SdkPlaybackAdapter::postNativeRenderingFailed(std::uint64_t eventSerial)
 {
-    const auto eventSerial = currentEventSerial();
     QMetaObject::invokeMethod(this,
                               [this, eventSerial]() {
                                   handleNativeRenderingFailed(eventSerial);
@@ -309,12 +352,6 @@ media_sdk::session::PlaybackSessionConfig SdkPlaybackAdapter::sessionConfig() co
     config.core.preferNativeVideoFrames = m_directNativeVideoEnabled;
     config.preferNativeVideoFrames = m_directNativeVideoEnabled;
     return config;
-}
-
-std::uint64_t SdkPlaybackAdapter::currentEventSerial() const
-{
-    std::lock_guard lock(m_mutex);
-    return m_eventSerial;
 }
 
 bool SdkPlaybackAdapter::acceptsEventSerial(std::uint64_t eventSerial) const
