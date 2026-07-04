@@ -137,10 +137,22 @@ void CoreAudioOutputEngine::flush()
     if (!m_open)
         return;
 
+    const bool restartAfterFlush = m_running && m_device;
+    if (restartAfterFlush) {
+        m_device->stop();
+        m_running = false;
+    }
+
     ++m_generation;
     m_ringBuffer.flush();
     if (m_device)
         m_device->reset();
+
+    if (restartAfterFlush) {
+        auto result = m_device->start();
+        m_running = result.ok();
+        m_paused = !m_running;
+    }
 }
 
 void CoreAudioOutputEngine::close()

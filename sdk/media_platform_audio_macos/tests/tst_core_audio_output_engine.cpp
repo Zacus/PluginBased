@@ -225,6 +225,22 @@ void flushResetsDeviceAndRejectsOldGeneration()
     }).ok());
 }
 
+void flushWhileRunningRestartsDeviceCallbacks()
+{
+    auto [engine, device, stats] = makeEngine();
+    assert(engine->open(audioFormat()).ok());
+    assert(engine->resume().ok());
+    assert(device->running);
+
+    engine->flush();
+
+    assert(stats->stopCount == 1);
+    assert(stats->resetCount == 1);
+    assert(stats->startCount == 2);
+    assert(device->running);
+    assert(!engine->clock().paused);
+}
+
 void closeStopsAndRejectsWrites()
 {
     auto [engine, device, stats] = makeEngine();
@@ -281,6 +297,7 @@ int main()
     pauseStopsDeviceWithoutFlushingQueuedAudio();
     pauseBeforeResumeMarksLogicalPausedWithoutStoppingDevice();
     flushResetsDeviceAndRejectsOldGeneration();
+    flushWhileRunningRestartsDeviceCallbacks();
     closeStopsAndRejectsWrites();
     destructorStopsAndClosesDevice();
     resumeReportsDeviceStartFailure();
