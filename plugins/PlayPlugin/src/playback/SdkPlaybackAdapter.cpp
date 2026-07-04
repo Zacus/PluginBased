@@ -193,6 +193,17 @@ void SdkPlaybackAdapter::onEvent(const media_sdk::PlayerEvent& event)
                               Qt::QueuedConnection);
 }
 
+void SdkPlaybackAdapter::onRuntimeDiagnostics(
+    media_sdk::runtime::RuntimeDiagnostics diagnostics)
+{
+    const auto eventSerial = currentEventSerial();
+    QMetaObject::invokeMethod(this,
+                              [this, diagnostics, eventSerial]() {
+                                  handleRuntimeDiagnostics(diagnostics, eventSerial);
+                              },
+                              Qt::QueuedConnection);
+}
+
 void SdkPlaybackAdapter::onNativeRenderingFailed()
 {
     const auto eventSerial = currentEventSerial();
@@ -259,6 +270,29 @@ void SdkPlaybackAdapter::handleSessionEvent(
     if (const auto* payload = std::get_if<media_sdk::PositionChangedEvent>(&event.payload)) {
         emit positionChanged(toMilliseconds(payload->position));
     }
+}
+
+void SdkPlaybackAdapter::handleRuntimeDiagnostics(
+    media_sdk::runtime::RuntimeDiagnostics diagnostics,
+    std::uint64_t eventSerial)
+{
+    if (!acceptsEventSerial(eventSerial))
+        return;
+
+    LOG_INFO("PlayPerf: sdk video={} native={} cpu={} fallback={} wait_us={} "
+             "audio_bp={} video_bp={} audio_hw={} video_hw={} eof={}/{} abort={}",
+             diagnostics.videoPresented,
+             diagnostics.nativePresented,
+             diagnostics.cpuPresented,
+             diagnostics.nativeFallbacks,
+             diagnostics.decodeFramePushWaitUs,
+             diagnostics.audioBackpressureCount,
+             diagnostics.videoBackpressureCount,
+             diagnostics.audioQueueHighWatermark,
+             diagnostics.videoQueueHighWatermark,
+             diagnostics.eofAccepted,
+             diagnostics.eofPresented,
+             diagnostics.queueAbortCount);
 }
 
 void SdkPlaybackAdapter::handleNativeRenderingFailed(std::uint64_t eventSerial)

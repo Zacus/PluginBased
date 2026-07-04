@@ -105,6 +105,10 @@ def main() -> None:
             "SdkPlaybackAdapter should own a PlaybackSession")
     require("media_sdk::session::ISessionEvents" in sdk_adapter_h,
             "SdkPlaybackAdapter should convert session events to Qt signals")
+    require("onRuntimeDiagnostics" in sdk_adapter_h and "handleRuntimeDiagnostics" in sdk_adapter_cpp,
+            "SdkPlaybackAdapter should bridge SDK runtime diagnostics into PlayPlugin logging")
+    require("PlayPerf: sdk" in sdk_adapter_cpp,
+            "SdkPlaybackAdapter should log SDK runtime diagnostics without changing playback policy")
     require("std::make_unique<media_sdk::Player>" not in sdk_adapter_cpp,
             "SdkPlaybackAdapter must not create media_sdk::Player directly")
     require("std::make_shared<media_sdk::runtime::RuntimePlayer>" not in sdk_adapter_cpp,

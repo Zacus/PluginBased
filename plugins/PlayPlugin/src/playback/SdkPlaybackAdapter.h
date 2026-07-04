@@ -45,8 +45,11 @@ signals:
 
 private:
     void onEvent(const media_sdk::PlayerEvent& event) override;
+    void onRuntimeDiagnostics(media_sdk::runtime::RuntimeDiagnostics diagnostics) override;
     void onNativeRenderingFailed() override;
     void handleSessionEvent(media_sdk::PlayerEvent event, std::uint64_t eventSerial);
+    void handleRuntimeDiagnostics(media_sdk::runtime::RuntimeDiagnostics diagnostics,
+                                  std::uint64_t eventSerial);
     void handleNativeRenderingFailed(std::uint64_t eventSerial);
     media_sdk::session::PlaybackSessionConfig sessionConfig() const;
     std::uint64_t currentEventSerial() const;

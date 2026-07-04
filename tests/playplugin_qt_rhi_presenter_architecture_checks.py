@@ -154,6 +154,7 @@ def check_cmake_registration() -> None:
     assert_contains(playplugin_cmake, "src/playback/QtRhiVideoPresenter.cpp", PLAYPLUGIN_CMAKE)
     assert_contains(playplugin_cmake, "src/playback/SdkPlaybackAdapter.h", PLAYPLUGIN_CMAKE)
     assert_contains(playplugin_cmake, "src/playback/SdkPlaybackAdapter.cpp", PLAYPLUGIN_CMAKE)
+    assert_contains(playplugin_cmake, "media_sdk::playback_session", PLAYPLUGIN_CMAKE)
     assert_contains(playplugin_cmake, "media_sdk::playback_runtime", PLAYPLUGIN_CMAKE)
     assert_contains(root_cmake, "playplugin_qt_rhi_presenter_architecture_checks", ROOT_CMAKE)
 
@@ -166,23 +167,28 @@ def check_sdk_playback_adapter_contract() -> None:
     combined = "\n".join((header, source))
 
     assert_contains(header, "class SdkPlaybackAdapter final", SDK_PLAYBACK_ADAPTER_H)
-    assert_contains(header, "media_sdk::IEventSink", SDK_PLAYBACK_ADAPTER_H)
-    assert_contains(header, "media_sdk::runtime::IRuntimePlayerEvents", SDK_PLAYBACK_ADAPTER_H)
-    assert_contains(header, "onFallbackToCpuRequested", SDK_PLAYBACK_ADAPTER_H)
-    assert_contains(header, "media_sdk::Player", SDK_PLAYBACK_ADAPTER_H)
-    assert_contains(header, "media_sdk::runtime::RuntimePlayer", SDK_PLAYBACK_ADAPTER_H)
+    assert_contains(header, "media_sdk::session::ISessionEvents", SDK_PLAYBACK_ADAPTER_H)
+    assert_contains(header, "std::unique_ptr<media_sdk::session::PlaybackSession>", SDK_PLAYBACK_ADAPTER_H)
+    assert_contains(header, "onRuntimeDiagnostics", SDK_PLAYBACK_ADAPTER_H)
+    assert_contains(source, "PlayPerf: sdk", SDK_PLAYBACK_ADAPTER_CPP)
 
     for token in (
-        "RuntimePlayerConfig",
-        "runtimePlayer->open()",
+        "media_sdk::IEventSink",
+        "media_sdk::IDecodeFrameSink",
+        "media_sdk::runtime::IRuntimePlayerEvents",
+        "std::make_unique<media_sdk::Player>",
+        "std::make_shared<media_sdk::runtime::RuntimePlayer>",
+        "onFallbackToCpuRequested",
+        "RuntimeFallbackAction",
         "runtimePlayer->enqueueAudio",
         "runtimePlayer->enqueueVideo",
         "runtimePlayer->enqueueEndOfStream",
         "runtimePlayer->completeSeek",
-        "preferNativeVideoFrames = false",
-        "RuntimeFallbackAction",
+        "acceptSeekCompletedEvent",
+        "acceptedRuntimeTimelineForCoreEvent",
+        "acceptsRuntimeTimeline",
     ):
-        assert_contains(combined, token, SDK_PLAYBACK_ADAPTER_CPP)
+        assert_not_contains(combined, token, SDK_PLAYBACK_ADAPTER_CPP)
 
     assert_contains(pipeline_header, "SdkPlaybackAdapter", PLAYBACK_PIPELINE_H)
     assert_contains(pipeline_source, "m_sdkAdapter->openFile(url)", PLAYBACK_PIPELINE_CPP)
@@ -192,59 +198,6 @@ def check_sdk_playback_adapter_contract() -> None:
     assert_contains(pipeline_source, "m_surface && m_surface->supportsNativeVideoToolboxRendering()", PLAYBACK_PIPELINE_CPP)
     assert_contains(pipeline_source, "&PlaybackPipeline::onNativeRenderingFailed", PLAYBACK_PIPELINE_CPP)
     assert_not_contains(pipeline_source, "decode event bridge is pending", PLAYBACK_PIPELINE_CPP)
-
-    for token in (
-        "struct PendingSeekRequest",
-        "media_sdk::runtime::RuntimeTimeline runtimeTimeline",
-        "acceptSeekCompletedEvent",
-        "PendingSeekRequest { generation, runtimeTimeline }",
-        "acceptedRuntimeTimelineForCoreEvent(event.metadata)",
-        "acceptsRuntimeTimeline(timeline)",
-    ):
-        assert_contains(combined, token, SDK_PLAYBACK_ADAPTER_CPP)
-    on_event_body = source[source.find("void SdkPlaybackAdapter::onEvent"):
-                            source.find("void SdkPlaybackAdapter::onFallbackToCpuRequested")]
-    assert_before(on_event_body,
-                  "const auto seekCompletion = acceptSeekCompletedEvent(event);",
-                  "if (handleDataEvent(event))",
-                  SDK_PLAYBACK_ADAPTER_CPP)
-
-    seek_completion_body = source[source.find("SdkPlaybackAdapter::acceptSeekCompletedEvent"):
-                                  source.find("void SdkPlaybackAdapter::handleFallbackOnObjectThread")]
-    assert_contains(seek_completion_body,
-                    "return std::nullopt;",
-                    SDK_PLAYBACK_ADAPTER_CPP)
-    assert_before(seek_completion_body,
-                  "return std::nullopt;",
-                  "m_acceptedCoreTimeline = event.metadata;",
-                  SDK_PLAYBACK_ADAPTER_CPP)
-
-    eof_body = source[source.find("if (std::holds_alternative<media_sdk::EndOfFileEvent>"):
-                      source.find("if (const auto* payload = std::get_if<media_sdk::PositionChangedEvent>")]
-    assert_contains(eof_body,
-                    "acceptedRuntimeTimelineForCoreEvent(event.metadata)",
-                    SDK_PLAYBACK_ADAPTER_CPP)
-    assert_not_contains(eof_body,
-                        "runtimeTimeline = m_runtimeTimeline;",
-                        SDK_PLAYBACK_ADAPTER_CPP)
-
-    eos_body = source[source.find("void SdkPlaybackAdapter::onEndOfStreamPresented"):
-                      source.find("bool SdkPlaybackAdapter::handleDataEvent")]
-    assert_contains(eos_body, "acceptsRuntimeTimeline(timeline)", SDK_PLAYBACK_ADAPTER_CPP)
-
-    ensure_runtime_body = source[source.find("bool SdkPlaybackAdapter::ensureRuntimeForMedia"):
-                                 source.find("media_sdk::runtime::RuntimeTimeline SdkPlaybackAdapter::currentTimeline")]
-    assert_contains(ensure_runtime_body,
-                    "previousRuntimePlayer = std::move(m_runtimePlayer);",
-                    SDK_PLAYBACK_ADAPTER_CPP)
-    assert_before(ensure_runtime_body,
-                  "previousRuntimePlayer = std::move(m_runtimePlayer);",
-                  "m_runtimePlayer = std::move(runtimePlayer);",
-                  SDK_PLAYBACK_ADAPTER_CPP)
-    assert_before(ensure_runtime_body,
-                  "m_runtimePlayer = std::move(runtimePlayer);",
-                  "previousRuntimePlayer->stop();",
-                  SDK_PLAYBACK_ADAPTER_CPP)
 
 
 def check_runtime_mode_switch_contract() -> None:

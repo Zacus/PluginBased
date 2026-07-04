@@ -10,6 +10,7 @@ class ISessionEvents {
 public:
     virtual ~ISessionEvents() = default;
     virtual void onEvent(const PlayerEvent& event) = 0;
+    // Observation-only runtime snapshot. Consumers must not drive playback policy from it.
     virtual void onRuntimeDiagnostics(runtime::RuntimeDiagnostics diagnostics)
     {
         (void)diagnostics;

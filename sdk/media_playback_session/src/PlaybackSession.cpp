@@ -359,10 +359,8 @@ struct PlaybackSession::Impl final
 
     runtime::RuntimeDiagnostics diagnostics() const
     {
-        std::lock_guard lock(m_mutex);
-        if (runtimePlayer)
-            return runtimePlayer->diagnostics();
-        return {};
+        const auto runtime = currentRuntimePlayer();
+        return runtime ? runtime->diagnostics() : runtime::RuntimeDiagnostics {};
     }
 
     Result<runtime::RuntimeTimeline> openRuntimeForMedia(const MediaInfo& info)
@@ -404,6 +402,7 @@ struct PlaybackSession::Impl final
         if (previousRuntime)
             previousRuntime->stop();
         synchronizeRuntimePlaybackState(runtimeToSynchronize);
+        notifyRuntimeDiagnostics();
         return Result<runtime::RuntimeTimeline>::success(runtimeTimeline);
     }
 
@@ -417,6 +416,7 @@ struct PlaybackSession::Impl final
         if (currentRuntime) {
             currentRuntime->completeSeek(runtimeTimeline.sessionId, runtimeTimeline.generation);
             synchronizeRuntimePlaybackState(currentRuntime);
+            notifyRuntimeDiagnostics();
         }
     }
 
@@ -427,8 +427,10 @@ struct PlaybackSession::Impl final
             std::lock_guard lock(m_mutex);
             currentRuntime = runtimePlayer;
         }
-        if (currentRuntime)
+        if (currentRuntime) {
             currentRuntime->enqueueEndOfStream(runtimeTimeline.sessionId, runtimeTimeline.generation);
+            notifyRuntimeDiagnostics();
+        }
     }
 
 private:
@@ -490,7 +492,10 @@ private:
 
     void onEndOfStreamPresented(runtime::RuntimeTimeline runtimeTimeline) override
     {
+        if (!timelineState.acceptsRuntimeTimeline(runtimeTimeline))
+            return;
         eventRouter.onEndOfStreamPresented(runtimeTimeline);
+        notifyRuntimeDiagnostics();
     }
 
     void handleFallbackToCpu(runtime::RuntimeFallbackAction action)
@@ -563,6 +568,7 @@ private:
 
         if (dependencies.events)
             dependencies.events->onNativeRenderingFailed();
+        notifyRuntimeDiagnostics();
     }
 
     void synchronizeRuntimePlaybackState(
@@ -586,6 +592,24 @@ private:
     {
         std::lock_guard lock(m_mutex);
         return commandState;
+    }
+
+    std::shared_ptr<detail::IPlaybackSessionRuntimePlayer> currentRuntimePlayer() const
+    {
+        std::lock_guard lock(m_mutex);
+        return runtimePlayer;
+    }
+
+    void notifyRuntimeDiagnostics() const
+    {
+        if (!dependencies.events)
+            return;
+
+        const auto runtime = currentRuntimePlayer();
+        if (!runtime)
+            return;
+
+        dependencies.events->onRuntimeDiagnostics(runtime->diagnostics());
     }
 
     void emitError(EventMetadata metadata, MediaError error)

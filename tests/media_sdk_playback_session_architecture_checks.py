@@ -71,6 +71,7 @@ def main() -> None:
     types_text = read(types)
     for token in (
         "class ISessionEvents",
+        "onRuntimeDiagnostics(runtime::RuntimeDiagnostics diagnostics)",
         "struct PlaybackSessionConfig",
         "struct PlaybackSessionDependencies",
         "runtime::IAudioOutput* audioOutput",

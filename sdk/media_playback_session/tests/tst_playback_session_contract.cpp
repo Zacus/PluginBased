@@ -761,6 +761,47 @@ void diagnosticsAndTimelineForwardRuntimeValues()
     assert(session->diagnostics().videoPresented == 42);
 }
 
+void diagnosticsExposePerformanceGuardrailsAndForwardSnapshots()
+{
+    TestContext context;
+    DummyAudioOutput audio;
+    DummyVideoPresenter presenter;
+    RecordingSessionEvents events;
+    auto session = makeSession(context, &audio, &presenter, &events);
+    assert(session->open("sample.mov").ok());
+
+    context.diagnostics.nativeFallbacks = 2;
+    context.diagnostics.decodeFramePushWaitUs = 12'345;
+    context.diagnostics.audioBackpressureCount = 3;
+    context.diagnostics.videoBackpressureCount = 4;
+    context.diagnostics.nativePresented = 5;
+    context.diagnostics.cpuPresented = 6;
+    context.diagnostics.videoPresented = 11;
+    context.core->emitMediaInfo(coreTimeline(10, 3));
+
+    assert(events.diagnosticsCount == 1);
+    assert(events.lastDiagnostics.nativeFallbacks == 2);
+    assert(events.lastDiagnostics.decodeFramePushWaitUs == 12'345);
+    assert(events.lastDiagnostics.audioBackpressureCount == 3);
+    assert(events.lastDiagnostics.videoBackpressureCount == 4);
+    assert(events.lastDiagnostics.nativePresented == 5);
+    assert(events.lastDiagnostics.cpuPresented == 6);
+    assert(events.lastDiagnostics.videoPresented == 11);
+
+    const auto diagnostics = session->diagnostics();
+    assert(diagnostics.nativeFallbacks == 2);
+    assert(diagnostics.decodeFramePushWaitUs == 12'345);
+    assert(diagnostics.nativePresented == 5);
+    assert(diagnostics.cpuPresented == 6);
+
+    context.diagnostics.eofPresented = 1;
+    context.core->emitEndOfFile(coreTimeline(10, 3));
+    context.runtime->triggerEndOfStreamPresented();
+
+    assert(events.diagnosticsCount == 3);
+    assert(events.lastDiagnostics.eofPresented == 1);
+}
+
 } // namespace
 
 int main()
@@ -780,4 +821,5 @@ int main()
     coreEofWaitsForRuntimeEndOfStreamBeforeExternalEof();
     stopStopsCoreAndRuntimeExactlyOnce();
     diagnosticsAndTimelineForwardRuntimeValues();
+    diagnosticsExposePerformanceGuardrailsAndForwardSnapshots();
 }
