@@ -69,8 +69,6 @@ qt_add_qml_module(PlayPlugin
     SOURCES
         src/playback/PlaybackContext.h  src/playback/PlaybackContext.cpp
         src/playback/PlaybackCompletionTracker.h src/playback/PlaybackCompletionTracker.cpp
-        src/playback/PlaybackDataBridge.h src/playback/PlaybackDataBridge.cpp
-        src/playback/QtPlaybackAdapter.h src/playback/QtPlaybackAdapter.cpp
         src/playback/SdkPlaybackAdapter.h src/playback/SdkPlaybackAdapter.cpp
         src/playback/QtRhiVideoPresenter.h src/playback/QtRhiVideoPresenter.cpp
         src/playback/PlaybackPipeline.h src/playback/PlaybackPipeline.cpp
@@ -78,7 +76,6 @@ qt_add_qml_module(PlayPlugin
         src/model/PlaylistModel.h    src/model/PlaylistModel.cpp
         src/model/MediaInfo.h
         src/common/FFmpegUtils.h
-        src/common/FrameQueue.h
         src/video/native/NativeVideoFrame.h
         src/video/native/AppleMetalVideoTextureBridge.h
         src/video/native/AppleMetalVideoTextureBridge.mm
@@ -86,11 +83,6 @@ qt_add_qml_module(PlayPlugin
         src/video/render/VideoNode.h src/video/render/VideoNode.cpp
         src/video/render/VideoSurfaceGeometry.h src/video/render/VideoSurfaceGeometry.cpp
         src/video/render/VideoPixelFormat.h src/video/render/VideoPixelFormat.cpp
-        # 第三步拆出的渲染器、时钟同步和视频输出组件
-        src/sync/ClockSync.h
-        src/video/VideoFrameScheduler.h src/video/VideoFrameScheduler.cpp
-        src/audio/AudioRenderer.h    src/audio/AudioRenderer.cpp
-        src/video/VideoRenderer.h    src/video/VideoRenderer.cpp
         src/video/FFmpegSurface.h    src/video/FFmpegSurface.cpp
 )
 
@@ -136,6 +128,7 @@ target_link_libraries(PlayPlugin PRIVATE
     Qt6::Quick
     Qt6::Multimedia
     media_sdk_core
+    media_sdk::playback_session
     media_sdk::playback_runtime
     PluginBasedPlugin                   # IAppPlugin 接口（INTERFACE）
     PluginBasedLogger                   # spdlog 封装（STATIC）

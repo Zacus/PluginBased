@@ -25,7 +25,8 @@ public:
     void pause();
     [[nodiscard("resume starts the native audio device and can fail")]]
     Result<void> resume();
-    void flush();
+    [[nodiscard("flush resets buffered audio and can fail when device restart fails")]]
+    Result<void> flush();
     void close();
 
 private:

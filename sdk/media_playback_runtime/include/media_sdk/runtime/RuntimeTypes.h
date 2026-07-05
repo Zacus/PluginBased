@@ -23,6 +23,11 @@ struct RuntimeAudioFrame {
     bool endOfStream = false;
 };
 
+struct RuntimeAudioControls {
+    float volume = 1.0f;
+    bool muted = false;
+};
+
 struct RuntimeVideoFrame {
     VideoFrame frame;
     SessionId sessionId = 0;

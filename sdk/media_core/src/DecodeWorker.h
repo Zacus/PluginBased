@@ -113,6 +113,12 @@ private:
         Seek
     };
 
+    enum class DecodePrerollTarget {
+        None,
+        Audio,
+        Video
+    };
+
     struct Command {
         CommandType type = CommandType::Stop;
         std::filesystem::path path;
@@ -127,13 +133,16 @@ private:
     void handleCommand(Command command, WorkerStopToken stopToken);
     void handleOpen(const std::filesystem::path& path);
     void decodeUntilBlocked(WorkerStopToken stopToken);
-    void handleSeek(std::chrono::milliseconds position);
+    void decodeSeekPreroll(WorkerStopToken stopToken);
+    bool handleSeek(std::chrono::milliseconds position);
     void closeMedia();
 
     Result<void> decodePacket(AVCodecContext* codecContext,
                               const AVPacket* packet,
                               AVRational timeBase,
-                              bool video);
+                              bool video,
+                              DecodePrerollTarget prerollTarget = DecodePrerollTarget::None,
+                              bool* prerollDelivered = nullptr);
     void flushDecoders();
     PlayerEvent makeEvent(PlayerEventPayload payload) const;
     void emitEvent(PlayerEvent event);

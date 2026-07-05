@@ -1,14 +1,9 @@
 #pragma once
 
 // PlaybackPipeline 是 PlayPlugin 内部的播放管线协调器。
-// 它集中持有解码器、音频/视频渲染器、帧队列和时钟，让 PlayerEngine 只保留 QML-facing 状态。
+// C 阶段后 PlayPlugin 只持有 Qt presenter/audio output，并把播放编排交给 SDK PlaybackSession。
 
-#include "audio/AudioRenderer.h"
-#include "sync/ClockSync.h"
-#include "common/FrameQueue.h"
-#include "playback/QtPlaybackAdapter.h"
 #include "playback/SdkPlaybackAdapter.h"
-#include "video/VideoRenderer.h"
 
 #include <QObject>
 #include <QPointer>
@@ -26,12 +21,6 @@ namespace media_sdk::platform::macos {
 class CoreAudioAudioOutput;
 }
 
-enum class PlaybackRuntimeMode
-{
-    LegacyQt,
-    SdkRuntime
-};
-
 class PlaybackPipeline : public QObject
 {
     Q_OBJECT
@@ -39,9 +28,6 @@ class PlaybackPipeline : public QObject
 public:
     explicit PlaybackPipeline(QObject* parent = nullptr);
     ~PlaybackPipeline() override;
-
-    PlaybackRuntimeMode runtimeMode() const { return m_runtimeMode; }
-    void setRuntimeMode(PlaybackRuntimeMode mode);
 
     void setSurface(FFmpegSurface* surface);
     void clearSurface();
@@ -80,19 +66,10 @@ private slots:
     void onNativeRenderingFailed();
 
 private:
-    void connectLegacySurface();
-    void disconnectLegacySurface();
     void createSdkRuntimeChain();
     void destroySdkRuntimeChain();
     void updateNativeVideoRenderingEnabled();
 
-    VideoFrameQueue m_videoQueue { 30 };
-    AudioFrameQueue m_audioQueue { 64 };
-    ClockSync m_clock;
-
-    std::unique_ptr<QtPlaybackAdapter> m_adapter;
-    std::unique_ptr<AudioRenderer> m_audioRenderer;
-    std::unique_ptr<VideoRenderer> m_videoRenderer;
     std::unique_ptr<SdkPlaybackAdapter> m_sdkAdapter;
     std::unique_ptr<QtRhiVideoPresenter> m_sdkVideoPresenter;
 #if defined(Q_OS_APPLE)
@@ -100,6 +77,5 @@ private:
 #endif
 
     QPointer<FFmpegSurface> m_surface;
-    PlaybackRuntimeMode m_runtimeMode = PlaybackRuntimeMode::LegacyQt;
     bool m_nativeVideoRenderingEnabled = false;
 };

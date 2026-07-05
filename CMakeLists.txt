@@ -95,6 +95,7 @@ add_subdirectory(plugin)
 add_subdirectory(core)
 add_subdirectory(sdk/media_core)
 add_subdirectory(sdk/media_playback_runtime)
+add_subdirectory(sdk/media_playback_session)
 if(APPLE)
     add_subdirectory(sdk/media_platform_audio_macos)
 endif()
@@ -228,6 +229,10 @@ if(BUILD_TESTING)
         COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tests/media_sdk_playback_runtime_architecture_checks.py"
         WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
     )
+    add_test(NAME media_sdk_playback_session_architecture_checks
+        COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tests/media_sdk_playback_session_architecture_checks.py"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+    )
     add_test(NAME playplugin_qt_rhi_presenter_architecture_checks
         COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tests/playplugin_qt_rhi_presenter_architecture_checks.py"
         WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
@@ -281,21 +286,6 @@ if(BUILD_TESTING)
         WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
     )
     set(PLAYPLUGIN_TEST_PLUGIN_ROOT "${CMAKE_SOURCE_DIR}/plugins")
-    add_executable(PlayPluginVideoFrameSchedulerTest
-        tests/tst_playplugin_video_frame_scheduler.cpp
-        "${PLAYPLUGIN_TEST_PLUGIN_ROOT}/PlayPlugin/src/video/VideoFrameScheduler.cpp"
-    )
-    target_include_directories(PlayPluginVideoFrameSchedulerTest PRIVATE
-        "${PLAYPLUGIN_TEST_PLUGIN_ROOT}/PlayPlugin/src"
-    )
-    target_link_libraries(PlayPluginVideoFrameSchedulerTest PRIVATE
-        Qt6::Core
-        Qt6::Test
-    )
-    add_test(NAME playplugin_video_frame_scheduler
-        COMMAND $<TARGET_FILE:PlayPluginVideoFrameSchedulerTest>
-        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
-    )
     add_executable(PlayPluginPlaybackCompletionTest
         tests/tst_playplugin_playback_completion.cpp
         "${PLAYPLUGIN_TEST_PLUGIN_ROOT}/PlayPlugin/src/playback/PlaybackCompletionTracker.cpp"
@@ -325,35 +315,24 @@ if(BUILD_TESTING)
         COMMAND $<TARGET_FILE:PlayPluginPendingSeekRequestsTest>
         WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
     )
-    add_executable(PlayPluginFrameQueueTest
-        tests/tst_playplugin_frame_queue.cpp
+    add_executable(PlayPluginSdkPlaybackAdapterTest
+        tests/tst_playplugin_sdk_playback_adapter.cpp
+        "${PLAYPLUGIN_TEST_PLUGIN_ROOT}/PlayPlugin/src/playback/SdkPlaybackAdapter.cpp"
     )
-    target_include_directories(PlayPluginFrameQueueTest PRIVATE
+    target_include_directories(PlayPluginSdkPlaybackAdapterTest PRIVATE
         "${PLAYPLUGIN_TEST_PLUGIN_ROOT}/PlayPlugin/src"
+        "${CMAKE_SOURCE_DIR}/logger"
     )
-    target_link_libraries(PlayPluginFrameQueueTest PRIVATE
+    target_link_libraries(PlayPluginSdkPlaybackAdapterTest PRIVATE
         Qt6::Core
         Qt6::Test
-        FFmpeg::all
-    )
-    add_test(NAME playplugin_frame_queue
-        COMMAND $<TARGET_FILE:PlayPluginFrameQueueTest>
-        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
-    )
-    add_executable(PlayPluginPlaybackDataBridgeTest
-        tests/tst_playplugin_playback_data_bridge.cpp
-        "${PLAYPLUGIN_TEST_PLUGIN_ROOT}/PlayPlugin/src/playback/PlaybackDataBridge.cpp"
-    )
-    target_include_directories(PlayPluginPlaybackDataBridgeTest PRIVATE
-        "${PLAYPLUGIN_TEST_PLUGIN_ROOT}/PlayPlugin/src"
-    )
-    target_link_libraries(PlayPluginPlaybackDataBridgeTest PRIVATE
-        Qt6::Core
-        FFmpeg::all
+        media_sdk::playback_session
+        media_sdk::playback_runtime
         PluginBasedLogger
+        FFmpeg::all
     )
-    add_test(NAME playplugin_playback_data_bridge
-        COMMAND $<TARGET_FILE:PlayPluginPlaybackDataBridgeTest>
+    add_test(NAME playplugin_sdk_playback_adapter
+        COMMAND $<TARGET_FILE:PlayPluginSdkPlaybackAdapterTest>
         WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
     )
     add_test(NAME app_theme_service_checks

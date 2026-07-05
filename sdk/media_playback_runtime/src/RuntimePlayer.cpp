@@ -7,10 +7,16 @@
 #include "media_sdk/Error.h"
 
 #include <algorithm>
+#include <atomic>
+#include <cmath>
 #include <condition_variable>
+#include <cstdint>
+#include <cstring>
+#include <limits>
 #include <mutex>
 #include <thread>
 #include <utility>
+#include <vector>
 
 namespace media_sdk::runtime {
 namespace {
@@ -39,6 +45,116 @@ Result<void> dependencyError(const char* message)
         .message = message,
         .detail = {},
     });
+}
+
+RuntimeAudioControls sanitizeAudioControls(RuntimeAudioControls controls)
+{
+    if (!std::isfinite(controls.volume))
+        controls.volume = 1.0f;
+    controls.volume = std::clamp(controls.volume, 0.0f, 1.0f);
+    return controls;
+}
+
+template<typename SampleType>
+bool sampleBytesAreAligned(std::span<const std::byte> samples)
+{
+    return samples.size() % sizeof(SampleType) == 0;
+}
+
+template<typename SampleType>
+SampleType readSample(const std::byte* source)
+{
+    SampleType sample {};
+    std::memcpy(&sample, source, sizeof(sample));
+    return sample;
+}
+
+template<typename SampleType>
+void writeSample(std::byte* target, SampleType sample)
+{
+    std::memcpy(target, &sample, sizeof(sample));
+}
+
+template<typename SampleType>
+void applySignedIntegralGain(std::vector<std::byte>& output, float volume)
+{
+    if (!sampleBytesAreAligned<SampleType>(output))
+        return;
+
+    for (std::size_t offset = 0; offset < output.size(); offset += sizeof(SampleType)) {
+        const auto sample = readSample<SampleType>(output.data() + offset);
+        const auto scaled = std::llround(static_cast<double>(sample) * static_cast<double>(volume));
+        const auto clamped = std::clamp(
+            scaled,
+            static_cast<long long>(std::numeric_limits<SampleType>::min()),
+            static_cast<long long>(std::numeric_limits<SampleType>::max()));
+        writeSample(output.data() + offset, static_cast<SampleType>(clamped));
+    }
+}
+
+void applyUInt8Gain(std::vector<std::byte>& output, float volume)
+{
+    constexpr int silence = 128;
+    for (std::byte& byte : output) {
+        const auto sample = static_cast<int>(std::to_integer<std::uint8_t>(byte));
+        const auto centered = sample - silence;
+        const auto scaled = silence
+            + std::llround(static_cast<double>(centered) * static_cast<double>(volume));
+        byte = static_cast<std::byte>(std::clamp(scaled, 0LL, 255LL));
+    }
+}
+
+void applyFloat32Gain(std::vector<std::byte>& output, float volume)
+{
+    if (!sampleBytesAreAligned<float>(output))
+        return;
+
+    for (std::size_t offset = 0; offset < output.size(); offset += sizeof(float)) {
+        const auto sample = readSample<float>(output.data() + offset) * volume;
+        writeSample(output.data() + offset, sample);
+    }
+}
+
+void fillSilence(std::vector<std::byte>& output, AudioSampleFormat sampleFormat)
+{
+    if (sampleFormat == AudioSampleFormat::UInt8) {
+        std::fill(output.begin(), output.end(), static_cast<std::byte>(128));
+        return;
+    }
+    std::fill(output.begin(), output.end(), std::byte { 0 });
+}
+
+std::vector<std::byte> applyAudioControls(std::span<const std::byte> samples,
+                                          RuntimeAudioControls controls,
+                                          AudioSampleFormat sampleFormat)
+{
+    std::vector<std::byte> output(samples.begin(), samples.end());
+    if (output.empty())
+        return output;
+
+    if (controls.muted || controls.volume == 0.0f) {
+        fillSilence(output, sampleFormat);
+        return output;
+    }
+
+    switch (sampleFormat) {
+    case AudioSampleFormat::UInt8:
+        applyUInt8Gain(output, controls.volume);
+        break;
+    case AudioSampleFormat::Int16:
+        applySignedIntegralGain<std::int16_t>(output, controls.volume);
+        break;
+    case AudioSampleFormat::Int32:
+        applySignedIntegralGain<std::int32_t>(output, controls.volume);
+        break;
+    case AudioSampleFormat::Float32:
+    case AudioSampleFormat::Float32Planar:
+        applyFloat32Gain(output, controls.volume);
+        break;
+    case AudioSampleFormat::Unknown:
+        break;
+    }
+    return output;
 }
 
 } // namespace
@@ -85,6 +201,8 @@ struct RuntimePlayer::Impl {
             running = true;
             paused = false;
             fallbackPending = false;
+            pausedSeekPrerollPending = false;
+            pausedSeekPrerollReserved = false;
             audioEofSeen = false;
             videoEofSeen = false;
             eofNotificationSent = false;
@@ -131,8 +249,9 @@ struct RuntimePlayer::Impl {
 
     RuntimeFramePushResult enqueueVideo(RuntimeVideoFrame frame)
     {
-        if (!isAcceptingVideo())
-            return { .status = RuntimeFramePushStatus::Closed };
+        const auto gateStatus = videoPushGate(frame.sessionId, frame.generation);
+        if (gateStatus != RuntimeFramePushStatus::Accepted)
+            return { .status = gateStatus };
 
         const bool nativeFrame = frame.frame.pixelFormat() == PixelFormat::Native;
         const auto pushResult = videoQueue.push(std::move(frame));
@@ -218,6 +337,8 @@ struct RuntimePlayer::Impl {
                 return;
             paused = false;
             shouldResume = true;
+            pausedSeekPrerollPending = false;
+            pausedSeekPrerollReserved = false;
         }
 
         if (shouldResume) {
@@ -232,6 +353,13 @@ struct RuntimePlayer::Impl {
         m_presentCapacityChanged.notify_all();
     }
 
+    void setAudioControls(RuntimeAudioControls controls)
+    {
+        const auto sanitized = sanitizeAudioControls(controls);
+        audioVolume.store(sanitized.volume, std::memory_order_relaxed);
+        audioMuted.store(sanitized.muted, std::memory_order_relaxed);
+    }
+
     void completeSeek(SessionId completedSessionId, Generation completedGeneration)
     {
         bool shouldResume = false;
@@ -243,6 +371,8 @@ struct RuntimePlayer::Impl {
             }
 
             fallbackPending = false;
+            pausedSeekPrerollPending = false;
+            pausedSeekPrerollReserved = false;
             paused = false;
             scheduler.reset(completedGeneration);
             shouldResume = true;
@@ -271,6 +401,8 @@ struct RuntimePlayer::Impl {
             activeSession = sessionId;
             nextGeneration = ++generation;
             fallbackPending = false;
+            pausedSeekPrerollPending = paused;
+            pausedSeekPrerollReserved = false;
             audioEofSeen = false;
             videoEofSeen = false;
             eofNotificationSent = false;
@@ -287,7 +419,9 @@ struct RuntimePlayer::Impl {
         audioQueue.reset(activeSession, nextGeneration);
         videoQueue.reset(activeSession, nextGeneration);
         dependencies.videoPresenter->clear();
-        dependencies.audioOutput->flush();
+        const auto flushResult = dependencies.audioOutput->flush();
+        if (!flushResult.ok())
+            reportRuntimeError(flushResult.error());
         m_controlChanged.notify_all();
         m_presentCapacityChanged.notify_all();
     }
@@ -303,6 +437,8 @@ struct RuntimePlayer::Impl {
             running = false;
             paused = false;
             fallbackPending = false;
+            pausedSeekPrerollPending = false;
+            pausedSeekPrerollReserved = false;
             generation = 0;
             diagnostics.queueAbortCount += 2;
             shouldStop = true;
@@ -315,10 +451,11 @@ struct RuntimePlayer::Impl {
         videoQueue.abort();
         m_controlChanged.notify_all();
         m_presentCapacityChanged.notify_all();
-        joinWorkers();
 
         dependencies.audioOutput->pause();
-        dependencies.audioOutput->flush();
+        (void)dependencies.audioOutput->flush();
+        joinWorkers();
+
         dependencies.audioOutput->close();
         dependencies.videoPresenter->clear();
 
@@ -342,6 +479,24 @@ struct RuntimePlayer::Impl {
             .sessionId = running ? sessionId : 0,
             .generation = running ? generation : 0,
         };
+    }
+
+    ClockSnapshot snapshotClock() const
+    {
+        Generation activeGeneration = 0;
+        bool active = false;
+        {
+            std::lock_guard lock(m_mutex);
+            active = running;
+            activeGeneration = generation;
+        }
+        if (!active || !dependencies.audioOutput)
+            return {};
+
+        auto snapshot = dependencies.audioOutput->clock();
+        if (snapshot.generation != activeGeneration)
+            snapshot.valid = false;
+        return snapshot;
     }
 
     void onPresentComplete(PresentCompletion completion)
@@ -389,8 +544,15 @@ struct RuntimePlayer::Impl {
                 continue;
 
             const auto samples = queuedFrame.frame.samples();
+            const auto controls = currentAudioControls();
+            std::vector<std::byte> controlledSamples;
+            std::span<const std::byte> outputSamples = samples;
+            if (controls.muted || controls.volume != 1.0f) {
+                controlledSamples = applyAudioControls(samples, controls, config.audioFormat.sampleFormat);
+                outputSamples = controlledSamples;
+            }
             const auto writeResult = dependencies.audioOutput->write({
-                .bytes = samples,
+                .bytes = outputSamples,
                 .pts = queuedFrame.frame.pts(),
                 .generation = queuedFrame.generation,
             });
@@ -399,6 +561,14 @@ struct RuntimePlayer::Impl {
                 ++diagnostics.audioWritten;
             }
         }
+    }
+
+    RuntimeAudioControls currentAudioControls() const
+    {
+        return {
+            .volume = audioVolume.load(std::memory_order_relaxed),
+            .muted = audioMuted.load(std::memory_order_relaxed),
+        };
     }
 
     void videoLoop()
@@ -425,14 +595,21 @@ struct RuntimePlayer::Impl {
     {
         if (!isCurrent(queuedFrame.sessionId, queuedFrame.generation))
             return;
-        if (!waitUntilUnpaused(queuedFrame.sessionId, queuedFrame.generation))
+        const bool pausedPreroll = isPausedSeekPreroll(queuedFrame.sessionId, queuedFrame.generation);
+        if (!pausedPreroll && !waitUntilUnpaused(queuedFrame.sessionId, queuedFrame.generation))
             return;
 
         while (true) {
             auto clock = dependencies.audioOutput->clock();
             if (!config.audioClockEnabled)
                 clock.valid = false;
-            const auto decision = decideFrame(queuedFrame.frame.pts(), clock, queuedFrame.generation);
+            const auto decision = pausedPreroll
+                ? VideoScheduleDecision {
+                    .action = VideoScheduleAction::Render,
+                    .lateness = std::chrono::microseconds { 0 },
+                    .waitTime = std::chrono::microseconds { 0 },
+                }
+                : decideFrame(queuedFrame.frame.pts(), clock, queuedFrame.generation);
             if (decision.action == VideoScheduleAction::Drop) {
                 std::lock_guard lock(m_mutex);
                 ++diagnostics.videoDroppedLate;
@@ -490,6 +667,8 @@ struct RuntimePlayer::Impl {
                         ++diagnostics.nativePresented;
                     else
                         ++diagnostics.cpuPresented;
+                    if (pausedPreroll)
+                        completePausedSeekPrerollLocked(frameSessionId, frameGeneration);
                 }
             }
             if (trackFailed)
@@ -539,6 +718,15 @@ struct RuntimePlayer::Impl {
                 || presentTracker.hasCapacity();
         });
         return running && isCurrentLocked(checkedSessionId, checkedGeneration);
+    }
+
+    bool isPausedSeekPreroll(SessionId checkedSessionId, Generation checkedGeneration) const
+    {
+        std::lock_guard lock(m_mutex);
+        return running
+            && isCurrentLocked(checkedSessionId, checkedGeneration)
+            && paused
+            && pausedSeekPrerollPending;
     }
 
     void markEof(bool audio, SessionId checkedSessionId, Generation checkedGeneration)
@@ -626,8 +814,11 @@ struct RuntimePlayer::Impl {
 
         if (transition.pauseAudio)
             dependencies.audioOutput->pause();
-        if (transition.flushAudio)
-            dependencies.audioOutput->flush();
+        if (transition.flushAudio) {
+            const auto flushResult = dependencies.audioOutput->flush();
+            if (!flushResult.ok())
+                reportRuntimeError(flushResult.error());
+        }
         if (transition.abortQueues) {
             audioQueue.abort();
             videoQueue.abort();
@@ -642,16 +833,41 @@ struct RuntimePlayer::Impl {
         m_presentCapacityChanged.notify_all();
     }
 
+    void reportRuntimeError(MediaError error) const
+    {
+        if (dependencies.events)
+            dependencies.events->onRuntimeError(std::move(error));
+    }
+
     bool isRunning() const
     {
         std::lock_guard lock(m_mutex);
         return running;
     }
 
-    bool isAcceptingVideo() const
+    RuntimeFramePushStatus videoPushGate(SessionId checkedSessionId, Generation checkedGeneration)
     {
         std::lock_guard lock(m_mutex);
-        return running && !paused && !fallbackPending;
+        if (!running)
+            return RuntimeFramePushStatus::Closed;
+        if (checkedSessionId != sessionId || checkedGeneration != generation)
+            return RuntimeFramePushStatus::RejectedGeneration;
+        if (fallbackPending)
+            return RuntimeFramePushStatus::Closed;
+        if (paused) {
+            if (!pausedSeekPrerollPending || pausedSeekPrerollReserved)
+                return RuntimeFramePushStatus::Cancelled;
+            pausedSeekPrerollReserved = true;
+        }
+        return RuntimeFramePushStatus::Accepted;
+    }
+
+    void completePausedSeekPrerollLocked(SessionId checkedSessionId, Generation checkedGeneration)
+    {
+        if (!isCurrentLocked(checkedSessionId, checkedGeneration))
+            return;
+        pausedSeekPrerollPending = false;
+        pausedSeekPrerollReserved = false;
     }
 
     bool isCurrent(SessionId checkedSessionId, Generation checkedGeneration) const
@@ -681,6 +897,8 @@ struct RuntimePlayer::Impl {
     AvSyncScheduler scheduler;
     PresentTracker presentTracker;
     NativeFallbackController fallbackController;
+    std::atomic<float> audioVolume { sanitizeAudioControls(config.audioControls).volume };
+    std::atomic_bool audioMuted { sanitizeAudioControls(config.audioControls).muted };
     mutable std::mutex m_mutex;
     std::condition_variable m_controlChanged;
     std::condition_variable m_presentCapacityChanged;
@@ -693,6 +911,8 @@ struct RuntimePlayer::Impl {
     bool running = false;
     bool paused = false;
     bool fallbackPending = false;
+    bool pausedSeekPrerollPending = false;
+    bool pausedSeekPrerollReserved = false;
     bool audioEofSeen = false;
     bool videoEofSeen = false;
     bool eofNotificationSent = false;
@@ -735,6 +955,11 @@ void RuntimePlayer::resume()
     m_impl->resume();
 }
 
+void RuntimePlayer::setAudioControls(RuntimeAudioControls controls)
+{
+    m_impl->setAudioControls(controls);
+}
+
 void RuntimePlayer::seek(std::chrono::microseconds position)
 {
     m_impl->seek(position);
@@ -753,6 +978,11 @@ void RuntimePlayer::stop()
 RuntimeDiagnostics RuntimePlayer::diagnostics() const
 {
     return m_impl->snapshotDiagnostics();
+}
+
+ClockSnapshot RuntimePlayer::clock() const
+{
+    return m_impl->snapshotClock();
 }
 
 RuntimeTimeline RuntimePlayer::timeline() const

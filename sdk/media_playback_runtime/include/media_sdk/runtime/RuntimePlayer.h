@@ -28,6 +28,7 @@ struct RuntimePlayerConfig {
         .channels = 2,
         .sampleFormat = AudioSampleFormat::Float32,
     };
+    RuntimeAudioControls audioControls {};
     VideoOutputPolicy outputPolicy = VideoOutputPolicy::PreferNative;
     RuntimeSyncConfig syncConfig {};
     bool audioClockEnabled = true;
@@ -44,6 +45,7 @@ public:
     virtual ~IRuntimePlayerEvents() = default;
     virtual void onFallbackToCpuRequested(RuntimeFallbackAction action) = 0;
     virtual void onEndOfStreamPresented(RuntimeTimeline) {}
+    virtual void onRuntimeError(MediaError) {}
 };
 
 class RuntimePlayer final : private IVideoPresenterEvents
@@ -63,10 +65,13 @@ public:
     void enqueueEndOfStream(SessionId sessionId, Generation generation);
     void pause();
     void resume();
+    void setAudioControls(RuntimeAudioControls controls);
     void seek(std::chrono::microseconds position);
     void completeSeek(SessionId sessionId, Generation generation);
     void stop();
     RuntimeDiagnostics diagnostics() const;
+    [[nodiscard("clock snapshots are the authoritative playback position source")]]
+    ClockSnapshot clock() const;
     RuntimeTimeline timeline() const;
 
 private:

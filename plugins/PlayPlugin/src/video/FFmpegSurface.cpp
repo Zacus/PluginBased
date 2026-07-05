@@ -85,7 +85,7 @@ void FFmpegSurface::resetDiagnostics()
     m_cpuMemcpy.store(0, std::memory_order_relaxed);
 }
 
-// 可从任意线程调用（VideoRenderer::frameReady 可能跨线程发出）
+// 可从任意线程调用（SDK presenter 可能跨线程发出）
 void FFmpegSurface::onFrameReady(const VideoFrameDataPtr& frame)
 {
     {

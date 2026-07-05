@@ -52,7 +52,7 @@ void openWriteClockPauseResumeFlushAndCloseAreDeterministic()
     assert(output.resume().ok());
     assert(!output.clock().paused);
 
-    output.flush();
+    assert(output.flush().ok());
     snapshot = output.clock();
     assert(snapshot.valid);
     assert(snapshot.generation == 2);

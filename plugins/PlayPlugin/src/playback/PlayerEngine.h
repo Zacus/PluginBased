@@ -18,14 +18,12 @@ Q_MOC_INCLUDE("video/FFmpegSurface.h")
  * @brief PlayerEngine — PlayPlugin 的核心播放引擎
  *
  * 持有并协调以下组件：
- *   PlaybackPipeline 播放管线，桥接 media_sdk::Player 与 Qt 渲染/音频组件
- *   AudioRenderer    音频渲染线程，消费音频帧，维护音频时钟
- *   VideoRenderer    视频调度器（主线程），消费视频帧，同步时钟
+ *   PlaybackPipeline 播放管线，桥接 SDK PlaybackSession 与 Qt RHI presenter
  *   FFmpegSurface    QML 视频输出组件（由 QML 侧创建，Engine 只持有弱引用）
  *
  * QML 接口与之前完全保持不变：
  *   - 所有 Q_PROPERTY 和信号不变，QML 代码无需修改
- *   - position() 改为由 AudioRenderer::positionChanged 驱动，不再轮询
+ *   - position() 由 SDK session 的进度事件驱动，不再轮询
  */
 class PlayerEngine : public QObject
 {
@@ -39,14 +37,10 @@ class PlayerEngine : public QObject
     Q_PROPERTY(bool       muted         READ muted   WRITE setMuted  NOTIFY mutedChanged)
     Q_PROPERTY(MediaInfo* currentMedia  READ currentMedia     NOTIFY currentMediaChanged)
     Q_PROPERTY(QString    errorString   READ errorString      NOTIFY errorOccurred)
-    Q_PROPERTY(int        playbackRuntimeMode READ playbackRuntimeModeInt
-                   WRITE setPlaybackRuntimeMode NOTIFY playbackRuntimeModeChanged)
 
 public:
     enum PlaybackState { Stopped = 0, Playing = 1, Paused = 2 };
     Q_ENUM(PlaybackState)
-    enum PlaybackRuntimeMode { LegacyQt = 0, SdkRuntime = 1 };
-    Q_ENUM(PlaybackRuntimeMode)
 
     explicit PlayerEngine(QObject* parent = nullptr);
     ~PlayerEngine() override;
@@ -59,11 +53,9 @@ public:
     bool          muted()            const { return m_muted; }
     MediaInfo*    currentMedia()     const { return m_mediaInfo; }
     QString       errorString()      const { return m_errorString; }
-    int           playbackRuntimeModeInt() const { return m_playbackRuntimeMode; }
 
     void setVolume(float v);
     void setMuted(bool m);
-    void setPlaybackRuntimeMode(int mode);
 
     /** QML 侧把 FFmpegSurface 对象传入，Engine 连接管线输出到 surface */
     Q_INVOKABLE void setSurface(FFmpegSurface* surface);
@@ -82,7 +74,6 @@ signals:
     void durationChanged(qint64 durMs);
     void volumeChanged(float volume);
     void mutedChanged(bool muted);
-    void playbackRuntimeModeChanged(int mode);
     void currentMediaChanged(MediaInfo* info);
     void errorOccurred(const QString& msg);
     void endOfMedia();
@@ -98,11 +89,9 @@ private slots:
     void onDecoderPosition(qint64 posMs);
     void onDecoderSeekCompleted(int generation, int serial);
 
-    // 来自 AudioRenderer 的信号
     void onAudioPosition(qint64 posMs);
     void onEndOfAudio();
 
-    // 来自 VideoRenderer 的信号
     void onVideoPosition(qint64 posMs);
     void onEndOfVideo();
 
@@ -122,7 +111,6 @@ private:
     qint64        m_duration   = 0;
     float         m_volume     = 1.0f;
     bool          m_muted      = false;
-    int           m_playbackRuntimeMode = LegacyQt;
     PlaybackCompletionTracker m_completion;
     int           m_seekGeneration = 0;
     QString       m_errorString;

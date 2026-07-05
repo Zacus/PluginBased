@@ -7,6 +7,7 @@
 #include <cmath>
 #include <condition_variable>
 #include <cstdint>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <mutex>
@@ -14,6 +15,13 @@
 #include <thread>
 #include <variant>
 #include <vector>
+
+extern "C" {
+#include <libavcodec/codec_id.h>
+#include <libavformat/avformat.h>
+#include <libavutil/channel_layout.h>
+#include <libavutil/pixfmt.h>
+}
 
 using namespace std::chrono_literals;
 
@@ -67,6 +75,82 @@ std::filesystem::path writeTinyWav()
                            static_cast<std::int16_t>(std::sin(phase) * 12000.0)));
     }
 
+    return path;
+}
+
+std::filesystem::path writeAudioFirstVideoSample()
+{
+    const auto path = std::filesystem::temp_directory_path()
+        / ("media_sdk_core_audio_first_video_" +
+           std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()) + ".nut");
+
+    AVFormatContext* rawContext = nullptr;
+    assert(avformat_alloc_output_context2(&rawContext, nullptr, "nut", path.string().c_str()) >= 0);
+    assert(rawContext);
+
+    auto* audio = avformat_new_stream(rawContext, nullptr);
+    assert(audio);
+    audio->id = 0;
+    audio->time_base = AVRational { 1, 8000 };
+    audio->codecpar->codec_type = AVMEDIA_TYPE_AUDIO;
+    audio->codecpar->codec_id = AV_CODEC_ID_PCM_S16LE;
+    audio->codecpar->format = AV_SAMPLE_FMT_S16;
+    audio->codecpar->sample_rate = 8000;
+    audio->codecpar->ch_layout = AV_CHANNEL_LAYOUT_MONO;
+    audio->codecpar->bits_per_coded_sample = 16;
+    audio->codecpar->block_align = 2;
+    audio->codecpar->bit_rate = 128000;
+
+    auto* video = avformat_new_stream(rawContext, nullptr);
+    assert(video);
+    video->id = 1;
+    video->time_base = AVRational { 1, 25 };
+    video->codecpar->codec_type = AVMEDIA_TYPE_VIDEO;
+    video->codecpar->codec_id = AV_CODEC_ID_RAWVIDEO;
+    video->codecpar->format = AV_PIX_FMT_YUYV422;
+    video->codecpar->width = 16;
+    video->codecpar->height = 16;
+
+    assert(avio_open(&rawContext->pb, path.string().c_str(), AVIO_FLAG_WRITE) >= 0);
+    assert(avformat_write_header(rawContext, nullptr) >= 0);
+
+    constexpr int audioSamplesPerPacket = 160;
+    std::vector<std::byte> audioSamples(audioSamplesPerPacket * 2);
+    for (int packetIndex = 0; packetIndex < 8; ++packetIndex) {
+        AVPacket* packet = av_packet_alloc();
+        assert(packet);
+        assert(av_new_packet(packet, static_cast<int>(audioSamples.size())) >= 0);
+        std::memcpy(packet->data, audioSamples.data(), audioSamples.size());
+        packet->stream_index = audio->index;
+        packet->pts = packetIndex * audioSamplesPerPacket;
+        packet->dts = packet->pts;
+        packet->duration = audioSamplesPerPacket;
+        assert(av_interleaved_write_frame(rawContext, packet) >= 0);
+        av_packet_free(&packet);
+    }
+
+    std::vector<std::byte> videoFrame(16 * 16 * 2);
+    for (std::size_t i = 0; i < videoFrame.size(); i += 4) {
+        videoFrame[i] = std::byte { 0x10 };
+        videoFrame[i + 1] = std::byte { 0x80 };
+        videoFrame[i + 2] = std::byte { 0x10 };
+        videoFrame[i + 3] = std::byte { 0x80 };
+    }
+    AVPacket* packet = av_packet_alloc();
+    assert(packet);
+    assert(av_new_packet(packet, static_cast<int>(videoFrame.size())) >= 0);
+    std::memcpy(packet->data, videoFrame.data(), videoFrame.size());
+    packet->stream_index = video->index;
+    packet->pts = 0;
+    packet->dts = 0;
+    packet->duration = 1;
+    packet->flags |= AV_PKT_FLAG_KEY;
+    assert(av_interleaved_write_frame(rawContext, packet) >= 0);
+    av_packet_free(&packet);
+
+    assert(av_write_trailer(rawContext) >= 0);
+    avio_closep(&rawContext->pb);
+    avformat_free_context(rawContext);
     return path;
 }
 
@@ -157,6 +241,14 @@ public:
         std::unique_lock lock(m_mutex);
         return m_cv.wait_for(lock, timeout, [&]() {
             return m_audioFrames > 0;
+        });
+    }
+
+    bool waitForVideoFrame(std::chrono::milliseconds timeout = 3s)
+    {
+        std::unique_lock lock(m_mutex);
+        return m_cv.wait_for(lock, timeout, [&]() {
+            return m_videoFrames > 0;
         });
     }
 
@@ -356,6 +448,57 @@ void testSeekEmitsPositionAndContinuesPlayback()
     std::filesystem::remove(samplePath);
 }
 
+void testPausedSeekPrerollsFrameWithoutResumingPlayback()
+{
+    const auto samplePath = writeTinyWav();
+    RecordingSink sink;
+    RecordingFrameSink frames;
+    media_sdk::Player player({}, sink, frames);
+
+    assert(player.open(samplePath).ok());
+    assert(sink.waitFor(hasMediaInfo));
+
+    assert(player.seek(100ms).ok());
+
+    assert(sink.waitFor([](const media_sdk::PlayerEvent& event) {
+        return hasSeekCompletedAtOrAfter(event, 100ms);
+    }));
+    assert(frames.waitForAudioFrame());
+
+    const auto events = sink.snapshot();
+    assert(std::ranges::none_of(events, [](const media_sdk::PlayerEvent& event) {
+        return hasState(event, media_sdk::PlayerState::Playing);
+    }));
+    assert(!sink.waitFor(hasEof, 100ms));
+
+    player.stop();
+    std::filesystem::remove(samplePath);
+}
+
+void testPausedVideoSeekPrerollSkipsAudioBackpressure()
+{
+    const auto samplePath = writeAudioFirstVideoSample();
+    RecordingSink sink;
+    RecordingFrameSink frames;
+    media_sdk::Player player({}, sink, frames);
+
+    assert(player.open(samplePath).ok());
+    assert(sink.waitFor(hasMediaInfo));
+
+    frames.blockAudioFrames();
+    assert(player.seek(0ms).ok());
+
+    assert(sink.waitFor([](const media_sdk::PlayerEvent& event) {
+        return hasSeekCompletedAtOrAfter(event, 0ms);
+    }));
+    assert(frames.waitForVideoFrame(500ms));
+    assert(!frames.waitForBlockedAudioFrame(100ms));
+
+    frames.releaseAudioFrames();
+    player.stop();
+    std::filesystem::remove(samplePath);
+}
+
 void testBurstSeekCoalescesQueuedRequestsBeforeDecodeResumes()
 {
     const auto samplePath = writeTinyWav();
@@ -452,6 +595,8 @@ int main()
 {
     testOpenPlayReachesEof();
     testSeekEmitsPositionAndContinuesPlayback();
+    testPausedSeekPrerollsFrameWithoutResumingPlayback();
+    testPausedVideoSeekPrerollSkipsAudioBackpressure();
     testBurstSeekCoalescesQueuedRequestsBeforeDecodeResumes();
     testStopEmitsStoppedState();
     testCancelledFramePushDuringStopDoesNotEmitDecodeError();

@@ -59,6 +59,12 @@ std::vector<std::byte> makeInterleavedAudioSamples(const AVFrame* frame, AVSampl
     return samples;
 }
 
+bool isDeliveredFramePush(DecodeFramePushResult result)
+{
+    return result.status == DecodeFramePushStatus::Accepted
+        || result.status == DecodeFramePushStatus::Backpressured;
+}
+
 } // namespace
 
 DecodeWorker::DecodeWorker(PlayerConfig config, IEventSink& events, IDecodeFrameSink& frames)
@@ -207,10 +213,16 @@ void DecodeWorker::handleCommand(Command command, WorkerStopToken stopToken)
         emitState(PlayerState::Stopped);
         break;
     case CommandType::Seek:
-        handleSeek(coalescedSeekPosition(command.position));
-        if (m_playing)
+    {
+        const bool wasPlaying = m_playing;
+        if (!handleSeek(coalescedSeekPosition(command.position)))
+            break;
+        if (wasPlaying)
             decodeUntilBlocked(stopToken);
+        else
+            decodeSeekPreroll(stopToken);
         break;
+    }
     }
 }
 
@@ -284,6 +296,7 @@ void DecodeWorker::decodeUntilBlocked(WorkerStopToken stopToken)
                 emitError(result.error());
                 m_playing = false;
                 emitState(PlayerState::Error);
+                return;
             }
         }
         else if (packet->stream_index == m_media.audioStreamIndex && m_media.audioCodecContext)
@@ -297,6 +310,7 @@ void DecodeWorker::decodeUntilBlocked(WorkerStopToken stopToken)
                 emitError(result.error());
                 m_playing = false;
                 emitState(PlayerState::Error);
+                return;
             }
         }
 
@@ -304,10 +318,84 @@ void DecodeWorker::decodeUntilBlocked(WorkerStopToken stopToken)
     }
 }
 
-void DecodeWorker::handleSeek(std::chrono::milliseconds position)
+void DecodeWorker::decodeSeekPreroll(WorkerStopToken stopToken)
 {
     if (!m_hasMedia)
         return;
+
+    const bool targetVideo = m_media.videoStreamIndex >= 0 && m_media.videoCodecContext;
+    const bool targetAudio = !targetVideo && m_media.audioStreamIndex >= 0 && m_media.audioCodecContext;
+    if (!targetVideo && !targetAudio)
+        return;
+
+    bool delivered = false;
+    auto packet = makePacket();
+
+    while (!stopToken.stop_requested() && m_hasMedia && !m_playing && !delivered)
+    {
+        Command command;
+        if (tryTakeCommand(command))
+        {
+            handleCommand(std::move(command), stopToken);
+            return;
+        }
+
+        const int ret = av_read_frame(m_media.formatContext.get(), packet.get());
+        if (ret == AVERROR_EOF)
+            return;
+        if (ret < 0)
+        {
+            emitError(makeError(MediaErrorCode::DecodeFailed,
+                                "Failed to read media packet",
+                                avErrorString(ret)));
+            m_playing = false;
+            emitState(PlayerState::Error);
+            return;
+        }
+
+        if (targetVideo
+            && packet->stream_index == m_media.videoStreamIndex
+            && m_media.videoCodecContext)
+        {
+            const auto result = decodePacket(m_media.videoCodecContext.get(),
+                                             packet.get(),
+                                             m_media.formatContext->streams[m_media.videoStreamIndex]->time_base,
+                                             true,
+                                             targetVideo ? DecodePrerollTarget::Video : DecodePrerollTarget::None,
+                                             &delivered);
+            if (!result.ok())
+            {
+                emitError(result.error());
+                m_playing = false;
+                emitState(PlayerState::Error);
+            }
+        }
+        else if (targetAudio
+                 && packet->stream_index == m_media.audioStreamIndex
+                 && m_media.audioCodecContext)
+        {
+            const auto result = decodePacket(m_media.audioCodecContext.get(),
+                                             packet.get(),
+                                             m_media.formatContext->streams[m_media.audioStreamIndex]->time_base,
+                                             false,
+                                             targetAudio ? DecodePrerollTarget::Audio : DecodePrerollTarget::None,
+                                             &delivered);
+            if (!result.ok())
+            {
+                emitError(result.error());
+                m_playing = false;
+                emitState(PlayerState::Error);
+            }
+        }
+
+        av_packet_unref(packet.get());
+    }
+}
+
+bool DecodeWorker::handleSeek(std::chrono::milliseconds position)
+{
+    if (!m_hasMedia)
+        return false;
 
     const auto targetUs = std::chrono::duration_cast<std::chrono::microseconds>(position).count();
     const int ret = av_seek_frame(m_media.formatContext.get(), -1, targetUs, AVSEEK_FLAG_BACKWARD);
@@ -316,7 +404,7 @@ void DecodeWorker::handleSeek(std::chrono::milliseconds position)
         emitError(makeError(MediaErrorCode::SeekFailed,
                             "Failed to seek media",
                             avErrorString(ret)));
-        return;
+        return false;
     }
 
     if (m_media.videoCodecContext)
@@ -327,6 +415,7 @@ void DecodeWorker::handleSeek(std::chrono::milliseconds position)
 
     emitEvent(makeEvent(SeekCompletedEvent { position }));
     emitEvent(makeEvent(PositionChangedEvent { position }));
+    return true;
 }
 
 void DecodeWorker::closeMedia()
@@ -344,13 +433,15 @@ void DecodeWorker::closeMedia()
 Result<void> DecodeWorker::decodePacket(AVCodecContext* codecContext,
                                         const AVPacket* packet,
                                         AVRational timeBase,
-                                        bool video)
+                                        bool video,
+                                        DecodePrerollTarget prerollTarget,
+                                        bool* prerollDelivered)
 {
     return m_streamDecoder.sendPacket(
         codecContext,
         packet,
         timeBase,
-        [this, video](AVFramePtr frame) {
+        [this, video, prerollTarget, prerollDelivered](AVFramePtr frame) {
             if (video)
             {
                 ++m_decodeStats.decodedVideoFrames;
@@ -364,13 +455,29 @@ Result<void> DecodeWorker::decodePacket(AVCodecContext* codecContext,
                     emitError(processed.error());
                     return StreamDecoder::FrameHandlerStatus::Reject;
                 }
-                return emitVideoFrame(std::move(processed.value()));
+                auto pushResult = m_frames.pushVideo(std::move(processed.value()), frameMetadata());
+                const auto status = handleFramePushResult(pushResult);
+                if (prerollTarget == DecodePrerollTarget::Video && isDeliveredFramePush(pushResult))
+                {
+                    if (prerollDelivered)
+                        *prerollDelivered = true;
+                    return StreamDecoder::FrameHandlerStatus::Stop;
+                }
+                return status;
             }
 
             AudioFrame audioFrame = makeAudioFrame(std::move(frame));
             emitEvent(makeEvent(PositionChangedEvent {
                 std::chrono::duration_cast<std::chrono::milliseconds>(audioFrame.pts()) }));
-            return handleFramePushResult(m_frames.pushAudio(std::move(audioFrame), frameMetadata()));
+            auto pushResult = m_frames.pushAudio(std::move(audioFrame), frameMetadata());
+            const auto status = handleFramePushResult(pushResult);
+            if (prerollTarget == DecodePrerollTarget::Audio && isDeliveredFramePush(pushResult))
+            {
+                if (prerollDelivered)
+                    *prerollDelivered = true;
+                return StreamDecoder::FrameHandlerStatus::Stop;
+            }
+            return status;
         });
 }
 

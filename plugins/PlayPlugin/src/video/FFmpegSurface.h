@@ -38,11 +38,11 @@ struct FFmpegSurfaceDiagnostics
  *       anchors.fill: parent
  *   }
  *   // C++ 侧：
- *   connect(videoRenderer, &VideoRenderer::frameReady,
+ *   connect(presenter, &QtRhiVideoPresenter::frameReady,
  *           surface, &FFmpegSurface::onFrameReady);
  *
  * 线程安全：
- *   onFrameReady 在主线程被调用（VideoRenderer 运行在主线程），
+ *   onFrameReady 在主线程被调用，
  *   updatePaintNode 在 Qt 渲染线程调用，两者通过 m_mutex + m_pendingFrame 同步。
  */
 class FFmpegSurface : public QQuickItem
@@ -66,7 +66,7 @@ class FFmpegSurface : public QQuickItem
     void resetDiagnostics();
 
   public slots:
-    /** 接收 VideoRenderer::frameReady 信号 */
+    /** 接收 presenter 提交的 CPU fallback 帧 */
     void onFrameReady(const VideoFrameDataPtr& frame);
     void clear();
 

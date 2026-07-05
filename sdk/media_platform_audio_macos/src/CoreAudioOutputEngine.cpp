@@ -131,16 +131,31 @@ Result<void> CoreAudioOutputEngine::resume()
     return result;
 }
 
-void CoreAudioOutputEngine::flush()
+Result<void> CoreAudioOutputEngine::flush()
 {
     std::scoped_lock lock(m_mutex);
     if (!m_open)
-        return;
+        return Result<void>::success();
+
+    const bool restartAfterFlush = m_running && m_device;
+    if (restartAfterFlush) {
+        m_device->stop();
+        m_running = false;
+    }
 
     ++m_generation;
     m_ringBuffer.flush();
     if (m_device)
         m_device->reset();
+
+    if (restartAfterFlush) {
+        auto result = m_device->start();
+        m_running = result.ok();
+        m_paused = !m_running;
+        if (!result.ok())
+            return result;
+    }
+    return Result<void>::success();
 }
 
 void CoreAudioOutputEngine::close()
