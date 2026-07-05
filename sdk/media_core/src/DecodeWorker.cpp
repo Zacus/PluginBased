@@ -536,11 +536,7 @@ StreamDecoder::FrameHandlerStatus DecodeWorker::handleDecodedVideoFrame(
     {
         // 精确 seek 预滚期间，目标点前的视频帧不能进入像素处理和 runtime 队列。
         const auto decision = frame->pts == AV_NOPTS_VALUE
-            ? SeekPrerollDecision {
-                .action = m_seekGate->completionPosition() <= std::chrono::microseconds { 0 }
-                    ? SeekPrerollAction::Accept
-                    : SeekPrerollAction::Discard
-            }
+            ? m_seekGate->inspectMissingVideoPts(m_generation)
             : m_seekGate->inspectVideo(std::chrono::microseconds { frame->pts }, m_generation);
         if (decision.action == SeekPrerollAction::Discard)
         {

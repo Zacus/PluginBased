@@ -42,6 +42,15 @@ public:
         return { .action = actionForPts(pts) };
     }
 
+    [[nodiscard("missing video PTS must be bounded by discard fallback, not accepted as exact")]]
+    SeekPrerollDecision inspectMissingVideoPts(std::uint64_t generation) const
+    {
+        if (generation != m_config.generation)
+            return { .action = SeekPrerollAction::Stale };
+
+        return { .action = SeekPrerollAction::Discard };
+    }
+
     [[nodiscard("caller must decide whether to drop, accept, or ignore stale audio")]]
     SeekPrerollDecision inspectAudio(std::chrono::microseconds pts,
                                      std::uint64_t generation) const

@@ -54,6 +54,21 @@ void staleGenerationDoesNotCompleteSeek()
     assert(!gate.shouldEmitCompletion());
 }
 
+void missingVideoPtsIsDiscardedEvenAtZeroTarget()
+{
+    media_sdk::SeekPrerollGate gate({
+        .target = 0ms,
+        .generation = 2,
+        .hasVideo = true,
+        .hasAudio = false,
+    });
+
+    const auto decision = gate.inspectMissingVideoPts(2);
+
+    assert(decision.action == media_sdk::SeekPrerollAction::Discard);
+    assert(!gate.shouldEmitCompletion());
+}
+
 void audioOnlyAcceptedFrameCompletesSeek()
 {
     media_sdk::SeekPrerollGate gate({
@@ -123,6 +138,7 @@ int main()
     videoBeforeTargetIsDiscarded();
     videoAtTargetIsAcceptedAndCompletesVideoOnlySeek();
     staleGenerationDoesNotCompleteSeek();
+    missingVideoPtsIsDiscardedEvenAtZeroTarget();
     audioOnlyAcceptedFrameCompletesSeek();
     discardLimitAllowsCompletionFallback();
     audioVideoSeekCompletesOnVideoButRetiresAfterAudio();
