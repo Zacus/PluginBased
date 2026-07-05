@@ -1,5 +1,7 @@
 #include "DecodeWorker.h"
 
+#include "SeekAudioTrimmer.h"
+
 #include <algorithm>
 #include <cstring>
 #include <utility>
@@ -519,25 +521,38 @@ Result<void> DecodeWorker::decodePacket(AVCodecContext* codecContext,
             }
 
             AudioFrame audioFrame = makeAudioFrame(std::move(frame));
-            emitEvent(makeEvent(PositionChangedEvent {
-                std::chrono::duration_cast<std::chrono::milliseconds>(audioFrame.pts()) }));
+            const bool pendingAudioSeek = m_seekGate && m_pendingSeekTarget.has_value();
+            if (pendingAudioSeek)
+            {
+                // seek 预滚期间先裁剪/丢弃目标前 samples，避免提前污染 position 和 runtime audio queue。
+                auto trimResult = trimAudioFrameForSeek(audioFrame, *m_pendingSeekTarget);
+                if (trimResult.status == SeekAudioTrimStatus::Discard)
+                    return StreamDecoder::FrameHandlerStatus::Continue;
+                if (trimResult.status == SeekAudioTrimStatus::Invalid)
+                {
+                    emitError(makeError(MediaErrorCode::DecodeFailed,
+                                        "Failed to trim audio for accurate seek"));
+                    return StreamDecoder::FrameHandlerStatus::Reject;
+                }
+                audioFrame = std::move(trimResult.frame);
+            }
+            else
+            {
+                emitEvent(makeEvent(PositionChangedEvent {
+                    std::chrono::duration_cast<std::chrono::milliseconds>(audioFrame.pts()) }));
+            }
             auto pushResult = m_frames.pushAudio(std::move(audioFrame), frameMetadata());
             const auto status = handleFramePushResult(pushResult);
+            if (pendingAudioSeek && isDeliveredFramePush(pushResult) && m_seekGate)
+            {
+                m_seekGate->markAudioAccepted();
+                emitSeekCompletedIfReady();
+            }
             if (prerollTarget == DecodePrerollTarget::Audio && isDeliveredFramePush(pushResult))
             {
                 if (prerollDelivered)
                     *prerollDelivered = true;
-                if (m_seekGate)
-                {
-                    m_seekGate->markAudioAccepted();
-                    emitSeekCompletedIfReady();
-                }
                 return StreamDecoder::FrameHandlerStatus::Stop;
-            }
-            if (m_seekGate && isDeliveredFramePush(pushResult))
-            {
-                m_seekGate->markAudioAccepted();
-                emitSeekCompletedIfReady();
             }
             return status;
         });

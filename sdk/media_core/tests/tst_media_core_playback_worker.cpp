@@ -350,6 +350,12 @@ public:
         return m_videoFrames;
     }
 
+    std::chrono::microseconds lastAudioPts() const
+    {
+        std::scoped_lock lock(m_mutex);
+        return m_lastAudioPts;
+    }
+
 private:
     mutable std::mutex m_mutex;
     std::condition_variable m_cv;
@@ -392,6 +398,11 @@ bool hasPositionAtOrAfter(const media_sdk::PlayerEvent& event,
     if (const auto* payload = std::get_if<media_sdk::PositionChangedEvent>(&event.payload))
         return payload->position >= position;
     return false;
+}
+
+bool hasPositionChanged(const media_sdk::PlayerEvent& event)
+{
+    return std::holds_alternative<media_sdk::PositionChangedEvent>(event.payload);
 }
 
 bool hasSeekCompletedAtOrAfter(const media_sdk::PlayerEvent& event,
@@ -570,6 +581,49 @@ void testPausedSeekDoesNotPrerollVideoBeforeTarget()
     std::filesystem::remove(samplePath);
 }
 
+void testSeekDoesNotPushAudioBeforeTarget()
+{
+    const auto samplePath = writeTinyWav();
+    RecordingSink sink;
+    RecordingFrameSink frames;
+    media_sdk::Player player({}, sink, frames);
+
+    assert(player.open(samplePath).ok());
+    assert(sink.waitFor(hasMediaInfo));
+
+    assert(player.seek(100ms).ok());
+    assert(frames.waitForAudioFrame());
+
+    assert(frames.lastAudioPts() >= 100ms);
+
+    player.stop();
+    std::filesystem::remove(samplePath);
+}
+
+void testSeekDoesNotEmitAudioPositionBeforeAcceptedFrame()
+{
+    const auto samplePath = writeTinyWav();
+    RecordingSink sink;
+    RecordingFrameSink frames;
+    media_sdk::Player player({}, sink, frames);
+
+    assert(player.open(samplePath).ok());
+    assert(sink.waitFor(hasMediaInfo));
+
+    frames.blockAudioFrames();
+    assert(player.seek(100ms).ok());
+    assert(frames.waitForBlockedAudioFrame());
+    assert(!sink.waitFor(hasPositionChanged, 100ms));
+
+    frames.releaseAudioFrames();
+    assert(sink.waitFor([](const media_sdk::PlayerEvent& event) {
+        return hasSeekCompletedAtOrAfter(event, 100ms);
+    }));
+
+    player.stop();
+    std::filesystem::remove(samplePath);
+}
+
 void testPausedVideoSeekPrerollSkipsAudioBackpressure()
 {
     const auto samplePath = writeAudioFirstVideoSample();
@@ -693,6 +747,8 @@ int main()
     testPausedSeekPrerollsFrameWithoutResumingPlayback();
     testSeekCompletionWaitsForAcceptedTargetFrame();
     testPausedSeekDoesNotPrerollVideoBeforeTarget();
+    testSeekDoesNotPushAudioBeforeTarget();
+    testSeekDoesNotEmitAudioPositionBeforeAcceptedFrame();
     testPausedVideoSeekPrerollSkipsAudioBackpressure();
     testBurstSeekCoalescesQueuedRequestsBeforeDecodeResumes();
     testStopEmitsStoppedState();
