@@ -4,10 +4,13 @@
 
 #include <cassert>
 #include <chrono>
+#include <condition_variable>
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
+#include <future>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <utility>
 #include <variant>
@@ -201,6 +204,20 @@ public:
         m_events.onEvent(eofEvent(metadata));
     }
 
+    void emitError(media_sdk::EventMetadata metadata, std::string message)
+    {
+        m_events.onEvent({
+            .metadata = metadata,
+            .payload = media_sdk::ErrorEvent {
+                .error = {
+                    .code = media_sdk::MediaErrorCode::DecodeFailed,
+                    .message = std::move(message),
+                    .detail = {},
+                },
+            },
+        });
+    }
+
     media_sdk::DecodeFramePushResult pushVideo(media_sdk::VideoFrame frame,
                                                media_sdk::DecodeFrameMetadata metadata)
     {
@@ -282,6 +299,11 @@ struct TestContext {
     std::shared_ptr<FakeRuntimePlayer> runtime;
     std::vector<media_sdk::runtime::RuntimePlayerConfig> runtimeConfigs;
     media_sdk::runtime::RuntimeDiagnostics diagnostics {};
+    std::mutex mutex;
+    std::condition_variable cv;
+    bool blockRuntimeOpen = false;
+    bool runtimeOpenEntered = false;
+    bool releaseRuntimeOpen = false;
 };
 
 media_sdk::Result<void> FakeCorePlayer::open(const std::filesystem::path& path)
@@ -322,6 +344,12 @@ media_sdk::Result<void> FakeRuntimePlayer::open()
 {
     ++openCount;
     m_context.operations.push_back("runtime.open");
+    std::unique_lock lock(m_context.mutex);
+    if (m_context.blockRuntimeOpen) {
+        m_context.runtimeOpenEntered = true;
+        m_context.cv.notify_all();
+        m_context.cv.wait(lock, [this]() { return m_context.releaseRuntimeOpen; });
+    }
     return success();
 }
 
@@ -748,6 +776,68 @@ void stopDuringPendingSeekSuppressesStaleSeekCompletionAndFrames()
     assert(stalePush.status == media_sdk::DecodeFramePushStatus::StaleGeneration);
 }
 
+void stopDuringRuntimeOpenDoesNotRepublishStoppedTimeline()
+{
+    TestContext context;
+    DummyAudioOutput audio;
+    DummyVideoPresenter presenter;
+    RecordingSessionEvents events;
+    auto session = makeSession(context, &audio, &presenter, &events);
+    assert(session->open("sample.mov").ok());
+    auto core = context.core;
+
+    {
+        std::lock_guard lock(context.mutex);
+        context.blockRuntimeOpen = true;
+    }
+
+    auto mediaInfoFuture = std::async(std::launch::async, [&core]() {
+        core->emitMediaInfo(coreTimeline(10, 3));
+    });
+
+    {
+        std::unique_lock lock(context.mutex);
+        assert(context.cv.wait_for(lock, 500ms, [&context]() {
+            return context.runtimeOpenEntered;
+        }));
+    }
+
+    session->stop();
+
+    {
+        std::lock_guard lock(context.mutex);
+        context.releaseRuntimeOpen = true;
+    }
+    context.cv.notify_all();
+    mediaInfoFuture.wait();
+
+    assert(session->timeline().sessionId == 0);
+    assert(events.events.empty());
+    const auto stalePush = core->pushVideo(makeVideoFrame(), {
+        .sessionId = 10,
+        .generation = 3,
+    });
+    assert(stalePush.status == media_sdk::DecodeFramePushStatus::StaleGeneration);
+}
+
+void stopSuppressesLateCoreError()
+{
+    TestContext context;
+    DummyAudioOutput audio;
+    DummyVideoPresenter presenter;
+    RecordingSessionEvents events;
+    auto session = makeSession(context, &audio, &presenter, &events);
+    assert(session->open("sample.mov").ok());
+    auto core = context.core;
+    context.core->emitMediaInfo(coreTimeline(10, 3));
+    events.events.clear();
+
+    session->stop();
+    core->emitError(coreTimeline(10, 3), "late decode failure");
+
+    assert(events.events.empty());
+}
+
 void openAnotherFileRejectsPreviousFileFramesAndEof()
 {
     TestContext context;
@@ -925,6 +1015,8 @@ int main()
     seekWhilePlayingCancelsOldFramePushUntilSeekCompletes();
     seekWhilePausedDoesNotResumeAfterSeekCompletion();
     stopDuringPendingSeekSuppressesStaleSeekCompletionAndFrames();
+    stopDuringRuntimeOpenDoesNotRepublishStoppedTimeline();
+    stopSuppressesLateCoreError();
     openAnotherFileRejectsPreviousFileFramesAndEof();
     coreEofWaitsForRuntimeEndOfStreamBeforeExternalEof();
     stopStopsCoreAndRuntimeExactlyOnce();

@@ -7,6 +7,7 @@
 
 #include "media_sdk/Error.h"
 
+#include <cstdint>
 #include <functional>
 #include <mutex>
 #include <optional>
@@ -293,8 +294,10 @@ struct PlaybackSession::Impl final
             std::lock_guard lock(m_mutex);
             currentPath = path;
             core = newCore;
+            ++lifecycleEpoch;
         }
 
+        eventRouter.beginOpen();
         const auto result = newCore->open(path);
         if (!result.ok())
             stop();
@@ -355,6 +358,7 @@ struct PlaybackSession::Impl final
             currentPath.clear();
             handledFallbackTimeline.reset();
             commandState = PlaybackCommandState::Idle;
+            ++lifecycleEpoch;
         }
 
         if (runtimeToStop)
@@ -417,6 +421,16 @@ struct PlaybackSession::Impl final
                                   "PlaybackSession requires video presenter");
         }
 
+        std::uint64_t expectedLifecycleEpoch = 0;
+        {
+            std::lock_guard lock(m_mutex);
+            if (!core || currentPath.empty()) {
+                return runtimeFailure(MediaErrorCode::InternalStateError,
+                                      "PlaybackSession runtime open was superseded");
+            }
+            expectedLifecycleEpoch = lifecycleEpoch;
+        }
+
         auto newRuntime = factories->createRuntime(
             runtimeConfigForMedia(config, info),
             runtime::RuntimePlayerDependencies {
@@ -434,13 +448,23 @@ struct PlaybackSession::Impl final
             return Result<runtime::RuntimeTimeline>::failure(openResult.error());
 
         const auto runtimeTimeline = newRuntime->timeline();
-        auto runtimeToSynchronize = newRuntime;
         std::shared_ptr<detail::IPlaybackSessionRuntimePlayer> previousRuntime;
+        std::shared_ptr<detail::IPlaybackSessionRuntimePlayer> runtimeToSynchronize;
+        bool superseded = false;
         {
             std::lock_guard lock(m_mutex);
-            previousRuntime = std::move(runtimePlayer);
-            runtimePlayer = std::move(newRuntime);
-            handledFallbackTimeline.reset();
+            superseded = expectedLifecycleEpoch != lifecycleEpoch || !core || currentPath.empty();
+            if (!superseded) {
+                runtimeToSynchronize = newRuntime;
+                previousRuntime = std::move(runtimePlayer);
+                runtimePlayer = std::move(newRuntime);
+                handledFallbackTimeline.reset();
+            }
+        }
+        if (superseded) {
+            newRuntime->stop();
+            return runtimeFailure(MediaErrorCode::InternalStateError,
+                                  "PlaybackSession runtime open was superseded");
         }
         if (previousRuntime)
             previousRuntime->stop();
@@ -705,6 +729,7 @@ private:
     std::shared_ptr<detail::IPlaybackSessionRuntimePlayer> runtimePlayer;
     std::filesystem::path currentPath;
     std::optional<runtime::RuntimeTimeline> handledFallbackTimeline;
+    std::uint64_t lifecycleEpoch = 0;
     PlaybackCommandState commandState = PlaybackCommandState::Idle;
 };
 

@@ -10,6 +10,7 @@
 
 #include <chrono>
 #include <concepts>
+#include <cstdint>
 #include <mutex>
 #include <optional>
 #include <variant>
@@ -39,6 +40,23 @@ public:
     {
     }
 
+    void beginOpen()
+    {
+        {
+            std::lock_guard lock(m_mutex);
+            ++m_acceptanceEpoch;
+            m_pendingSeekTimeline.reset();
+            m_pendingSeekTargetPosition.reset();
+            m_positionGateTarget.reset();
+            m_lastForwardedPosition.reset();
+            m_runtimeEofForwarded = false;
+            m_coreEofQueued = false;
+            m_suppressMediaInfoUntilSeek = false;
+            m_acceptsUnopenedErrors = true;
+        }
+        m_timeline.clear();
+    }
+
     void beginSeek(runtime::RuntimeTimeline runtimeTimeline)
     {
         beginSeekInternal(runtimeTimeline, std::nullopt, false);
@@ -65,6 +83,7 @@ public:
     {
         {
             std::lock_guard lock(m_mutex);
+            ++m_acceptanceEpoch;
             m_pendingSeekTimeline.reset();
             m_pendingSeekTargetPosition.reset();
             m_positionGateTarget.reset();
@@ -72,6 +91,7 @@ public:
             m_runtimeEofForwarded = false;
             m_coreEofQueued = false;
             m_suppressMediaInfoUntilSeek = false;
+            m_acceptsUnopenedErrors = false;
         }
         m_timeline.clear();
     }
@@ -136,6 +156,7 @@ private:
     {
         {
             std::lock_guard lock(m_mutex);
+            ++m_acceptanceEpoch;
             m_pendingSeekTimeline = runtimeTimeline;
             m_pendingSeekTargetPosition = targetPosition;
             m_positionGateTarget.reset();
@@ -143,16 +164,19 @@ private:
             m_runtimeEofForwarded = false;
             m_coreEofQueued = false;
             m_suppressMediaInfoUntilSeek = suppressMediaInfoUntilSeek;
+            m_acceptsUnopenedErrors = true;
         }
         m_timeline.clear();
     }
 
     void handleMediaInfo(const PlayerEvent& event, const MediaInfoEvent& payload)
     {
+        std::uint64_t mediaInfoEpoch = 0;
         {
             std::lock_guard lock(m_mutex);
-            if (m_suppressMediaInfoUntilSeek)
+            if (!m_acceptsUnopenedErrors || m_suppressMediaInfoUntilSeek)
                 return;
+            mediaInfoEpoch = ++m_acceptanceEpoch;
             m_pendingSeekTimeline.reset();
             m_pendingSeekTargetPosition.reset();
             m_positionGateTarget.reset();
@@ -164,6 +188,12 @@ private:
 
         const auto openResult = m_runtimeControl.openRuntimeForMedia(payload.info);
         if (!openResult.ok()) {
+            {
+                std::lock_guard lock(m_mutex);
+                if (m_acceptanceEpoch != mediaInfoEpoch)
+                    return;
+                m_acceptsUnopenedErrors = false;
+            }
             forward({
                 .metadata = event.metadata,
                 .payload = ErrorEvent {
@@ -173,7 +203,13 @@ private:
             return;
         }
 
-        m_timeline.acceptCoreTimeline(event.metadata, openResult.value());
+        {
+            std::lock_guard lock(m_mutex);
+            if (m_acceptanceEpoch != mediaInfoEpoch)
+                return;
+            m_timeline.acceptCoreTimeline(event.metadata, openResult.value());
+            m_acceptsUnopenedErrors = false;
+        }
         forward(event);
     }
 
@@ -247,7 +283,17 @@ private:
 
     void forwardErrorIfCurrentOrUnopened(const PlayerEvent& event)
     {
-        if (!m_timeline.hasAcceptedTimeline() || m_timeline.acceptsCoreEvent(event.metadata))
+        if (m_timeline.acceptsCoreEvent(event.metadata)) {
+            forward(event);
+            return;
+        }
+
+        bool shouldForward = false;
+        {
+            std::lock_guard lock(m_mutex);
+            shouldForward = m_acceptsUnopenedErrors && !m_timeline.hasAcceptedTimeline();
+        }
+        if (shouldForward)
             forward(event);
     }
 
@@ -292,9 +338,11 @@ private:
     std::optional<std::chrono::milliseconds> m_pendingSeekTargetPosition;
     std::optional<std::chrono::milliseconds> m_positionGateTarget;
     std::optional<std::chrono::milliseconds> m_lastForwardedPosition;
+    std::uint64_t m_acceptanceEpoch = 0;
     bool m_runtimeEofForwarded = false;
     bool m_coreEofQueued = false;
     bool m_suppressMediaInfoUntilSeek = false;
+    bool m_acceptsUnopenedErrors = false;
 };
 
 } // namespace media_sdk::session
