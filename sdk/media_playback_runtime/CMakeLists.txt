@@ -124,6 +124,46 @@ if(BUILD_TESTING)
         COMMAND $<TARGET_FILE:MediaSdkPlaybackRuntimeNativeFallbackControllerTest>
     )
 
+    add_executable(MediaSdkPlaybackRuntimeAudioSilenceTest
+        tests/tst_runtime_audio_silence.cpp
+    )
+    target_compile_features(MediaSdkPlaybackRuntimeAudioSilenceTest PRIVATE cxx_std_20)
+    set_target_properties(MediaSdkPlaybackRuntimeAudioSilenceTest PROPERTIES
+        CXX_EXTENSIONS OFF
+        AUTOMOC OFF
+        AUTOUIC OFF
+        AUTORCC OFF
+    )
+    target_include_directories(MediaSdkPlaybackRuntimeAudioSilenceTest PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/src"
+    )
+    target_link_libraries(MediaSdkPlaybackRuntimeAudioSilenceTest PRIVATE
+        media_sdk_playback_runtime
+    )
+    add_test(NAME media_sdk_playback_runtime_audio_silence
+        COMMAND $<TARGET_FILE:MediaSdkPlaybackRuntimeAudioSilenceTest>
+    )
+
+    add_executable(MediaSdkPlaybackRuntimeSeekClockAnchorTest
+        tests/tst_seek_clock_anchor.cpp
+    )
+    target_compile_features(MediaSdkPlaybackRuntimeSeekClockAnchorTest PRIVATE cxx_std_20)
+    set_target_properties(MediaSdkPlaybackRuntimeSeekClockAnchorTest PROPERTIES
+        CXX_EXTENSIONS OFF
+        AUTOMOC OFF
+        AUTOUIC OFF
+        AUTORCC OFF
+    )
+    target_include_directories(MediaSdkPlaybackRuntimeSeekClockAnchorTest PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/src"
+    )
+    target_link_libraries(MediaSdkPlaybackRuntimeSeekClockAnchorTest PRIVATE
+        media_sdk_playback_runtime
+    )
+    add_test(NAME media_sdk_playback_runtime_seek_clock_anchor
+        COMMAND $<TARGET_FILE:MediaSdkPlaybackRuntimeSeekClockAnchorTest>
+    )
+
     add_executable(MediaSdkPlaybackRuntimePlayerMockTest
         tests/tst_runtime_player_mock.cpp
     )
