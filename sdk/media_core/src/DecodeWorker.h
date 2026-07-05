@@ -137,6 +137,7 @@ private:
     void decodeUntilBlocked(WorkerStopToken stopToken);
     void decodeSeekPreroll(WorkerStopToken stopToken);
     bool handleSeek(std::chrono::milliseconds position);
+    int seekDemuxer(std::chrono::milliseconds position);
     void beginAccurateSeek(std::chrono::milliseconds position);
     void emitSeekCompletedIfReady();
     void emitSeekFallbackCompletion();

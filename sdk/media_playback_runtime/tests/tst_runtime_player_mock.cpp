@@ -529,6 +529,27 @@ void timelineTracksSeekGeneration()
     assert(timeline.generation == 2);
 }
 
+void seekKeepsLastPresentedFrameUntilTargetFrameArrives()
+{
+    MockAudioOutput audio;
+    audio.setClock(100ms, 1);
+    MockPresenter presenter;
+    auto player = makePlayer(audio, presenter);
+    assert(player.open().ok());
+
+    discardFramePushResult(player.enqueueVideo(runtimeVideo(1, 1, 100ms)));
+    assert(waitUntil([&presenter]() { return presenter.presentCount == 1; }));
+
+    player.seek(500ms);
+    assert(presenter.clearCount == 0);
+    assert(presenter.presentCount == 1);
+
+    audio.setClock(500ms, 2);
+    discardFramePushResult(player.enqueueVideo(runtimeVideo(1, 2, 500ms)));
+    assert(waitUntil([&presenter]() { return presenter.presentCount == 2; }));
+    assert(presenter.clearCount == 0);
+}
+
 void audioFramesAreWrittenToInjectedAudioOutput()
 {
     MockAudioOutput audio;
@@ -1186,7 +1207,7 @@ void oldGenerationDeviceLostDoesNotInterruptCurrentPlayback()
     assert(player.diagnostics().nativeFallbacks == 0);
     assert(events.fallbackRequestCount == 0);
     assert(audio.pauseCount == 0);
-    assert(presenter.clearCount == 1);
+    assert(presenter.clearCount == 0);
 }
 
 void fallbackSeekCompletionResumesAudioAndVideoScheduling()
@@ -1225,6 +1246,7 @@ int main()
     openStartsNewSessionAndResetsQueues();
     openFailsAndClosesAudioWhenResumeFails();
     timelineTracksSeekGeneration();
+    seekKeepsLastPresentedFrameUntilTargetFrameArrives();
     audioFramesAreWrittenToInjectedAudioOutput();
     audioControlsApplyGainAndMuteBeforeAudioWrite();
     audioControlsApplyGainForInt16Audio();

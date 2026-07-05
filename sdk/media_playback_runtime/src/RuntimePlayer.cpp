@@ -418,7 +418,7 @@ struct RuntimePlayer::Impl {
         videoQueue.abort();
         audioQueue.reset(activeSession, nextGeneration);
         videoQueue.reset(activeSession, nextGeneration);
-        dependencies.videoPresenter->clear();
+        // seek 期间保留上一帧，等目标侧新帧提交后自然替换，避免精确预滚或异常 EOF 阶段黑屏。
         const auto flushResult = dependencies.audioOutput->flush();
         if (!flushResult.ok())
             reportRuntimeError(flushResult.error());

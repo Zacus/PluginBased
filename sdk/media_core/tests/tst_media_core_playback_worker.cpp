@@ -640,7 +640,7 @@ void testPausedSeekPrerollsFrameWithoutResumingPlayback()
     std::filesystem::remove(samplePath);
 }
 
-void testSeekCompletionWaitsForAcceptedTargetFrame()
+void testSeekCompletionEmitsWhenTargetFrameReachesDeliveryBoundary()
 {
     const auto samplePath = writeTinyWav();
     RecordingSink sink;
@@ -653,14 +653,13 @@ void testSeekCompletionWaitsForAcceptedTargetFrame()
     frames.blockAudioFrames();
     assert(player.seek(100ms).ok());
     assert(frames.waitForBlockedAudioFrame());
-    assert(!sink.waitFor([](const media_sdk::PlayerEvent& event) {
+
+    assert(sink.waitFor([](const media_sdk::PlayerEvent& event) {
         return hasSeekCompletedAtOrAfter(event, 100ms);
     }, 100ms));
 
     frames.releaseAudioFrames();
-    assert(sink.waitFor([](const media_sdk::PlayerEvent& event) {
-        return hasSeekCompletedAtOrAfter(event, 100ms);
-    }));
+    assert(frames.waitForAudioFrame());
 
     player.stop();
     std::filesystem::remove(samplePath);
@@ -705,7 +704,7 @@ void testSeekDoesNotPushAudioBeforeTarget()
     std::filesystem::remove(samplePath);
 }
 
-void testSeekDoesNotEmitAudioPositionBeforeAcceptedFrame()
+void testSeekEmitsAudioPositionWhenTargetFrameReachesDeliveryBoundary()
 {
     const auto samplePath = writeTinyWav();
     RecordingSink sink;
@@ -718,7 +717,7 @@ void testSeekDoesNotEmitAudioPositionBeforeAcceptedFrame()
     frames.blockAudioFrames();
     assert(player.seek(100ms).ok());
     assert(frames.waitForBlockedAudioFrame());
-    assert(!sink.waitFor(hasPositionChanged, 100ms));
+    assert(sink.waitFor(hasPositionChanged, 100ms));
 
     frames.releaseAudioFrames();
     assert(sink.waitFor([](const media_sdk::PlayerEvent& event) {
@@ -880,10 +879,10 @@ int main()
     testOpenPlayReachesEof();
     testSeekEmitsPositionAndContinuesPlayback();
     testPausedSeekPrerollsFrameWithoutResumingPlayback();
-    testSeekCompletionWaitsForAcceptedTargetFrame();
+    testSeekCompletionEmitsWhenTargetFrameReachesDeliveryBoundary();
     testPausedSeekDoesNotPrerollVideoBeforeTarget();
     testSeekDoesNotPushAudioBeforeTarget();
-    testSeekDoesNotEmitAudioPositionBeforeAcceptedFrame();
+    testSeekEmitsAudioPositionWhenTargetFrameReachesDeliveryBoundary();
     testPausedVideoSeekPrerollSkipsAudioBackpressure();
     testPlayingSeekDiscardLimitKeepsFilteringUntilTargetAudio();
     testBurstSeekCoalescesQueuedRequestsBeforeDecodeResumes();
