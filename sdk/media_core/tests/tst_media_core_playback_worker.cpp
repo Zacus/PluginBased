@@ -206,6 +206,59 @@ std::filesystem::path writeLongGopVideoSample()
     return path;
 }
 
+std::filesystem::path writeSparseKeyframeVideoSample()
+{
+    const auto path = std::filesystem::temp_directory_path()
+        / ("media_sdk_core_sparse_keyframe_video_" +
+           std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()) + ".nut");
+
+    AVFormatContext* rawContext = nullptr;
+    assert(avformat_alloc_output_context2(&rawContext, nullptr, "nut", path.string().c_str()) >= 0);
+    assert(rawContext);
+
+    auto* video = avformat_new_stream(rawContext, nullptr);
+    assert(video);
+    video->id = 0;
+    video->time_base = AVRational { 1, 25 };
+    video->codecpar->codec_type = AVMEDIA_TYPE_VIDEO;
+    video->codecpar->codec_id = AV_CODEC_ID_RAWVIDEO;
+    video->codecpar->format = AV_PIX_FMT_YUYV422;
+    video->codecpar->width = 16;
+    video->codecpar->height = 16;
+
+    assert(avio_open(&rawContext->pb, path.string().c_str(), AVIO_FLAG_WRITE) >= 0);
+    assert(avformat_write_header(rawContext, nullptr) >= 0);
+
+    std::vector<std::byte> videoFrame(16 * 16 * 2);
+    for (std::size_t i = 0; i < videoFrame.size(); i += 4) {
+        videoFrame[i] = std::byte { 0x10 };
+        videoFrame[i + 1] = std::byte { 0x80 };
+        videoFrame[i + 2] = std::byte { 0x10 };
+        videoFrame[i + 3] = std::byte { 0x80 };
+    }
+
+    for (int frameIndex = 0; frameIndex < 310; ++frameIndex)
+    {
+        AVPacket* packet = av_packet_alloc();
+        assert(packet);
+        assert(av_new_packet(packet, static_cast<int>(videoFrame.size())) >= 0);
+        std::memcpy(packet->data, videoFrame.data(), videoFrame.size());
+        packet->stream_index = video->index;
+        packet->pts = frameIndex;
+        packet->dts = frameIndex;
+        packet->duration = 1;
+        if (frameIndex == 0)
+            packet->flags |= AV_PKT_FLAG_KEY;
+        assert(av_interleaved_write_frame(rawContext, packet) >= 0);
+        av_packet_free(&packet);
+    }
+
+    assert(av_write_trailer(rawContext) >= 0);
+    avio_closep(&rawContext->pb);
+    avformat_free_context(rawContext);
+    return path;
+}
+
 class RecordingSink final : public media_sdk::IEventSink
 {
 public:
@@ -279,6 +332,21 @@ public:
         media_sdk::VideoFrame frame,
         media_sdk::DecodeFrameMetadata metadata) override
     {
+        bool shouldBlock = false;
+        {
+            std::scoped_lock lock(m_mutex);
+            shouldBlock = m_blockVideoFrames;
+            if (shouldBlock)
+                m_videoFrameBlocked = true;
+        }
+        m_cv.notify_all();
+
+        if (shouldBlock)
+        {
+            std::unique_lock lock(m_mutex);
+            m_cv.wait(lock, [&]() { return !m_blockVideoFrames; });
+        }
+
         std::scoped_lock lock(m_mutex);
         ++m_videoFrames;
         m_lastSessionId = metadata.sessionId;
@@ -294,6 +362,30 @@ public:
         return m_cv.wait_for(lock, timeout, [&]() {
             return m_audioFrames > 0;
         });
+    }
+
+    void blockVideoFrames()
+    {
+        std::scoped_lock lock(m_mutex);
+        m_blockVideoFrames = true;
+        m_videoFrameBlocked = false;
+    }
+
+    bool waitForBlockedVideoFrame(std::chrono::milliseconds timeout = 3s)
+    {
+        std::unique_lock lock(m_mutex);
+        return m_cv.wait_for(lock, timeout, [&]() {
+            return m_videoFrameBlocked;
+        });
+    }
+
+    void releaseVideoFrames()
+    {
+        {
+            std::scoped_lock lock(m_mutex);
+            m_blockVideoFrames = false;
+        }
+        m_cv.notify_all();
     }
 
     bool waitForVideoFrame(std::chrono::milliseconds timeout = 3s)
@@ -368,6 +460,8 @@ private:
     bool m_blockAudioFrames = false;
     bool m_audioFrameBlocked = false;
     bool m_cancelAudioFrames = false;
+    bool m_blockVideoFrames = false;
+    bool m_videoFrameBlocked = false;
 };
 
 bool hasState(const media_sdk::PlayerEvent& event, media_sdk::PlayerState state)
@@ -651,6 +745,37 @@ void testPausedVideoSeekPrerollSkipsAudioBackpressure()
     std::filesystem::remove(samplePath);
 }
 
+void testPlayingSeekDiscardLimitStopsBeforeUnguardedVideo()
+{
+    const auto samplePath = writeSparseKeyframeVideoSample();
+    RecordingSink sink;
+    RecordingFrameSink frames;
+    media_sdk::PlayerConfig config;
+    config.accurateSeekMaxDiscardedVideoFrames = 2;
+    media_sdk::Player player(config, sink, frames);
+
+    assert(player.open(samplePath).ok());
+    assert(sink.waitFor(hasMediaInfo));
+
+    frames.blockVideoFrames();
+    player.play();
+    assert(frames.waitForBlockedVideoFrame());
+
+    assert(player.seek(12200ms).ok());
+    frames.releaseVideoFrames();
+
+    assert(sink.waitFor([](const media_sdk::PlayerEvent& event) {
+        return hasSeekCompletedAtOrAfter(event, 12200ms);
+    }));
+    assert(sink.waitFor([](const media_sdk::PlayerEvent& event) {
+        return hasState(event, media_sdk::PlayerState::Finished);
+    }));
+    assert(frames.videoFrames() == 1);
+
+    player.stop();
+    std::filesystem::remove(samplePath);
+}
+
 void testBurstSeekCoalescesQueuedRequestsBeforeDecodeResumes()
 {
     const auto samplePath = writeTinyWav();
@@ -754,6 +879,7 @@ int main()
     testSeekDoesNotPushAudioBeforeTarget();
     testSeekDoesNotEmitAudioPositionBeforeAcceptedFrame();
     testPausedVideoSeekPrerollSkipsAudioBackpressure();
+    testPlayingSeekDiscardLimitStopsBeforeUnguardedVideo();
     testBurstSeekCoalescesQueuedRequestsBeforeDecodeResumes();
     testStopEmitsStoppedState();
     testCancelledFramePushDuringStopDoesNotEmitDecodeError();

@@ -446,6 +446,8 @@ void DecodeWorker::beginAccurateSeek(std::chrono::milliseconds position)
         .generation = m_generation,
         .hasVideo = m_media.videoStreamIndex >= 0 && m_media.videoCodecContext,
         .hasAudio = m_media.audioStreamIndex >= 0 && m_media.audioCodecContext,
+        .maxDiscardedVideoFrames = m_config.accurateSeekMaxDiscardedVideoFrames,
+        .maxDiscardedAudioFrames = m_config.accurateSeekMaxDiscardedAudioFrames,
     });
 }
 
@@ -477,6 +479,17 @@ void DecodeWorker::emitPendingSeekFallbackCompletion()
     m_seekGate->markCompletionSent();
     m_seekGate.reset();
     m_pendingSeekTarget.reset();
+}
+
+void DecodeWorker::finishPlayingAfterSeekFallback()
+{
+    if (!m_playing)
+        return;
+
+    // fallback 已经清理 seek gate；播放态必须停止本轮解码，避免后续帧绕过精确 seek 过滤。
+    emitEvent(makeEvent(EndOfFileEvent {}));
+    m_playing = false;
+    emitState(PlayerState::Finished);
 }
 
 void DecodeWorker::closeMedia()
@@ -525,6 +538,7 @@ Result<void> DecodeWorker::decodePacket(AVCodecContext* codecContext,
                         {
                             // 丢弃过多通常说明目标侧无可用帧，按目标时间完成并退出本轮预滚。
                             emitPendingSeekFallbackCompletion();
+                            finishPlayingAfterSeekFallback();
                             if (prerollDelivered)
                                 *prerollDelivered = true;
                             return StreamDecoder::FrameHandlerStatus::Stop;
@@ -580,6 +594,7 @@ Result<void> DecodeWorker::decodePacket(AVCodecContext* codecContext,
                         {
                             // 音频连续落在目标前时也要有边界，不能无限等待目标侧 sample。
                             emitPendingSeekFallbackCompletion();
+                            finishPlayingAfterSeekFallback();
                             if (prerollDelivered)
                                 *prerollDelivered = true;
                             return StreamDecoder::FrameHandlerStatus::Stop;
