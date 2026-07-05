@@ -413,9 +413,35 @@ bool DecodeWorker::handleSeek(std::chrono::milliseconds position)
         avcodec_flush_buffers(m_media.audioCodecContext.get());
     ++m_generation;
 
+    beginAccurateSeek(position);
+    return true;
+}
+
+void DecodeWorker::beginAccurateSeek(std::chrono::milliseconds position)
+{
+    const auto target = std::chrono::duration_cast<std::chrono::microseconds>(position);
+    m_pendingSeekTarget = target;
+    m_seekGate.emplace(SeekPrerollGateConfig {
+        .target = target,
+        .generation = m_generation,
+        .hasVideo = m_media.videoStreamIndex >= 0 && m_media.videoCodecContext,
+        .hasAudio = m_media.audioStreamIndex >= 0 && m_media.audioCodecContext,
+    });
+}
+
+void DecodeWorker::emitSeekCompletedIfReady()
+{
+    if (!m_seekGate || !m_seekGate->shouldEmitCompletion())
+        return;
+
+    // seek 完成事件代表目标侧媒体已经进入交付路径，而不是 av_seek_frame 已返回。
+    const auto completedTarget = m_pendingSeekTarget.value_or(m_seekGate->completionPosition());
+    const auto position = std::chrono::duration_cast<std::chrono::milliseconds>(completedTarget);
     emitEvent(makeEvent(SeekCompletedEvent { position }));
     emitEvent(makeEvent(PositionChangedEvent { position }));
-    return true;
+    m_seekGate->markCompletionSent();
+    m_seekGate.reset();
+    m_pendingSeekTarget.reset();
 }
 
 void DecodeWorker::closeMedia()
@@ -428,6 +454,8 @@ void DecodeWorker::closeMedia()
     m_hasMedia = false;
     m_playing = false;
     m_decodeStats = {};
+    m_seekGate.reset();
+    m_pendingSeekTarget.reset();
 }
 
 Result<void> DecodeWorker::decodePacket(AVCodecContext* codecContext,
@@ -461,7 +489,17 @@ Result<void> DecodeWorker::decodePacket(AVCodecContext* codecContext,
                 {
                     if (prerollDelivered)
                         *prerollDelivered = true;
+                    if (m_seekGate)
+                    {
+                        m_seekGate->markVideoAccepted();
+                        emitSeekCompletedIfReady();
+                    }
                     return StreamDecoder::FrameHandlerStatus::Stop;
+                }
+                if (m_seekGate && isDeliveredFramePush(pushResult))
+                {
+                    m_seekGate->markVideoAccepted();
+                    emitSeekCompletedIfReady();
                 }
                 return status;
             }
@@ -475,7 +513,17 @@ Result<void> DecodeWorker::decodePacket(AVCodecContext* codecContext,
             {
                 if (prerollDelivered)
                     *prerollDelivered = true;
+                if (m_seekGate)
+                {
+                    m_seekGate->markAudioAccepted();
+                    emitSeekCompletedIfReady();
+                }
                 return StreamDecoder::FrameHandlerStatus::Stop;
+            }
+            if (m_seekGate && isDeliveredFramePush(pushResult))
+            {
+                m_seekGate->markAudioAccepted();
+                emitSeekCompletedIfReady();
             }
             return status;
         });

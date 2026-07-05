@@ -1,11 +1,13 @@
 #pragma once
 
 #include "Demuxer.h"
+#include "SeekPrerollGate.h"
 #include "StreamDecoder.h"
 #include "VideoFrameProcessor.h"
 #include "media_sdk/DecodeFrameSink.h"
 #include "media_sdk/Player.h"
 
+#include <atomic>
 #include <chrono>
 #include <condition_variable>
 #include <deque>
@@ -13,8 +15,8 @@
 #include <functional>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <thread>
-#include <atomic>
 #include <utility>
 
 #if defined(__cpp_lib_jthread) && __cpp_lib_jthread >= 201911L
@@ -135,6 +137,8 @@ private:
     void decodeUntilBlocked(WorkerStopToken stopToken);
     void decodeSeekPreroll(WorkerStopToken stopToken);
     bool handleSeek(std::chrono::milliseconds position);
+    void beginAccurateSeek(std::chrono::milliseconds position);
+    void emitSeekCompletedIfReady();
     void closeMedia();
 
     Result<void> decodePacket(AVCodecContext* codecContext,
@@ -170,6 +174,8 @@ private:
     VideoFrameProcessor m_videoFrameProcessor;
     DecodePerformanceStats m_decodeStats;
     OpenedMedia m_media;
+    std::optional<SeekPrerollGate> m_seekGate;
+    std::optional<std::chrono::microseconds> m_pendingSeekTarget;
     std::uint64_t m_sessionId = 0;
     std::uint64_t m_generation = 0;
     bool m_hasMedia = false;
