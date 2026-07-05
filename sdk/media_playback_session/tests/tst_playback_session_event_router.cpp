@@ -173,6 +173,7 @@ void mediaInfoOpensRuntimeBeforeExternalFrameAcceptance()
         timeline,
         &events);
 
+    router.beginOpen();
     router.onEvent(mediaInfoEvent(coreTimeline(10, 3)));
 
     assert(runtime.openCount == 1);
@@ -197,6 +198,7 @@ void positionChangedIsForwardedOnlyForAcceptedCoreTimeline()
         timeline,
         &events);
 
+    router.beginOpen();
     router.onEvent(mediaInfoEvent(coreTimeline(10, 3)));
     events.events.clear();
 
@@ -222,6 +224,7 @@ void seekCompletedCompletesRuntimeTimelineAndResumesFrameAcceptance()
         timeline,
         &events);
 
+    router.beginOpen();
     router.onEvent(mediaInfoEvent(coreTimeline(10, 3)));
     router.beginSeek(runtimeTimeline(21, 8));
     events.events.clear();
@@ -252,6 +255,7 @@ void seekForwardsRuntimeClockPositionsInsteadOfDecoderPositions()
         timeline,
         &events);
 
+    router.beginOpen();
     router.onEvent(mediaInfoEvent(coreTimeline(10, 3)));
     router.beginSeek(runtimeTimeline(21, 8), 1200ms);
     runtime.nextClock.generation = 8;
@@ -295,6 +299,7 @@ void coreEndOfFileEnqueuesRuntimeEofWithoutExternalEof()
         timeline,
         &events);
 
+    router.beginOpen();
     router.onEvent(mediaInfoEvent(coreTimeline(10, 3)));
     events.events.clear();
 
@@ -316,6 +321,7 @@ void runtimeEndOfStreamPresentedEmitsExternalEof()
         timeline,
         &events);
 
+    router.beginOpen();
     router.onEvent(mediaInfoEvent(coreTimeline(10, 3)));
     router.onEvent(eofEvent(coreTimeline(10, 3)));
     events.events.clear();
@@ -343,6 +349,7 @@ void runtimeEndOfStreamPresentedWithoutCoreEofIsIgnored()
         timeline,
         &events);
 
+    router.beginOpen();
     router.onEvent(mediaInfoEvent(coreTimeline(10, 3)));
     events.events.clear();
 
@@ -361,6 +368,7 @@ void beginSeekClearsQueuedCoreEofUntilNewRuntimeDrain()
         timeline,
         &events);
 
+    router.beginOpen();
     router.onEvent(mediaInfoEvent(coreTimeline(10, 3)));
     router.onEvent(eofEvent(coreTimeline(10, 3)));
     assert(runtime.eofCount == 1);
@@ -389,6 +397,7 @@ void cancelFrameAcceptanceDropsPendingSeekCompletion()
         timeline,
         &events);
 
+    router.beginOpen();
     router.onEvent(mediaInfoEvent(coreTimeline(10, 3)));
     router.beginSeek(runtimeTimeline(21, 8));
     router.cancelFrameAcceptance();
@@ -411,10 +420,12 @@ void staleErrorIsIgnoredAfterTimelineIsAccepted()
         timeline,
         &events);
 
+    router.beginOpen();
     router.onEvent(errorEvent(coreTimeline(1, 1)));
     assert(events.events.size() == 1);
     assert(std::holds_alternative<media_sdk::ErrorEvent>(events.events.back().payload));
 
+    router.beginOpen();
     router.onEvent(mediaInfoEvent(coreTimeline(10, 3)));
     events.events.clear();
 
