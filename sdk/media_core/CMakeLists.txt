@@ -147,4 +147,23 @@ if(BUILD_TESTING)
     add_test(NAME media_sdk_core_seek_preroll_gate
         COMMAND $<TARGET_FILE:MediaSdkCoreSeekPrerollGateTest>
     )
+
+    add_executable(MediaSdkCoreSeekAudioTrimmerTest
+        tests/tst_media_core_seek_audio_trimmer.cpp
+    )
+    target_compile_features(MediaSdkCoreSeekAudioTrimmerTest PRIVATE cxx_std_20)
+    set_target_properties(MediaSdkCoreSeekAudioTrimmerTest PROPERTIES
+        CXX_EXTENSIONS OFF
+        AUTOMOC OFF
+        AUTOUIC OFF
+        AUTORCC OFF
+    )
+    target_include_directories(MediaSdkCoreSeekAudioTrimmerTest PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/include"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src"
+    )
+    target_link_libraries(MediaSdkCoreSeekAudioTrimmerTest PRIVATE media_sdk_core)
+    add_test(NAME media_sdk_core_seek_audio_trimmer
+        COMMAND $<TARGET_FILE:MediaSdkCoreSeekAudioTrimmerTest>
+    )
 endif()
