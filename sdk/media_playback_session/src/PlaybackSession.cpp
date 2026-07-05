@@ -357,10 +357,10 @@ struct PlaybackSession::Impl final
             commandState = PlaybackCommandState::Idle;
         }
 
-        if (coreToStop)
-            coreToStop->stop();
         if (runtimeToStop)
             runtimeToStop->stop();
+        if (coreToStop)
+            coreToStop->stop();
     }
 
     Result<void> seek(std::chrono::milliseconds position)

@@ -451,10 +451,11 @@ struct RuntimePlayer::Impl {
         videoQueue.abort();
         m_controlChanged.notify_all();
         m_presentCapacityChanged.notify_all();
-        joinWorkers();
 
         dependencies.audioOutput->pause();
         (void)dependencies.audioOutput->flush();
+        joinWorkers();
+
         dependencies.audioOutput->close();
         dependencies.videoPresenter->clear();
 

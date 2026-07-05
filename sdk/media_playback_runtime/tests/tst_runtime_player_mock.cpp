@@ -65,19 +65,31 @@ public:
     }
     media_sdk::Result<void> flush() override
     {
-        std::lock_guard lock(mutex);
-        ++flushCount;
-        if (failFlush) {
-            return media_sdk::Result<void>::failure({
-                .code = media_sdk::MediaErrorCode::InternalStateError,
-                .message = "audio flush failed",
-                .detail = {},
-            });
+        {
+            std::lock_guard lock(mutex);
+            ++flushCount;
+            if (failFlush) {
+                return media_sdk::Result<void>::failure({
+                    .code = media_sdk::MediaErrorCode::InternalStateError,
+                    .message = "audio flush failed",
+                    .detail = {},
+                });
+            }
+            blockWrites = false;
+            ++snapshot.generation;
         }
-        ++snapshot.generation;
+        cv.notify_all();
         return media_sdk::Result<void>::success();
     }
-    void close() override { ++closeCount; }
+    void close() override
+    {
+        {
+            std::lock_guard lock(mutex);
+            ++closeCount;
+            blockWrites = false;
+        }
+        cv.notify_all();
+    }
 
     void setClock(std::chrono::microseconds position, media_sdk::runtime::Generation generation)
     {
@@ -997,6 +1009,28 @@ void stopAbortsQueuesPausesAudioClearsPresenterAndReturnsIdle()
     assert(audio.writeCount == 0);
 }
 
+void stopUnblocksPausedAudioWriteBeforeJoiningWorkers()
+{
+    MockAudioOutput audio;
+    audio.blockAudioWrites();
+    MockPresenter presenter;
+    auto player = makePlayer(audio, presenter);
+    assert(player.open().ok());
+
+    discardFramePushResult(player.enqueueAudio(runtimeAudio(1, 1, 10ms)));
+    assert(audio.waitForBlockedWrite());
+    player.pause();
+
+    auto future = std::async(std::launch::async, [&player]() {
+        player.stop();
+    });
+
+    assert(future.wait_for(500ms) == std::future_status::ready);
+    assert(audio.pauseCount >= 1);
+    assert(audio.flushCount == 1);
+    assert(audio.closeCount == 1);
+}
+
 void nativePresenterFailureRunsFullFallbackTransition()
 {
     MockAudioOutput audio;
@@ -1210,6 +1244,7 @@ int main()
     pausedSeekPresentsOnePrerollFrameWithoutResumingAudio();
     pausedPlaybackCancelsLateVideoPushWithoutDecodeError();
     stopAbortsQueuesPausesAudioClearsPresenterAndReturnsIdle();
+    stopUnblocksPausedAudioWriteBeforeJoiningWorkers();
     nativePresenterFailureRunsFullFallbackTransition();
     nativeDiagnosticsTrackZeroCopySuccessWithoutCpuCopy();
     currentGenerationDeviceLostPausesAudioFlushesQueuesClearsPresenterAndRequestsCpuOnlyDecode();

@@ -810,11 +810,16 @@ void stopStopsCoreAndRuntimeExactlyOnce()
     auto session = makeSession(context, &audio, &presenter);
     assert(session->open("sample.mov").ok());
     context.core->emitMediaInfo(coreTimeline(10, 3));
+    context.operations.clear();
 
     session->stop();
 
     assert(context.core->stopCount == 1);
     assert(context.runtime->stopCount == 1);
+    assert((context.operations == std::vector<std::string> {
+        "runtime.stop",
+        "core.stop",
+    }));
 
     session.reset();
     assert(context.core->stopCount == 1);
