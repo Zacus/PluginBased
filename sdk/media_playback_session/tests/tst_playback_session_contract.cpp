@@ -598,6 +598,11 @@ void seekCallsRuntimeSeekBeforeCoreSeek()
 
     context.core->emitSeekCompleted(coreTimeline(10, 4), 750ms);
     assert(context.runtime->completeSeekCount == 1);
+    assert((context.operations == std::vector<std::string> {
+        "runtime.seek",
+        "core.seek",
+        "runtime.completeSeek",
+    }));
     assert(events.events.size() == 2);
     assert(std::holds_alternative<media_sdk::SeekCompletedEvent>(events.events.back().payload));
 }

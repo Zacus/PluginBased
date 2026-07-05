@@ -688,6 +688,7 @@ void testBurstSeekCoalescesQueuedRequestsBeforeDecodeResumes()
 
     assert(seekCompletedCount == 1);
     assert(lastSeekPosition == 200ms);
+    assert(frames.lastAudioPts() >= 200ms);
 
     std::filesystem::remove(samplePath);
 }
