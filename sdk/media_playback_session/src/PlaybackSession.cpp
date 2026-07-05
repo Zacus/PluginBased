@@ -555,6 +555,17 @@ private:
         notifyRuntimeDiagnostics();
     }
 
+    void onRuntimeError(MediaError error) override
+    {
+        const auto runtime = currentRuntimePlayer();
+        if (!runtime)
+            return;
+        const auto coreMetadata = timelineState.coreForRuntimeTimeline(runtime->timeline());
+        if (!coreMetadata.has_value())
+            return;
+        emitError(*coreMetadata, std::move(error));
+    }
+
     void handleFallbackToCpu(runtime::RuntimeFallbackAction action)
     {
         const runtime::RuntimeTimeline fallbackTimeline {

@@ -419,7 +419,9 @@ struct RuntimePlayer::Impl {
         audioQueue.reset(activeSession, nextGeneration);
         videoQueue.reset(activeSession, nextGeneration);
         dependencies.videoPresenter->clear();
-        dependencies.audioOutput->flush();
+        const auto flushResult = dependencies.audioOutput->flush();
+        if (!flushResult.ok())
+            reportRuntimeError(flushResult.error());
         m_controlChanged.notify_all();
         m_presentCapacityChanged.notify_all();
     }
@@ -452,7 +454,7 @@ struct RuntimePlayer::Impl {
         joinWorkers();
 
         dependencies.audioOutput->pause();
-        dependencies.audioOutput->flush();
+        (void)dependencies.audioOutput->flush();
         dependencies.audioOutput->close();
         dependencies.videoPresenter->clear();
 
@@ -811,8 +813,11 @@ struct RuntimePlayer::Impl {
 
         if (transition.pauseAudio)
             dependencies.audioOutput->pause();
-        if (transition.flushAudio)
-            dependencies.audioOutput->flush();
+        if (transition.flushAudio) {
+            const auto flushResult = dependencies.audioOutput->flush();
+            if (!flushResult.ok())
+                reportRuntimeError(flushResult.error());
+        }
         if (transition.abortQueues) {
             audioQueue.abort();
             videoQueue.abort();
@@ -825,6 +830,12 @@ struct RuntimePlayer::Impl {
             dependencies.events->onFallbackToCpuRequested(fallbackAction);
         m_controlChanged.notify_all();
         m_presentCapacityChanged.notify_all();
+    }
+
+    void reportRuntimeError(MediaError error) const
+    {
+        if (dependencies.events)
+            dependencies.events->onRuntimeError(std::move(error));
     }
 
     bool isRunning() const

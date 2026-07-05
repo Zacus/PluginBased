@@ -115,7 +115,10 @@ public:
         return success();
     }
 
-    void flush() override {}
+    media_sdk::Result<void> flush() override
+    {
+        return media_sdk::Result<void>::success();
+    }
     void close() override {}
 };
 

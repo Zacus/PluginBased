@@ -24,7 +24,8 @@ public:
     void pause() override;
     [[nodiscard("CoreAudio resume starts the native audio device and can fail")]]
     Result<void> resume() override;
-    void flush() override;
+    [[nodiscard("CoreAudio flush can fail when the native audio device cannot restart")]]
+    Result<void> flush() override;
     void close() override;
 
 private:

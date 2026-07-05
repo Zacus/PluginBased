@@ -116,7 +116,10 @@ public:
         return success();
     }
 
-    void flush() override {}
+    media_sdk::Result<void> flush() override
+    {
+        return media_sdk::Result<void>::success();
+    }
     void close() override {}
 };
 
@@ -246,6 +249,11 @@ public:
     void triggerEndOfStreamPresented()
     {
         m_events->onEndOfStreamPresented(currentTimeline);
+    }
+
+    void triggerRuntimeError(media_sdk::MediaError error)
+    {
+        m_events->onRuntimeError(std::move(error));
     }
 
     int openCount = 0;
@@ -566,6 +574,31 @@ void seekCallsRuntimeSeekBeforeCoreSeek()
     assert(std::holds_alternative<media_sdk::SeekCompletedEvent>(events.events.back().payload));
 }
 
+void runtimeErrorIsForwardedAsSessionErrorEvent()
+{
+    TestContext context;
+    DummyAudioOutput audio;
+    DummyVideoPresenter presenter;
+    RecordingSessionEvents events;
+    auto session = makeSession(context, &audio, &presenter, &events);
+    assert(session->open("sample.mov").ok());
+    context.core->emitMediaInfo(coreTimeline(10, 3));
+    assert(events.events.size() == 1);
+
+    context.runtime->triggerRuntimeError({
+        .code = media_sdk::MediaErrorCode::InternalStateError,
+        .message = "audio flush failed",
+        .detail = {},
+    });
+
+    assert(events.events.size() == 2);
+    const auto* error = std::get_if<media_sdk::ErrorEvent>(&events.events.back().payload);
+    assert(error);
+    assert(error->error.message == "audio flush failed");
+    assert(events.events.back().metadata.sessionId == 10);
+    assert(events.events.back().metadata.generation == 3);
+}
+
 void seekWhilePlayingReappliesPlaybackAfterSeekCommand()
 {
     TestContext context;
@@ -880,6 +913,7 @@ int main()
     playCallsCorePlayAndRuntimeResume();
     pauseCallsCorePauseAndRuntimePause();
     seekCallsRuntimeSeekBeforeCoreSeek();
+    runtimeErrorIsForwardedAsSessionErrorEvent();
     seekWhilePlayingReappliesPlaybackAfterSeekCommand();
     pauseBeforeMediaInfoPausesRuntimeAfterItOpens();
     playBeforeMediaInfoResumesRuntimeAfterItOpens();

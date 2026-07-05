@@ -63,11 +63,19 @@ public:
         }
         return media_sdk::Result<void>::success();
     }
-    void flush() override
+    media_sdk::Result<void> flush() override
     {
         std::lock_guard lock(mutex);
         ++flushCount;
+        if (failFlush) {
+            return media_sdk::Result<void>::failure({
+                .code = media_sdk::MediaErrorCode::InternalStateError,
+                .message = "audio flush failed",
+                .detail = {},
+            });
+        }
         ++snapshot.generation;
+        return media_sdk::Result<void>::success();
     }
     void close() override { ++closeCount; }
 
@@ -123,6 +131,7 @@ public:
     std::chrono::microseconds lastWritePts { 0 };
     media_sdk::runtime::Generation lastWriteGeneration = 0;
     bool failResume = false;
+    bool failFlush = false;
     bool blockWrites = false;
     bool writeBlocked = false;
 };
@@ -227,11 +236,20 @@ public:
         ++eofPresentedCount;
     }
 
+    void onRuntimeError(media_sdk::MediaError error) override
+    {
+        std::lock_guard lock(mutex);
+        lastError = std::move(error);
+        ++errorCount;
+    }
+
     mutable std::mutex mutex;
     media_sdk::runtime::RuntimeFallbackAction lastAction {};
     media_sdk::runtime::RuntimeTimeline lastEofTimeline {};
+    media_sdk::MediaError lastError {};
     std::atomic_int fallbackRequestCount = 0;
     std::atomic_int eofPresentedCount = 0;
+    std::atomic_int errorCount = 0;
 };
 
 bool waitUntil(const std::function<bool()>& predicate,
@@ -909,6 +927,21 @@ void seekInvalidatesOldGenerationFramesAndCompletions()
     assert(waitUntil([&presenter]() { return presenter.presentCount == 2; }));
 }
 
+void seekReportsAudioFlushFailure()
+{
+    MockAudioOutput audio;
+    MockPresenter presenter;
+    MockRuntimeEvents events;
+    auto player = makePlayer(audio, presenter, events);
+    assert(player.open().ok());
+
+    audio.failFlush = true;
+    player.seek(500ms);
+
+    assert(events.errorCount == 1);
+    assert(events.lastError.message == "audio flush failed");
+}
+
 void pausedSeekPresentsOnePrerollFrameWithoutResumingAudio()
 {
     MockAudioOutput audio;
@@ -1173,6 +1206,7 @@ int main()
     eofCompletesOnlyAfterAudioAndVideoDrain();
     eofBackpressureIsReportedInDiagnostics();
     seekInvalidatesOldGenerationFramesAndCompletions();
+    seekReportsAudioFlushFailure();
     pausedSeekPresentsOnePrerollFrameWithoutResumingAudio();
     pausedPlaybackCancelsLateVideoPushWithoutDecodeError();
     stopAbortsQueuesPausesAudioClearsPresenterAndReturnsIdle();

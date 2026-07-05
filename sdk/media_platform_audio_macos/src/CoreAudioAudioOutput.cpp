@@ -41,9 +41,9 @@ Result<void> CoreAudioAudioOutput::resume()
     return m_impl->engine.resume();
 }
 
-void CoreAudioAudioOutput::flush()
+Result<void> CoreAudioAudioOutput::flush()
 {
-    m_impl->engine.flush();
+    return m_impl->engine.flush();
 }
 
 void CoreAudioAudioOutput::close()

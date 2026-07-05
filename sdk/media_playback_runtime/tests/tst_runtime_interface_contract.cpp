@@ -44,7 +44,11 @@ public:
         m_paused = false;
         return media_sdk::Result<void>::success();
     }
-    void flush() override { ++m_flushCount; }
+    media_sdk::Result<void> flush() override
+    {
+        ++m_flushCount;
+        return media_sdk::Result<void>::success();
+    }
     void close() override { m_closed = true; }
 
     media_sdk::runtime::AudioFormat m_format {};

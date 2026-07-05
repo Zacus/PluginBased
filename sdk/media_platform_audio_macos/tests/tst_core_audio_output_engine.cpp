@@ -210,7 +210,7 @@ void flushResetsDeviceAndRejectsOldGeneration()
         .generation = 1,
     }).ok());
 
-    engine->flush();
+    assert(engine->flush().ok());
     assert(stats->resetCount == 1);
     assert(engine->clock().generation == 2);
     assert(!engine->write({
@@ -232,13 +232,31 @@ void flushWhileRunningRestartsDeviceCallbacks()
     assert(engine->resume().ok());
     assert(device->running);
 
-    engine->flush();
+    assert(engine->flush().ok());
 
     assert(stats->stopCount == 1);
     assert(stats->resetCount == 1);
     assert(stats->startCount == 2);
     assert(device->running);
     assert(!engine->clock().paused);
+}
+
+void flushWhileRunningReportsDeviceRestartFailure()
+{
+    auto [engine, device, stats] = makeEngine();
+    assert(engine->open(audioFormat()).ok());
+    assert(engine->resume().ok());
+    device->failStart = true;
+
+    const auto flushResult = engine->flush();
+
+    assert(!flushResult.ok());
+    assert(flushResult.error().message == "fake start failure");
+    assert(stats->stopCount == 1);
+    assert(stats->resetCount == 1);
+    assert(stats->startCount == 2);
+    assert(!device->running);
+    assert(engine->clock().paused);
 }
 
 void closeStopsAndRejectsWrites()
@@ -298,6 +316,7 @@ int main()
     pauseBeforeResumeMarksLogicalPausedWithoutStoppingDevice();
     flushResetsDeviceAndRejectsOldGeneration();
     flushWhileRunningRestartsDeviceCallbacks();
+    flushWhileRunningReportsDeviceRestartFailure();
     closeStopsAndRejectsWrites();
     destructorStopsAndClosesDevice();
     resumeReportsDeviceStartFailure();

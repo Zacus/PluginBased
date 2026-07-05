@@ -45,6 +45,7 @@ public:
     virtual ~IRuntimePlayerEvents() = default;
     virtual void onFallbackToCpuRequested(RuntimeFallbackAction action) = 0;
     virtual void onEndOfStreamPresented(RuntimeTimeline) {}
+    virtual void onRuntimeError(MediaError) {}
 };
 
 class RuntimePlayer final : private IVideoPresenterEvents
