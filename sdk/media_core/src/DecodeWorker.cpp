@@ -453,17 +453,24 @@ void DecodeWorker::beginAccurateSeek(std::chrono::milliseconds position)
 
 void DecodeWorker::emitSeekCompletedIfReady()
 {
-    if (!m_seekGate || !m_seekGate->shouldEmitCompletion())
+    if (!m_seekGate)
         return;
 
-    // seek 完成事件代表目标侧媒体已经进入交付路径，而不是 av_seek_frame 已返回。
-    const auto completedTarget = m_pendingSeekTarget.value_or(m_seekGate->completionPosition());
-    const auto position = std::chrono::duration_cast<std::chrono::milliseconds>(completedTarget);
-    emitEvent(makeEvent(SeekCompletedEvent { position }));
-    emitEvent(makeEvent(PositionChangedEvent { position }));
-    m_seekGate->markCompletionSent();
-    m_seekGate.reset();
-    m_pendingSeekTarget.reset();
+    if (m_seekGate->shouldEmitCompletion())
+    {
+        // seek 完成事件代表目标侧媒体已经进入交付路径，而不是 av_seek_frame 已返回。
+        const auto completedTarget = m_pendingSeekTarget.value_or(m_seekGate->completionPosition());
+        const auto position = std::chrono::duration_cast<std::chrono::milliseconds>(completedTarget);
+        emitEvent(makeEvent(SeekCompletedEvent { position }));
+        emitEvent(makeEvent(PositionChangedEvent { position }));
+        m_seekGate->markCompletionSent();
+    }
+
+    if (m_seekGate && m_seekGate->readyToRetire())
+    {
+        m_seekGate.reset();
+        m_pendingSeekTarget.reset();
+    }
 }
 
 void DecodeWorker::emitPendingSeekFallbackCompletion()

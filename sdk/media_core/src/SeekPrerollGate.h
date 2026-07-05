@@ -96,6 +96,13 @@ public:
         return false;
     }
 
+    [[nodiscard]] bool readyToRetire() const
+    {
+        // audio+video seek 的完成可由 video 触发，但 audio 仍要继续裁剪到首个目标侧帧。
+        return (!m_config.hasVideo || m_videoReady)
+            && (!m_config.hasAudio || m_audioReady);
+    }
+
     void markCompletionSent()
     {
         m_completionSent = true;
