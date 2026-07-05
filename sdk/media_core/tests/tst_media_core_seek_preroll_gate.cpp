@@ -106,6 +106,7 @@ void audioVideoSeekCompletesOnVideoButRetiresAfterAudio()
     assert(!gate.readyToRetire());
 
     gate.markCompletionSent();
+    assert(gate.completionSent());
     assert(!gate.shouldEmitCompletion());
     assert(gate.inspectAudio(900ms, 5).action == media_sdk::SeekPrerollAction::Discard);
 

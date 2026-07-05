@@ -149,12 +149,19 @@ private:
                               bool video,
                               DecodePrerollTarget prerollTarget = DecodePrerollTarget::None,
                               bool* prerollDelivered = nullptr);
+    StreamDecoder::FrameHandlerStatus handleDecodedVideoFrame(
+        AVFramePtr frame,
+        DecodePrerollTarget prerollTarget = DecodePrerollTarget::None,
+        bool* prerollDelivered = nullptr);
+    StreamDecoder::FrameHandlerStatus handleDecodedAudioFrame(
+        AVFramePtr frame,
+        DecodePrerollTarget prerollTarget = DecodePrerollTarget::None,
+        bool* prerollDelivered = nullptr);
     void flushDecoders();
     PlayerEvent makeEvent(PlayerEventPayload payload) const;
     void emitEvent(PlayerEvent event);
     void emitState(PlayerState state);
     void emitError(MediaError error);
-    StreamDecoder::FrameHandlerStatus emitVideoFrame(VideoFrame frame);
     DecodeFrameMetadata frameMetadata() const;
     StreamDecoder::FrameHandlerStatus handleFramePushResult(DecodeFramePushResult result);
     void recordFramePushResult(DecodeFramePushResult result);

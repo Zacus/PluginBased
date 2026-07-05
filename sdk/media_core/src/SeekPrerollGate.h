@@ -108,6 +108,11 @@ public:
         m_completionSent = true;
     }
 
+    [[nodiscard]] bool completionSent() const
+    {
+        return m_completionSent;
+    }
+
     [[nodiscard]] std::chrono::microseconds completionPosition() const
     {
         return m_config.target;
