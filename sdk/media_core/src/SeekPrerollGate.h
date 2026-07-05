@@ -20,6 +20,8 @@ struct SeekPrerollGateConfig {
     std::uint64_t generation = 0;
     bool hasVideo = false;
     bool hasAudio = false;
+    int maxDiscardedVideoFrames = 300;
+    int maxDiscardedAudioFrames = 1000;
 };
 
 class SeekPrerollGate
@@ -60,6 +62,27 @@ public:
         m_audioReady = true;
     }
 
+    void markVideoDiscarded()
+    {
+        ++m_discardedVideoFrames;
+    }
+
+    void markAudioDiscarded()
+    {
+        ++m_discardedAudioFrames;
+    }
+
+    [[nodiscard]] bool discardLimitReached() const
+    {
+        // 兜底边界：异常时间戳或稀疏媒体不能让精确 seek 无限预滚。
+        return (m_config.hasVideo
+                && m_config.maxDiscardedVideoFrames >= 0
+                && m_discardedVideoFrames >= m_config.maxDiscardedVideoFrames)
+            || (m_config.hasAudio
+                && m_config.maxDiscardedAudioFrames >= 0
+                && m_discardedAudioFrames >= m_config.maxDiscardedAudioFrames);
+    }
+
     [[nodiscard]] bool shouldEmitCompletion() const
     {
         if (m_completionSent)
@@ -91,6 +114,8 @@ private:
     }
 
     SeekPrerollGateConfig m_config;
+    int m_discardedVideoFrames = 0;
+    int m_discardedAudioFrames = 0;
     bool m_videoReady = false;
     bool m_audioReady = false;
     bool m_completionSent = false;

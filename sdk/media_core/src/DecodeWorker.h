@@ -139,6 +139,7 @@ private:
     bool handleSeek(std::chrono::milliseconds position);
     void beginAccurateSeek(std::chrono::milliseconds position);
     void emitSeekCompletedIfReady();
+    void emitPendingSeekFallbackCompletion();
     void closeMedia();
 
     Result<void> decodePacket(AVCodecContext* codecContext,

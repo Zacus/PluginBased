@@ -70,6 +70,26 @@ void audioOnlyAcceptedFrameCompletesSeek()
     assert(gate.shouldEmitCompletion());
 }
 
+void discardLimitAllowsCompletionFallback()
+{
+    media_sdk::SeekPrerollGate gate({
+        .target = 5000ms,
+        .generation = 3,
+        .hasVideo = true,
+        .hasAudio = false,
+        .maxDiscardedVideoFrames = 2,
+    });
+
+    assert(gate.inspectVideo(1000ms, 3).action == media_sdk::SeekPrerollAction::Discard);
+    gate.markVideoDiscarded();
+    assert(!gate.discardLimitReached());
+
+    assert(gate.inspectVideo(2000ms, 3).action == media_sdk::SeekPrerollAction::Discard);
+    gate.markVideoDiscarded();
+
+    assert(gate.discardLimitReached());
+}
+
 } // namespace
 
 int main()
@@ -78,4 +98,5 @@ int main()
     videoAtTargetIsAcceptedAndCompletesVideoOnlySeek();
     staleGenerationDoesNotCompleteSeek();
     audioOnlyAcceptedFrameCompletesSeek();
+    discardLimitAllowsCompletionFallback();
 }

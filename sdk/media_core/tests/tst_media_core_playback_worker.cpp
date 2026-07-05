@@ -576,6 +576,9 @@ void testPausedSeekDoesNotPrerollVideoBeforeTarget()
 
     assert(player.seek(100ms).ok());
     assert(!frames.waitForVideoFrame(200ms));
+    assert(sink.waitFor([](const media_sdk::PlayerEvent& event) {
+        return hasSeekCompletedAtOrAfter(event, 100ms);
+    }, 500ms));
 
     player.stop();
     std::filesystem::remove(samplePath);

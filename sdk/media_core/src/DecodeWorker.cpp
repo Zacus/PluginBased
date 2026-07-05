@@ -271,7 +271,17 @@ void DecodeWorker::decodeUntilBlocked(WorkerStopToken stopToken)
         const int ret = av_read_frame(m_media.formatContext.get(), packet.get());
         if (ret == AVERROR_EOF)
         {
-            flushDecoders();
+            const bool hadPendingSeek = m_seekGate.has_value();
+            if (hadPendingSeek)
+            {
+                emitSeekCompletedIfReady();
+                if (m_seekGate)
+                    emitPendingSeekFallbackCompletion();
+            }
+            else
+            {
+                flushDecoders();
+            }
             emitEvent(makeEvent(EndOfFileEvent {}));
             m_playing = false;
             emitState(PlayerState::Finished);
@@ -328,7 +338,10 @@ void DecodeWorker::decodeSeekPreroll(WorkerStopToken stopToken)
     const bool targetVideo = m_media.videoStreamIndex >= 0 && m_media.videoCodecContext;
     const bool targetAudio = !targetVideo && m_media.audioStreamIndex >= 0 && m_media.audioCodecContext;
     if (!targetVideo && !targetAudio)
+    {
+        emitPendingSeekFallbackCompletion();
         return;
+    }
 
     bool delivered = false;
     auto packet = makePacket();
@@ -344,7 +357,12 @@ void DecodeWorker::decodeSeekPreroll(WorkerStopToken stopToken)
 
         const int ret = av_read_frame(m_media.formatContext.get(), packet.get());
         if (ret == AVERROR_EOF)
+        {
+            emitSeekCompletedIfReady();
+            if (m_seekGate)
+                emitPendingSeekFallbackCompletion();
             return;
+        }
         if (ret < 0)
         {
             emitError(makeError(MediaErrorCode::DecodeFailed,
@@ -446,6 +464,21 @@ void DecodeWorker::emitSeekCompletedIfReady()
     m_pendingSeekTarget.reset();
 }
 
+void DecodeWorker::emitPendingSeekFallbackCompletion()
+{
+    if (!m_seekGate)
+        return;
+
+    // EOF 或丢弃上限触发兜底完成，避免异常媒体让 seek 请求永久悬挂。
+    const auto completedTarget = m_pendingSeekTarget.value_or(m_seekGate->completionPosition());
+    const auto position = std::chrono::duration_cast<std::chrono::milliseconds>(completedTarget);
+    emitEvent(makeEvent(SeekCompletedEvent { position }));
+    emitEvent(makeEvent(PositionChangedEvent { position }));
+    m_seekGate->markCompletionSent();
+    m_seekGate.reset();
+    m_pendingSeekTarget.reset();
+}
+
 void DecodeWorker::closeMedia()
 {
     if (!m_hasMedia)
@@ -485,8 +518,20 @@ Result<void> DecodeWorker::decodePacket(AVCodecContext* codecContext,
                                 : SeekPrerollAction::Discard
                         }
                         : m_seekGate->inspectVideo(std::chrono::microseconds { frame->pts }, m_generation);
-                    if (decision.action == SeekPrerollAction::Discard
-                        || decision.action == SeekPrerollAction::Stale)
+                    if (decision.action == SeekPrerollAction::Discard)
+                    {
+                        m_seekGate->markVideoDiscarded();
+                        if (m_seekGate->discardLimitReached())
+                        {
+                            // 丢弃过多通常说明目标侧无可用帧，按目标时间完成并退出本轮预滚。
+                            emitPendingSeekFallbackCompletion();
+                            if (prerollDelivered)
+                                *prerollDelivered = true;
+                            return StreamDecoder::FrameHandlerStatus::Stop;
+                        }
+                        return StreamDecoder::FrameHandlerStatus::Continue;
+                    }
+                    if (decision.action == SeekPrerollAction::Stale)
                         return StreamDecoder::FrameHandlerStatus::Continue;
                 }
                 auto processed = m_videoFrameProcessor.process(
@@ -527,7 +572,21 @@ Result<void> DecodeWorker::decodePacket(AVCodecContext* codecContext,
                 // seek 预滚期间先裁剪/丢弃目标前 samples，避免提前污染 position 和 runtime audio queue。
                 auto trimResult = trimAudioFrameForSeek(audioFrame, *m_pendingSeekTarget);
                 if (trimResult.status == SeekAudioTrimStatus::Discard)
+                {
+                    if (m_seekGate)
+                    {
+                        m_seekGate->markAudioDiscarded();
+                        if (m_seekGate->discardLimitReached())
+                        {
+                            // 音频连续落在目标前时也要有边界，不能无限等待目标侧 sample。
+                            emitPendingSeekFallbackCompletion();
+                            if (prerollDelivered)
+                                *prerollDelivered = true;
+                            return StreamDecoder::FrameHandlerStatus::Stop;
+                        }
+                    }
                     return StreamDecoder::FrameHandlerStatus::Continue;
+                }
                 if (trimResult.status == SeekAudioTrimStatus::Invalid)
                 {
                     emitError(makeError(MediaErrorCode::DecodeFailed,
