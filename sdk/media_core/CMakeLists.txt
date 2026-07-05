@@ -128,4 +128,23 @@ if(BUILD_TESTING)
     add_test(NAME media_sdk_core_playback_worker
         COMMAND $<TARGET_FILE:MediaSdkCorePlaybackWorkerTest>
     )
+
+    add_executable(MediaSdkCoreSeekPrerollGateTest
+        tests/tst_media_core_seek_preroll_gate.cpp
+    )
+    target_compile_features(MediaSdkCoreSeekPrerollGateTest PRIVATE cxx_std_20)
+    set_target_properties(MediaSdkCoreSeekPrerollGateTest PROPERTIES
+        CXX_EXTENSIONS OFF
+        AUTOMOC OFF
+        AUTOUIC OFF
+        AUTORCC OFF
+    )
+    target_include_directories(MediaSdkCoreSeekPrerollGateTest PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/include"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src"
+    )
+    target_link_libraries(MediaSdkCoreSeekPrerollGateTest PRIVATE media_sdk_core)
+    add_test(NAME media_sdk_core_seek_preroll_gate
+        COMMAND $<TARGET_FILE:MediaSdkCoreSeekPrerollGateTest>
+    )
 endif()
