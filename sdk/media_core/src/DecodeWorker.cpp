@@ -465,12 +465,12 @@ void DecodeWorker::emitSeekCompletedIfReady()
     }
 }
 
-void DecodeWorker::emitPendingSeekFallbackCompletion()
+void DecodeWorker::emitSeekFallbackCompletion()
 {
     if (!m_seekGate)
         return;
 
-    // EOF 或丢弃上限触发兜底完成，避免异常媒体让 seek 请求永久悬挂。
+    // 丢弃上限只释放 seek 请求等待；gate 继续保留，防止目标前帧绕过精确过滤。
     if (!m_seekGate->completionSent())
     {
         const auto completedTarget = m_pendingSeekTarget.value_or(m_seekGate->completionPosition());
@@ -479,19 +479,17 @@ void DecodeWorker::emitPendingSeekFallbackCompletion()
         emitEvent(makeEvent(PositionChangedEvent { position }));
         m_seekGate->markCompletionSent();
     }
-    m_seekGate.reset();
-    m_pendingSeekTarget.reset();
 }
 
-void DecodeWorker::finishPlayingAfterSeekFallback()
+void DecodeWorker::emitPendingSeekFallbackCompletion()
 {
-    if (!m_playing)
+    if (!m_seekGate)
         return;
 
-    // fallback 已经清理 seek gate；播放态必须停止本轮解码，避免后续帧绕过精确 seek 过滤。
-    emitEvent(makeEvent(EndOfFileEvent {}));
-    m_playing = false;
-    emitState(PlayerState::Finished);
+    // EOF 清理仍然要释放 gate；此时已经没有后续帧会绕过 seek 过滤。
+    emitSeekFallbackCompletion();
+    m_seekGate.reset();
+    m_pendingSeekTarget.reset();
 }
 
 void DecodeWorker::closeMedia()
@@ -535,22 +533,23 @@ StreamDecoder::FrameHandlerStatus DecodeWorker::handleDecodedVideoFrame(
     if (m_seekGate)
     {
         // 精确 seek 预滚期间，目标点前的视频帧不能进入像素处理和 runtime 队列。
-        const auto decision = frame->pts == AV_NOPTS_VALUE
+        const bool missingVideoPts = frame->pts == AV_NOPTS_VALUE;
+        const auto decision = missingVideoPts
             ? m_seekGate->inspectMissingVideoPts(m_generation)
             : m_seekGate->inspectVideo(std::chrono::microseconds { frame->pts }, m_generation);
         if (decision.action == SeekPrerollAction::Discard)
         {
             m_seekGate->markVideoDiscarded();
+            bool acceptMissingPtsFallback = false;
             if (m_seekGate->discardLimitReached())
             {
-                // 丢弃过多通常说明目标侧无可用帧，按目标时间完成并退出本轮预滚。
-                emitPendingSeekFallbackCompletion();
-                finishPlayingAfterSeekFallback();
-                if (prerollDelivered)
-                    *prerollDelivered = true;
-                return StreamDecoder::FrameHandlerStatus::Stop;
+                // 超过预滚保护边界后先释放 seek completion，但继续过滤直到目标侧帧或真实 EOF。
+                emitSeekFallbackCompletion();
+                // 无 PTS 媒体无法继续做精确时间比较；达到边界后降级接受一个可渲染帧恢复画面。
+                acceptMissingPtsFallback = missingVideoPts;
             }
-            return StreamDecoder::FrameHandlerStatus::Continue;
+            if (!acceptMissingPtsFallback)
+                return StreamDecoder::FrameHandlerStatus::Continue;
         }
         if (decision.action == SeekPrerollAction::Stale)
             return StreamDecoder::FrameHandlerStatus::Continue;
@@ -604,12 +603,8 @@ StreamDecoder::FrameHandlerStatus DecodeWorker::handleDecodedAudioFrame(
                 m_seekGate->markAudioDiscarded();
                 if (m_seekGate->discardLimitReached())
                 {
-                    // 音频连续落在目标前时也要有边界，不能无限等待目标侧 sample。
-                    emitPendingSeekFallbackCompletion();
-                    finishPlayingAfterSeekFallback();
-                    if (prerollDelivered)
-                        *prerollDelivered = true;
-                    return StreamDecoder::FrameHandlerStatus::Stop;
+                    // 音频连续落在目标前时也先释放 completion，但不能放行目标前 samples。
+                    emitSeekFallbackCompletion();
                 }
             }
             return StreamDecoder::FrameHandlerStatus::Continue;

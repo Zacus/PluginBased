@@ -364,6 +364,14 @@ public:
         });
     }
 
+    bool waitForAudioFrames(int count, std::chrono::milliseconds timeout = 3s)
+    {
+        std::unique_lock lock(m_mutex);
+        return m_cv.wait_for(lock, timeout, [&]() {
+            return m_audioFrames >= count;
+        });
+    }
+
     void blockVideoFrames()
     {
         std::scoped_lock lock(m_mutex);
@@ -745,32 +753,30 @@ void testPausedVideoSeekPrerollSkipsAudioBackpressure()
     std::filesystem::remove(samplePath);
 }
 
-void testPlayingSeekDiscardLimitStopsBeforeUnguardedVideo()
+void testPlayingSeekDiscardLimitKeepsFilteringUntilTargetAudio()
 {
-    const auto samplePath = writeSparseKeyframeVideoSample();
+    const auto samplePath = writeTinyWav();
     RecordingSink sink;
     RecordingFrameSink frames;
     media_sdk::PlayerConfig config;
-    config.accurateSeekMaxDiscardedVideoFrames = 2;
+    config.accurateSeekMaxDiscardedAudioFrames = 1;
     media_sdk::Player player(config, sink, frames);
 
     assert(player.open(samplePath).ok());
     assert(sink.waitFor(hasMediaInfo));
 
-    frames.blockVideoFrames();
+    frames.blockAudioFrames();
     player.play();
-    assert(frames.waitForBlockedVideoFrame());
+    assert(frames.waitForBlockedAudioFrame());
 
-    assert(player.seek(12200ms).ok());
-    frames.releaseVideoFrames();
+    assert(player.seek(300ms).ok());
+    frames.releaseAudioFrames();
 
     assert(sink.waitFor([](const media_sdk::PlayerEvent& event) {
-        return hasSeekCompletedAtOrAfter(event, 12200ms);
+        return hasSeekCompletedAtOrAfter(event, 300ms);
     }));
-    assert(sink.waitFor([](const media_sdk::PlayerEvent& event) {
-        return hasState(event, media_sdk::PlayerState::Finished);
-    }));
-    assert(frames.videoFrames() == 1);
+    assert(frames.waitForAudioFrames(2));
+    assert(frames.lastAudioPts() >= 300ms);
 
     player.stop();
     std::filesystem::remove(samplePath);
@@ -879,7 +885,7 @@ int main()
     testSeekDoesNotPushAudioBeforeTarget();
     testSeekDoesNotEmitAudioPositionBeforeAcceptedFrame();
     testPausedVideoSeekPrerollSkipsAudioBackpressure();
-    testPlayingSeekDiscardLimitStopsBeforeUnguardedVideo();
+    testPlayingSeekDiscardLimitKeepsFilteringUntilTargetAudio();
     testBurstSeekCoalescesQueuedRequestsBeforeDecodeResumes();
     testStopEmitsStoppedState();
     testCancelledFramePushDuringStopDoesNotEmitDecodeError();
