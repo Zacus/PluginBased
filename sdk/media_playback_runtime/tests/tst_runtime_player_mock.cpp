@@ -41,6 +41,14 @@ public:
         lastWrittenBytes.assign(buffer.bytes.begin(), buffer.bytes.end());
         lastWritePts = buffer.pts;
         lastWriteGeneration = buffer.generation;
+        if (clockFromWrites) {
+            if (firstWriteAfterFlush || !snapshot.valid || snapshot.generation != buffer.generation) {
+                snapshot.position = buffer.pts;
+                firstWriteAfterFlush = false;
+            }
+            snapshot.generation = buffer.generation;
+            snapshot.valid = true;
+        }
         return media_sdk::Result<void>::success();
     }
 
@@ -77,6 +85,10 @@ public:
             }
             blockWrites = false;
             ++snapshot.generation;
+            if (resetClockToZeroOnFlush) {
+                snapshot.position = 0us;
+                firstWriteAfterFlush = true;
+            }
         }
         cv.notify_all();
         return media_sdk::Result<void>::success();
@@ -146,6 +158,9 @@ public:
     bool failFlush = false;
     bool blockWrites = false;
     bool writeBlocked = false;
+    bool clockFromWrites = false;
+    bool resetClockToZeroOnFlush = false;
+    bool firstWriteAfterFlush = false;
 };
 
 class MockPresenter final : public media_sdk::runtime::IVideoPresenter {
@@ -548,6 +563,29 @@ void seekKeepsLastPresentedFrameUntilTargetFrameArrives()
     discardFramePushResult(player.enqueueVideo(runtimeVideo(1, 2, 500ms)));
     assert(waitUntil([&presenter]() { return presenter.presentCount == 2; }));
     assert(presenter.clearCount == 0);
+}
+
+void seekAudioGapDoesNotExposeFirstAudioPtsAsImmediateClock()
+{
+    MockAudioOutput audio;
+    audio.clockFromWrites = true;
+    audio.resetClockToZeroOnFlush = true;
+    audio.setClock(1500ms, 1);
+    MockPresenter presenter;
+    auto player = makePlayer(audio, presenter);
+    assert(player.open().ok());
+
+    player.seek(4763ms);
+    assert(player.timeline().generation == 2);
+
+    discardFramePushResult(player.enqueueAudio(runtimeAudio(1, 2, 6035ms)));
+    assert(waitUntil([&audio]() { return audio.writeCount >= 1; }));
+
+    const auto clock = player.clock();
+    assert(clock.valid);
+    assert(clock.generation == 2);
+    assert(clock.position < 6035ms);
+    assert(clock.position >= 4763ms);
 }
 
 void audioFramesAreWrittenToInjectedAudioOutput()
@@ -1247,6 +1285,7 @@ int main()
     openFailsAndClosesAudioWhenResumeFails();
     timelineTracksSeekGeneration();
     seekKeepsLastPresentedFrameUntilTargetFrameArrives();
+    seekAudioGapDoesNotExposeFirstAudioPtsAsImmediateClock();
     audioFramesAreWrittenToInjectedAudioOutput();
     audioControlsApplyGainAndMuteBeforeAudioWrite();
     audioControlsApplyGainForInt16Audio();

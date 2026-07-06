@@ -1,9 +1,11 @@
 #include "media_sdk/runtime/RuntimePlayer.h"
 
+#include "AudioSilence.h"
 #include "AvSyncScheduler.h"
 #include "NativeFallbackController.h"
 #include "PresentTracker.h"
 #include "RuntimeFrameQueue.h"
+#include "SeekClockAnchor.h"
 #include "media_sdk/Error.h"
 
 #include <algorithm>
@@ -206,6 +208,7 @@ struct RuntimePlayer::Impl {
             audioEofSeen = false;
             videoEofSeen = false;
             eofNotificationSent = false;
+            seekClockAnchor.clear();
 
             audioQueue.reset(sessionId, generation);
             videoQueue.reset(sessionId, generation);
@@ -389,7 +392,7 @@ struct RuntimePlayer::Impl {
         m_controlChanged.notify_all();
     }
 
-    void seek(std::chrono::microseconds)
+    void seek(std::chrono::microseconds position)
     {
         SessionId activeSession = 0;
         Generation nextGeneration = 0;
@@ -412,6 +415,7 @@ struct RuntimePlayer::Impl {
             presentTracker.setMaxPending(dependencies.videoPresenter->capabilities().maxPendingFrames);
             scheduler.reset(nextGeneration);
             fallbackController.reset(activeSession, nextGeneration, config.outputPolicy);
+            seekClockAnchor.begin(nextGeneration, position);
         }
 
         audioQueue.abort();
@@ -439,6 +443,7 @@ struct RuntimePlayer::Impl {
             fallbackPending = false;
             pausedSeekPrerollPending = false;
             pausedSeekPrerollReserved = false;
+            seekClockAnchor.clear();
             generation = 0;
             diagnostics.queueAbortCount += 2;
             shouldStop = true;
@@ -460,6 +465,7 @@ struct RuntimePlayer::Impl {
         dependencies.videoPresenter->clear();
 
         std::lock_guard lock(m_mutex);
+        seekClockAnchor.clear();
         presentTracker.clear();
         audioEofSeen = false;
         videoEofSeen = false;
@@ -551,16 +557,84 @@ struct RuntimePlayer::Impl {
                 controlledSamples = applyAudioControls(samples, controls, config.audioFormat.sampleFormat);
                 outputSamples = controlledSamples;
             }
+            const auto framePts = queuedFrame.frame.pts();
+            const auto frameGeneration = queuedFrame.generation;
+            const auto gapDecision = takeSeekAudioGapDecision(
+                queuedFrame.sessionId,
+                frameGeneration,
+                framePts);
+            if (gapDecision.shouldFill && !writeSeekGapSilence(queuedFrame.sessionId, gapDecision))
+                continue;
+
             const auto writeResult = dependencies.audioOutput->write({
                 .bytes = outputSamples,
-                .pts = queuedFrame.frame.pts(),
-                .generation = queuedFrame.generation,
+                .pts = framePts,
+                .generation = frameGeneration,
             });
             if (writeResult.ok()) {
-                std::lock_guard lock(m_mutex);
-                ++diagnostics.audioWritten;
+                {
+                    std::lock_guard lock(m_mutex);
+                    ++diagnostics.audioWritten;
+                }
             }
         }
+    }
+
+    SeekAudioGapDecision takeSeekAudioGapDecision(
+        SessionId checkedSessionId,
+        Generation checkedGeneration,
+        std::chrono::microseconds firstAudioPts)
+    {
+        std::lock_guard lock(m_mutex);
+        if (!isCurrentLocked(checkedSessionId, checkedGeneration))
+            return {};
+        return seekClockAnchor.inspectFirstAudio(checkedGeneration, firstAudioPts);
+    }
+
+    bool writeSeekGapSilence(SessionId checkedSessionId, SeekAudioGapDecision decision)
+    {
+        constexpr auto kSilenceChunkDuration = std::chrono::milliseconds(20);
+        auto remaining = decision.gap;
+        auto chunkPts = decision.target;
+
+        while (remaining > std::chrono::microseconds::zero()) {
+            if (!canWriteSeekGapSilence(checkedSessionId, decision.generation))
+                return false;
+
+            const auto chunkDuration = std::min<std::chrono::microseconds>(
+                remaining,
+                kSilenceChunkDuration);
+            auto silence = makeSilenceBytes(config.audioFormat, chunkDuration);
+            if (!silence.ok()) {
+                reportRuntimeError(silence.error());
+                return true;
+            }
+            if (silence.value().empty())
+                return true;
+
+            // seek 后首个真实音频 PTS 可能晚于目标点。先写入目标时间戳静音，
+            // 让底层音频时钟从目标点启动，再自然推进到首个真实音频帧。
+            const auto writeResult = dependencies.audioOutput->write({
+                .bytes = silence.value(),
+                .pts = chunkPts,
+                .generation = decision.generation,
+            });
+            if (!writeResult.ok()) {
+                if (isCurrent(checkedSessionId, decision.generation))
+                    reportRuntimeError(writeResult.error());
+                return false;
+            }
+
+            remaining -= chunkDuration;
+            chunkPts += chunkDuration;
+        }
+        return true;
+    }
+
+    bool canWriteSeekGapSilence(SessionId checkedSessionId, Generation checkedGeneration) const
+    {
+        std::lock_guard lock(m_mutex);
+        return isCurrentLocked(checkedSessionId, checkedGeneration) && !paused;
     }
 
     RuntimeAudioControls currentAudioControls() const
@@ -796,6 +870,7 @@ struct RuntimePlayer::Impl {
             audioEofSeen = false;
             videoEofSeen = false;
             eofNotificationSent = false;
+            seekClockAnchor.clear();
             presentTracker.clear();
             presentTracker.reset(activeSession, generation);
             presentTracker.setMaxPending(dependencies.videoPresenter->capabilities().maxPendingFrames);
@@ -897,6 +972,7 @@ struct RuntimePlayer::Impl {
     AvSyncScheduler scheduler;
     PresentTracker presentTracker;
     NativeFallbackController fallbackController;
+    SeekClockAnchor seekClockAnchor;
     std::atomic<float> audioVolume { sanitizeAudioControls(config.audioControls).volume };
     std::atomic_bool audioMuted { sanitizeAudioControls(config.audioControls).muted };
     mutable std::mutex m_mutex;
