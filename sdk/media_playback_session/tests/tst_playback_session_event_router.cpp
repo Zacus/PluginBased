@@ -289,6 +289,34 @@ void seekForwardsRuntimeClockPositionsInsteadOfDecoderPositions()
     assert(secondPosition->position == 1300ms);
 }
 
+void seekForwardsAnchoredRuntimeClockAtTarget()
+{
+    media_sdk::session::SessionTimeline timeline;
+    RecordingRuntimeControl runtime;
+    RecordingSessionEvents events;
+    media_sdk::session::SessionEventRouter<RecordingRuntimeControl> router(
+        runtime,
+        timeline,
+        &events);
+
+    router.onEvent(mediaInfoEvent(coreTimeline(10, 3)));
+    router.beginSeek(runtimeTimeline(21, 8), 4763ms);
+    runtime.nextClock.generation = 8;
+    events.events.clear();
+
+    router.onEvent(seekCompletedEvent(coreTimeline(10, 4), 4763ms));
+    assert(events.events.size() == 1);
+
+    runtime.nextClock.position = 4763ms;
+    router.onEvent(positionEvent(coreTimeline(10, 4), 6035ms));
+
+    assert(events.events.size() == 2);
+    const auto* position =
+        std::get_if<media_sdk::PositionChangedEvent>(&events.events.back().payload);
+    assert(position);
+    assert(position->position == 4763ms);
+}
+
 void coreEndOfFileEnqueuesRuntimeEofWithoutExternalEof()
 {
     media_sdk::session::SessionTimeline timeline;
@@ -445,6 +473,7 @@ int main()
     positionChangedIsForwardedOnlyForAcceptedCoreTimeline();
     seekCompletedCompletesRuntimeTimelineAndResumesFrameAcceptance();
     seekForwardsRuntimeClockPositionsInsteadOfDecoderPositions();
+    seekForwardsAnchoredRuntimeClockAtTarget();
     coreEndOfFileEnqueuesRuntimeEofWithoutExternalEof();
     runtimeEndOfStreamPresentedEmitsExternalEof();
     runtimeEndOfStreamPresentedWithoutCoreEofIsIgnored();
