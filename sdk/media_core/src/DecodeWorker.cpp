@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cstring>
 #include <limits>
+#include <optional>
 #include <utility>
 #include <vector>
 
@@ -75,6 +76,14 @@ int preferredSeekStreamIndex(const OpenedMedia& media)
     if (media.audioStreamIndex >= 0 && media.audioCodecContext)
         return media.audioStreamIndex;
     return -1;
+}
+
+std::optional<std::chrono::milliseconds> toMilliseconds(
+    std::optional<std::chrono::microseconds> value)
+{
+    if (!value.has_value())
+        return std::nullopt;
+    return std::chrono::duration_cast<std::chrono::milliseconds>(*value);
 }
 
 } // namespace
@@ -488,8 +497,20 @@ void DecodeWorker::emitSeekCompletedIfReady()
     {
         // seek 完成事件代表目标侧媒体已经进入交付路径，而不是 av_seek_frame 已返回。
         const auto completedTarget = m_pendingSeekTarget.value_or(m_seekGate->completionPosition());
-        const auto position = std::chrono::duration_cast<std::chrono::milliseconds>(completedTarget);
-        emitEvent(makeEvent(SeekCompletedEvent { position }));
+        const auto requested = std::chrono::duration_cast<std::chrono::milliseconds>(completedTarget);
+        const auto firstAudio = toMilliseconds(m_seekGate->firstAudioPts());
+        const auto firstVideo = toMilliseconds(m_seekGate->firstVideoPts());
+        const bool audioGap = firstAudio.has_value()
+            && *firstAudio > requested + std::chrono::milliseconds { 50 };
+        emitEvent(makeEvent(SeekCompletedEvent {
+            .position = requested,
+            .requestedPosition = requested,
+            .firstAudioPts = firstAudio,
+            .firstVideoPts = firstVideo,
+            .exact = true,
+            .audioGap = audioGap,
+        }));
+        const auto position = requested;
         emitEvent(makeEvent(PositionChangedEvent { position }));
         m_seekGate->markCompletionSent();
     }
@@ -510,8 +531,20 @@ void DecodeWorker::emitSeekFallbackCompletion()
     if (!m_seekGate->completionSent())
     {
         const auto completedTarget = m_pendingSeekTarget.value_or(m_seekGate->completionPosition());
-        const auto position = std::chrono::duration_cast<std::chrono::milliseconds>(completedTarget);
-        emitEvent(makeEvent(SeekCompletedEvent { position }));
+        const auto requested = std::chrono::duration_cast<std::chrono::milliseconds>(completedTarget);
+        const auto firstAudio = toMilliseconds(m_seekGate->firstAudioPts());
+        const auto firstVideo = toMilliseconds(m_seekGate->firstVideoPts());
+        const bool audioGap = firstAudio.has_value()
+            && *firstAudio > requested + std::chrono::milliseconds { 50 };
+        emitEvent(makeEvent(SeekCompletedEvent {
+            .position = requested,
+            .requestedPosition = requested,
+            .firstAudioPts = firstAudio,
+            .firstVideoPts = firstVideo,
+            .exact = false,
+            .audioGap = audioGap,
+        }));
+        const auto position = requested;
         emitEvent(makeEvent(PositionChangedEvent { position }));
         m_seekGate->markCompletionSent();
     }
@@ -567,13 +600,17 @@ StreamDecoder::FrameHandlerStatus DecodeWorker::handleDecodedVideoFrame(
 {
     ++m_decodeStats.decodedVideoFrames;
     bool seekTargetVideoReady = false;
+    std::chrono::microseconds seekTargetVideoPts { 0 };
     if (m_seekGate)
     {
         // 精确 seek 预滚期间，目标点前的视频帧不能进入像素处理和 runtime 队列。
         const bool missingVideoPts = frame->pts == AV_NOPTS_VALUE;
+        const auto framePts = missingVideoPts
+            ? m_seekGate->completionPosition()
+            : std::chrono::microseconds { frame->pts };
         const auto decision = missingVideoPts
             ? m_seekGate->inspectMissingVideoPts(m_generation)
-            : m_seekGate->inspectVideo(std::chrono::microseconds { frame->pts }, m_generation);
+            : m_seekGate->inspectVideo(framePts, m_generation);
         if (decision.action == SeekPrerollAction::Discard)
         {
             m_seekGate->markVideoDiscarded();
@@ -588,10 +625,12 @@ StreamDecoder::FrameHandlerStatus DecodeWorker::handleDecodedVideoFrame(
             if (!acceptMissingPtsFallback)
                 return StreamDecoder::FrameHandlerStatus::Continue;
             seekTargetVideoReady = true;
+            seekTargetVideoPts = framePts;
         }
         else if (decision.action == SeekPrerollAction::Accept)
         {
             seekTargetVideoReady = true;
+            seekTargetVideoPts = framePts;
         }
         else if (decision.action == SeekPrerollAction::Stale)
         {
@@ -611,7 +650,7 @@ StreamDecoder::FrameHandlerStatus DecodeWorker::handleDecodedVideoFrame(
     if (seekTargetVideoReady && m_seekGate)
     {
         // completion 必须先于 frame push：session 需要先接受新 generation，runtime 才能接收目标帧。
-        m_seekGate->markVideoAccepted();
+        m_seekGate->markVideoAccepted(seekTargetVideoPts);
         emitSeekCompletedIfReady();
     }
     auto pushResult = m_frames.pushVideo(std::move(processed.value()), frameMetadata());
@@ -659,7 +698,7 @@ StreamDecoder::FrameHandlerStatus DecodeWorker::handleDecodedAudioFrame(
         if (m_seekGate)
         {
             // completion 必须先于 frame push：session 建立新 generation 映射后，目标音频帧才不会被判旧。
-            m_seekGate->markAudioAccepted();
+            m_seekGate->markAudioAccepted(audioFrame.pts());
             emitSeekCompletedIfReady();
         }
     }

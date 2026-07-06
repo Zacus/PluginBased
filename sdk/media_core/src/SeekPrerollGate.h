@@ -2,6 +2,7 @@
 
 #include <chrono>
 #include <cstdint>
+#include <optional>
 
 namespace media_sdk {
 
@@ -63,12 +64,26 @@ public:
 
     void markVideoAccepted()
     {
+        markVideoAccepted(m_config.target);
+    }
+
+    void markVideoAccepted(std::chrono::microseconds pts)
+    {
         m_videoReady = true;
+        if (!m_firstVideoPts.has_value())
+            m_firstVideoPts = pts;
     }
 
     void markAudioAccepted()
     {
+        markAudioAccepted(m_config.target);
+    }
+
+    void markAudioAccepted(std::chrono::microseconds pts)
+    {
         m_audioReady = true;
+        if (!m_firstAudioPts.has_value())
+            m_firstAudioPts = pts;
     }
 
     void markVideoDiscarded()
@@ -127,6 +142,16 @@ public:
         return m_config.target;
     }
 
+    [[nodiscard]] std::optional<std::chrono::microseconds> firstVideoPts() const
+    {
+        return m_firstVideoPts;
+    }
+
+    [[nodiscard]] std::optional<std::chrono::microseconds> firstAudioPts() const
+    {
+        return m_firstAudioPts;
+    }
+
 private:
     [[nodiscard]] SeekPrerollAction actionForPts(std::chrono::microseconds pts) const
     {
@@ -135,6 +160,8 @@ private:
     }
 
     SeekPrerollGateConfig m_config;
+    std::optional<std::chrono::microseconds> m_firstVideoPts;
+    std::optional<std::chrono::microseconds> m_firstAudioPts;
     int m_discardedVideoFrames = 0;
     int m_discardedAudioFrames = 0;
     bool m_videoReady = false;

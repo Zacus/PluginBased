@@ -608,6 +608,10 @@ void testSeekEmitsPositionAndContinuesPlayback()
     assert(seekCompleted != events.end());
     assert(seekCompleted->metadata.sessionId == mediaInfo->metadata.sessionId);
     assert(seekCompleted->metadata.generation > openGeneration);
+    const auto* seekCompletedPayload =
+        std::get_if<media_sdk::SeekCompletedEvent>(&seekCompleted->payload);
+    assert(seekCompletedPayload);
+    assert(seekCompletedPayload->requestedPosition == seekCompletedPayload->position);
 
     player.stop();
     std::filesystem::remove(samplePath);
@@ -822,6 +826,13 @@ void testBurstSeekCoalescesQueuedRequestsBeforeDecodeResumes()
     assert(seekCompletedCount == 1);
     assert(lastSeekPosition == 200ms);
     assert(frames.lastAudioPts() >= 200ms);
+    const auto* seekCompleted = firstEventMatching(events, [](const media_sdk::PlayerEvent& event) {
+        return std::holds_alternative<media_sdk::SeekCompletedEvent>(event.payload);
+    });
+    assert(seekCompleted);
+    const auto* payload = std::get_if<media_sdk::SeekCompletedEvent>(&seekCompleted->payload);
+    assert(payload);
+    assert(payload->requestedPosition == payload->position);
 
     std::filesystem::remove(samplePath);
 }
