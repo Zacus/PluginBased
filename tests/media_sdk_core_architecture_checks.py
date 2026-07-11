@@ -237,9 +237,9 @@ def main() -> None:
             "DecodeWorker should pass PlayerConfig::enableHardwareDecode into Demuxer")
     require("m_media.hardwareDecoder.get()" in decode_worker_cpp,
             "DecodeWorker should pass retained hardware backend to VideoFrameProcessor")
-    require("coalescedSeekPosition" in decode_worker_header + decode_worker_cpp and
+    require("coalescedSeekCommand" in decode_worker_header + decode_worker_cpp and
             "while (!m_commands.empty() && m_commands.front().type == CommandType::Seek)" in decode_worker_cpp,
-            "DecodeWorker should coalesce consecutive queued seek commands before resuming decode")
+            "DecodeWorker should coalesce consecutive queued seek commands and preserve seek intent before resuming decode")
     wait_command_start = decode_worker_cpp.find("bool DecodeWorker::waitForCommand")
     wait_command_end = decode_worker_cpp.find("bool DecodeWorker::tryTakeCommand")
     require(wait_command_start >= 0 and wait_command_end > wait_command_start,

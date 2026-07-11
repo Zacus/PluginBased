@@ -1,6 +1,10 @@
 #include "FrameQueue.h"
+#include "media_sdk/MediaEvents.h"
 
 #include <cassert>
+#include <chrono>
+
+using namespace std::chrono_literals;
 
 namespace {
 
@@ -39,10 +43,20 @@ void testFrameQueue()
     assert(entry.frame == 10);
 }
 
+void testSeekCompletedEventDefaultsRequestedPositionToPosition()
+{
+    media_sdk::SeekCompletedEvent event {
+        .position = 123ms,
+    };
+
+    assert(event.requestedPosition == event.position);
+}
+
 }
 
 int main()
 {
     testFrameQueue();
+    testSeekCompletedEventDefaultsRequestedPositionToPosition();
     return 0;
 }

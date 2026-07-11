@@ -105,6 +105,24 @@ void discardLimitAllowsCompletionFallback()
     assert(gate.discardLimitReached());
 }
 
+void videoTailFallbackIsOptIn()
+{
+    media_sdk::SeekPrerollGate pausedGate({
+        .target = 5000ms,
+        .generation = 3,
+        .hasVideo = true,
+    });
+    assert(!pausedGate.allowsVideoTailFallback());
+
+    media_sdk::SeekPrerollGate playingGate({
+        .target = 5000ms,
+        .generation = 3,
+        .hasVideo = true,
+        .allowVideoTailFallback = true,
+    });
+    assert(playingGate.allowsVideoTailFallback());
+}
+
 void audioVideoSeekCompletesOnVideoButRetiresAfterAudio()
 {
     media_sdk::SeekPrerollGate gate({
@@ -131,6 +149,56 @@ void audioVideoSeekCompletesOnVideoButRetiresAfterAudio()
     assert(gate.readyToRetire());
 }
 
+void playingAudioVideoSeekCanCompleteOnAudioMasterBeforeVideo()
+{
+    media_sdk::SeekPrerollGate gate({
+        .target = 1000ms,
+        .generation = 6,
+        .hasVideo = true,
+        .hasAudio = true,
+        .preferAudioCompletion = true,
+    });
+
+    assert(gate.inspectAudio(1000ms, 6).action == media_sdk::SeekPrerollAction::Accept);
+    gate.markAudioAccepted();
+
+    assert(gate.shouldEmitCompletion());
+    assert(!gate.readyToRetire());
+
+    gate.markCompletionSent();
+    assert(!gate.shouldEmitCompletion());
+
+    assert(gate.inspectVideo(1000ms, 6).action == media_sdk::SeekPrerollAction::Accept);
+    gate.markVideoAccepted();
+
+    assert(gate.readyToRetire());
+}
+
+void playingAudioVideoSeekStillCompletesOnVideoWhenVideoArrivesFirst()
+{
+    media_sdk::SeekPrerollGate gate({
+        .target = 1000ms,
+        .generation = 7,
+        .hasVideo = true,
+        .hasAudio = true,
+        .preferAudioCompletion = true,
+    });
+
+    assert(gate.inspectVideo(1000ms, 7).action == media_sdk::SeekPrerollAction::Accept);
+    gate.markVideoAccepted();
+
+    assert(gate.shouldEmitCompletion());
+    assert(!gate.readyToRetire());
+
+    gate.markCompletionSent();
+    assert(!gate.shouldEmitCompletion());
+
+    assert(gate.inspectAudio(1000ms, 7).action == media_sdk::SeekPrerollAction::Accept);
+    gate.markAudioAccepted();
+
+    assert(gate.readyToRetire());
+}
+
 } // namespace
 
 int main()
@@ -141,5 +209,8 @@ int main()
     missingVideoPtsIsDiscardedEvenAtZeroTarget();
     audioOnlyAcceptedFrameCompletesSeek();
     discardLimitAllowsCompletionFallback();
+    videoTailFallbackIsOptIn();
     audioVideoSeekCompletesOnVideoButRetiresAfterAudio();
+    playingAudioVideoSeekCanCompleteOnAudioMasterBeforeVideo();
+    playingAudioVideoSeekStillCompletesOnVideoWhenVideoArrivesFirst();
 }

@@ -4,6 +4,7 @@
 #include "media_sdk/MediaEvents.h"
 #include "media_sdk/PlayerConfig.h"
 #include "media_sdk/Result.h"
+#include "media_sdk/SeekTypes.h"
 
 #include <chrono>
 #include <filesystem>
@@ -38,6 +39,8 @@ public:
     void stop();
     [[nodiscard("inspect the seek result before assuming the seek was accepted")]]
     Result<void> seek(std::chrono::milliseconds position);
+    [[nodiscard("inspect the seek result before assuming the seek was accepted")]]
+    Result<void> seek(std::chrono::milliseconds position, SeekPlaybackMode mode);
 
 private:
     class Impl;

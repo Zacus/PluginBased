@@ -21,6 +21,8 @@ struct SeekPrerollGateConfig {
     std::uint64_t generation = 0;
     bool hasVideo = false;
     bool hasAudio = false;
+    bool preferAudioCompletion = false;
+    bool allowVideoTailFallback = false;
     int maxDiscardedVideoFrames = 300;
     int maxDiscardedAudioFrames = 1000;
 };
@@ -112,7 +114,12 @@ public:
         if (m_completionSent)
             return false;
 
-        // 精确 seek 的完成信号必须等到目标点后的主播放流已进入可播放状态。
+        // 播放态允许首个目标侧音频或视频建立新 generation，避免另一条流先到时被上层判旧；
+        // 后续仍等双流都到达目标侧再 retire，继续过滤目标前帧。
+        if (m_config.preferAudioCompletion && m_config.hasAudio)
+            return m_audioReady || (m_config.hasVideo && m_videoReady);
+
+        // 暂停态仍以视频预滚完成为准，避免音频 backpressure 阻塞首帧显示。
         if (m_config.hasVideo)
             return m_videoReady;
         if (m_config.hasAudio)
@@ -135,6 +142,11 @@ public:
     [[nodiscard]] bool completionSent() const
     {
         return m_completionSent;
+    }
+
+    [[nodiscard]] bool allowsVideoTailFallback() const
+    {
+        return m_config.allowVideoTailFallback;
     }
 
     [[nodiscard]] std::chrono::microseconds completionPosition() const

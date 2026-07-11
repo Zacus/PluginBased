@@ -105,6 +105,7 @@ public:
     void submitPause();
     void submitStop();
     Result<void> submitSeek(std::chrono::milliseconds position);
+    Result<void> submitSeek(std::chrono::milliseconds position, SeekPlaybackMode mode);
 
 private:
     enum class CommandType {
@@ -125,23 +126,25 @@ private:
         CommandType type = CommandType::Stop;
         std::filesystem::path path;
         std::chrono::milliseconds position { 0 };
+        SeekPlaybackMode seekPlaybackMode = SeekPlaybackMode::PreservePlaybackState;
     };
 
     void run(WorkerStopToken stopToken);
     void submit(Command command);
     bool waitForCommand(WorkerStopToken stopToken, Command& command);
     bool tryTakeCommand(Command& command);
-    std::chrono::milliseconds coalescedSeekPosition(std::chrono::milliseconds position);
+    Command coalescedSeekCommand(Command command);
     void handleCommand(Command command, WorkerStopToken stopToken);
     void handleOpen(const std::filesystem::path& path);
     void decodeUntilBlocked(WorkerStopToken stopToken);
     void decodeSeekPreroll(WorkerStopToken stopToken);
-    bool handleSeek(std::chrono::milliseconds position);
+    bool handleSeek(std::chrono::milliseconds position, bool wasPlaying);
     int seekDemuxer(std::chrono::milliseconds position);
-    void beginAccurateSeek(std::chrono::milliseconds position);
+    void beginAccurateSeek(std::chrono::milliseconds position, bool preferAudioCompletion);
     void emitSeekCompletedIfReady();
     void emitSeekFallbackCompletion();
     void emitPendingSeekFallbackCompletion();
+    void publishSeekTailVideoFrameIfAvailable();
     void closeMedia();
 
     Result<void> decodePacket(AVCodecContext* codecContext,
@@ -186,6 +189,7 @@ private:
     OpenedMedia m_media;
     std::optional<SeekPrerollGate> m_seekGate;
     std::optional<std::chrono::microseconds> m_pendingSeekTarget;
+    std::optional<VideoFrame> m_seekTailVideoFrame;
     std::uint64_t m_sessionId = 0;
     std::uint64_t m_generation = 0;
     bool m_hasMedia = false;

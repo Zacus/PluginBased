@@ -43,7 +43,7 @@ struct PositionChangedEvent {
 
 struct SeekCompletedEvent {
     std::chrono::milliseconds position { 0 };
-    std::chrono::milliseconds requestedPosition { 0 };
+    std::chrono::milliseconds requestedPosition { position };
     std::optional<std::chrono::milliseconds> firstAudioPts;
     std::optional<std::chrono::milliseconds> firstVideoPts;
     bool exact = true;

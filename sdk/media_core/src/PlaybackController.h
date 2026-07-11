@@ -24,6 +24,7 @@ public:
     void pause();
     void stop();
     Result<void> seek(std::chrono::milliseconds position);
+    Result<void> seek(std::chrono::milliseconds position, SeekPlaybackMode mode);
 
 private:
     DecodeWorker m_worker;
