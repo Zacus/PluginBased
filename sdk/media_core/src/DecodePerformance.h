@@ -20,6 +20,8 @@ struct DecodePerformanceStats {
     std::int64_t nativeVideoFrames = 0;
     std::int64_t nativeFallbackVideoFrames = 0;
     std::int64_t normalizedVideoFrames = 0;
+    std::int64_t normalizedFrameHeaderAllocations = 0;
+    std::int64_t normalizedPixelBufferAllocations = 0;
     std::int64_t normalizeTotalUs = 0;
     std::int64_t normalizeMaxUs = 0;
     std::int64_t queuedVideoFrames = 0;

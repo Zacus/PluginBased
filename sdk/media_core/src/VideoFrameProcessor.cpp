@@ -252,6 +252,11 @@ AVFramePtr VideoFrameProcessor::normalizeVideoFrame(AVFramePtr frame, DecodePerf
 
     const auto started = std::chrono::steady_clock::now();
     auto converted = makeFrame();
+    if (!converted)
+        return {};
+    if (stats)
+        ++stats->normalizedFrameHeaderAllocations;
+
     converted->format = AV_PIX_FMT_YUV420P;
     converted->width = frame->width;
     converted->height = frame->height;
@@ -260,6 +265,8 @@ AVFramePtr VideoFrameProcessor::normalizeVideoFrame(AVFramePtr frame, DecodePerf
     int ret = av_frame_get_buffer(converted.get(), 32);
     if (ret < 0)
         return {};
+    if (stats)
+        ++stats->normalizedPixelBufferAllocations;
 
     ret = av_frame_make_writable(converted.get());
     if (ret < 0)

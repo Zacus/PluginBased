@@ -82,6 +82,8 @@ void testCpuFrameMetadataAndPlaneViews()
     assert(frame.planes()[0].stride > 0);
     assert(frame.hasStorage());
     assert(stats.normalizedVideoFrames == 0);
+    assert(stats.normalizedFrameHeaderAllocations == 0);
+    assert(stats.normalizedPixelBufferAllocations == 0);
 }
 
 void testColorAndPixelFormatMapping()
@@ -120,6 +122,8 @@ void testUnsupportedCpuFormatNormalizesToYuv420P()
     assert(result.value().colorSpace() == media_sdk::ColorSpace::Bt709);
     assert(result.value().planes().size() == 3);
     assert(stats.normalizedVideoFrames == 1);
+    assert(stats.normalizedFrameHeaderAllocations == 1);
+    assert(stats.normalizedPixelBufferAllocations == 1);
     assert(stats.sourcePixelFormat == AV_PIX_FMT_RGB24);
     assert(stats.cpuPixelFormat == AV_PIX_FMT_YUV420P);
 }
@@ -157,6 +161,28 @@ void testHardwareBackendUsesStringViewName()
     assert(backend.name() == "fake-hw");
 }
 
+void testHardwareTransferDoesNotUseNormalizerAllocationPath()
+{
+    media_sdk::VideoFrameProcessor processor;
+    media_sdk::DecodePerformanceStats stats;
+    FakeHardwareBackend backend;
+    auto source = media_sdk::makeFrame();
+    assert(source);
+    source->format = AV_PIX_FMT_VIDEOTOOLBOX;
+    source->width = 8;
+    source->height = 8;
+
+    media_sdk::VideoFrameProcessOptions options;
+    options.preferNativeVideoFrames = false;
+    auto result = processor.process(std::move(source), options, &backend, &stats);
+
+    assert(result.ok());
+    assert(stats.hardwareVideoFrames == 1);
+    assert(stats.transferredVideoFrames == 1);
+    assert(stats.normalizedFrameHeaderAllocations == 0);
+    assert(stats.normalizedPixelBufferAllocations == 0);
+}
+
 } // namespace
 
 int main()
@@ -166,5 +192,6 @@ int main()
     testUnsupportedCpuFormatNormalizesToYuv420P();
     testVideoToolboxNativeHandleDescriptor();
     testHardwareBackendUsesStringViewName();
+    testHardwareTransferDoesNotUseNormalizerAllocationPath();
     return 0;
 }
