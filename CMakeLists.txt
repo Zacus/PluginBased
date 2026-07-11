@@ -341,6 +341,7 @@ if(BUILD_TESTING)
     )
     target_include_directories(PlayPluginVideoFrameBridgeTest PRIVATE
         "${PLAYPLUGIN_TEST_PLUGIN_ROOT}/PlayPlugin/src"
+        "${CMAKE_SOURCE_DIR}/sdk/media_core/src"
     )
     target_link_libraries(PlayPluginVideoFrameBridgeTest PRIVATE
         Qt6::Core

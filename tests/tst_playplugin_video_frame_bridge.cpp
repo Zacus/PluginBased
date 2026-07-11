@@ -1,4 +1,5 @@
 #include "playback/SdkVideoFrameBridge.h"
+#include "VideoFrameProcessor.h"
 
 #include <atomic>
 #include <cassert>
@@ -6,6 +7,19 @@
 #include <memory>
 
 namespace {
+
+media_sdk::AVFramePtr bufferedRgbFrame(int width, int height, std::int64_t pts)
+{
+    auto frame = media_sdk::makeFrame();
+    assert(frame);
+    frame->format = AV_PIX_FMT_RGB24;
+    frame->width = width;
+    frame->height = height;
+    frame->pts = pts;
+    assert(av_frame_get_buffer(frame.get(), 32) >= 0);
+    assert(av_frame_make_writable(frame.get()) >= 0);
+    return frame;
+}
 
 std::shared_ptr<AVFrame> trackedFrame(std::atomic_int& releaseCount)
 {
@@ -89,6 +103,38 @@ void missingStorageIsRejected()
     assert(!makeVideoFrameDataFromSdk(media_sdk::VideoFrame {}));
 }
 
+void pooledRenderReferenceOutlivesProcessorFacade()
+{
+    VideoFrameDataPtr renderFrame;
+    {
+        media_sdk::VideoFrameProcessor processor;
+        auto converted = processor.process(bufferedRgbFrame(16, 16, 1'000));
+        assert(converted.ok());
+        renderFrame = makeVideoFrameDataFromSdk(converted.value());
+        assert(renderFrame);
+        assert(processor.picturePoolStats().inFlightCount == 1);
+    }
+
+    assert(renderFrame->frame);
+    assert(renderFrame->frame->data[0] != nullptr);
+    renderFrame.reset();
+}
+
+void repeatedProcessorCloseWithRenderFramesIsStable()
+{
+    for (int iteration = 0; iteration < 20; ++iteration) {
+        VideoFrameDataPtr renderFrame;
+        {
+            media_sdk::VideoFrameProcessor processor;
+            auto converted = processor.process(bufferedRgbFrame(16, 16, iteration));
+            assert(converted.ok());
+            renderFrame = makeVideoFrameDataFromSdk(converted.value());
+        }
+        assert(renderFrame && renderFrame->frame->data[0]);
+        renderFrame.reset();
+    }
+}
+
 } // namespace
 
 int main()
@@ -96,5 +142,7 @@ int main()
     cpuFrameDataSharesSdkStorageLifetime();
     nativeFrameDataSharesSdkStorageLifetime();
     missingStorageIsRejected();
+    pooledRenderReferenceOutlivesProcessorFacade();
+    repeatedProcessorCloseWithRenderFramesIsStable();
     return 0;
 }

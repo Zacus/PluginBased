@@ -7,6 +7,7 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <string_view>
 
 using namespace std::chrono_literals;
@@ -42,6 +43,11 @@ std::shared_ptr<AVFrame> storageFrame(const media_sdk::VideoFrame& frame)
 class FakeHardwareBackend final : public media_sdk::HardwareDecoderBackend
 {
 public:
+    explicit FakeHardwareBackend(AVPixelFormat transferFormat = AV_PIX_FMT_NV12)
+        : m_transferFormat(transferFormat)
+    {
+    }
+
     std::string_view name() const override { return "fake-hw"; }
     bool isAvailableForCodec(const AVCodec*, AVCodecID) const override { return true; }
     bool configureContext(AVCodecContext*) override { return true; }
@@ -51,7 +57,7 @@ public:
     }
     media_sdk::AVFramePtr transferToCpuFrame(const AVFrame*) override
     {
-        return makeBufferedFrame(AV_PIX_FMT_NV12,
+        return makeBufferedFrame(m_transferFormat,
                                  8,
                                  8,
                                  77'000,
@@ -59,6 +65,9 @@ public:
                                  AVCOL_SPC_BT709);
     }
     void reset() override {}
+
+private:
+    AVPixelFormat m_transferFormat;
 };
 
 void testCpuFrameMetadataAndPlaneViews()
@@ -338,6 +347,45 @@ void testResetKeepsOldStorageAliveAndCreatesNewPoolState()
     assert(processor.picturePoolStats().allocationCount == 3);
 }
 
+void testSeekTailValueKeepsPoolFrameInFlight()
+{
+    media_sdk::VideoFrameProcessor processor;
+    auto converted = processor.process(makeBufferedFrame(AV_PIX_FMT_RGB24,
+                                                         12,
+                                                         12,
+                                                         1'000,
+                                                         AVCOL_RANGE_MPEG,
+                                                         AVCOL_SPC_BT709));
+    assert(converted.ok());
+    std::optional<media_sdk::VideoFrame> seekTail(std::move(converted.value()));
+    converted.value() = {};
+    assert(processor.picturePoolStats().inFlightCount == 1);
+
+    seekTail.reset();
+    assert(processor.picturePoolStats().inFlightCount == 0);
+}
+
+void testNativeToCpuFallbackInitializesCompatiblePicturePool()
+{
+    media_sdk::VideoFrameProcessor processor;
+    FakeHardwareBackend backend(AV_PIX_FMT_RGB24);
+    auto native = media_sdk::makeFrame();
+    native->format = AV_PIX_FMT_VIDEOTOOLBOX;
+    native->width = 8;
+    native->height = 8;
+
+    media_sdk::VideoFrameProcessOptions options;
+    options.preferNativeVideoFrames = false;
+    auto fallback = processor.process(std::move(native), options, &backend);
+
+    assert(fallback.ok());
+    assert(fallback.value().pixelFormat() == media_sdk::PixelFormat::Yuv420P);
+    const auto stats = processor.picturePoolStats();
+    assert(stats.acquireCount == 1);
+    assert(stats.allocationCount == 3);
+    assert(stats.retainedCount == 3);
+}
+
 } // namespace
 
 int main()
@@ -353,5 +401,7 @@ int main()
     testFailedConversionDoesNotPoisonNextFrame();
     testNativeAndSupportedCpuFramesBypassPicturePool();
     testResetKeepsOldStorageAliveAndCreatesNewPoolState();
+    testSeekTailValueKeepsPoolFrameInFlight();
+    testNativeToCpuFallbackInitializesCompatiblePicturePool();
     return 0;
 }

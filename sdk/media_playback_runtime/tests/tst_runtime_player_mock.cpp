@@ -233,7 +233,9 @@ public:
 
     void clear() override
     {
+        std::lock_guard lock(mutex);
         ++clearCount;
+        lastFrame = {};
     }
 
     void complete(
@@ -490,6 +492,29 @@ media_sdk::runtime::RuntimeVideoFrame runtimeVideo(
 {
     return {
         .frame = makeVideoFrame(pts, pixelFormat),
+        .sessionId = sessionId,
+        .generation = generation,
+    };
+}
+
+media_sdk::runtime::RuntimeVideoFrame trackedRuntimeVideo(
+    media_sdk::runtime::SessionId sessionId,
+    media_sdk::runtime::Generation generation,
+    std::chrono::microseconds pts,
+    std::atomic_int& releaseCount)
+{
+    auto storage = std::shared_ptr<int>(new int(7), [&releaseCount](int* value) {
+        delete value;
+        releaseCount.fetch_add(1, std::memory_order_relaxed);
+    });
+    return {
+        .frame = media_sdk::VideoFrame({
+            .width = 16,
+            .height = 16,
+            .pixelFormat = media_sdk::PixelFormat::Yuv420P,
+            .pts = pts,
+            .storage = std::move(storage),
+        }),
         .sessionId = sessionId,
         .generation = generation,
     };
@@ -1512,6 +1537,51 @@ void videoPicturePoolDiagnosticsTrackAcceptedSnapshots()
     assert(diagnostics.videoPicturePoolInFlightCount == 2);
 }
 
+void seekKeepsOldFrameStorageUntilReplacementArrives()
+{
+    MockAudioOutput audio;
+    audio.setClock(100ms, 1);
+    MockPresenter presenter;
+    auto player = makePlayer(audio, presenter);
+    assert(player.open().ok());
+    std::atomic_int releaseCount { 0 };
+
+    discardFramePushResult(player.enqueueVideo(trackedRuntimeVideo(1, 1, 100ms, releaseCount)));
+    assert(waitUntil([&presenter]() { return presenter.presentCount == 1; }));
+
+    player.seek(200ms);
+    assert(releaseCount.load(std::memory_order_relaxed) == 0);
+
+    audio.setClock(200ms, 2);
+    player.completeSeek(1, 2);
+    discardFramePushResult(player.enqueueVideo(runtimeVideo(1, 2, 200ms)));
+    assert(waitUntil([&presenter]() { return presenter.presentCount == 2; }));
+    assert(waitUntil([&releaseCount]() {
+        return releaseCount.load(std::memory_order_relaxed) == 1;
+    }));
+}
+
+void eofDrainKeepsLastFrameUntilStopThenReleasesIt()
+{
+    MockAudioOutput audio;
+    audio.setClock(100ms, 1);
+    MockPresenter presenter;
+    MockRuntimeEvents events;
+    auto player = makePlayer(audio, presenter, events);
+    assert(player.open().ok());
+    std::atomic_int releaseCount { 0 };
+
+    discardFramePushResult(player.enqueueVideo(trackedRuntimeVideo(1, 1, 100ms, releaseCount)));
+    assert(waitUntil([&presenter]() { return presenter.presentCount == 1; }));
+    player.enqueueEndOfStream(1, 1);
+    presenter.complete(presenter.lastId(), media_sdk::runtime::PresentStatus::Presented);
+    assert(waitUntil([&events]() { return events.eofPresentedCount == 1; }));
+    assert(releaseCount.load(std::memory_order_relaxed) == 0);
+
+    player.stop();
+    assert(releaseCount.load(std::memory_order_relaxed) == 1);
+}
+
 void currentGenerationDeviceLostPausesAudioFlushesQueuesClearsPresenterAndRequestsCpuOnlyDecode()
 {
     MockAudioOutput audio;
@@ -1713,6 +1783,8 @@ int main()
     nativePresenterFailureRunsFullFallbackTransition();
     nativeDiagnosticsTrackZeroCopySuccessWithoutCpuCopy();
     videoPicturePoolDiagnosticsTrackAcceptedSnapshots();
+    seekKeepsOldFrameStorageUntilReplacementArrives();
+    eofDrainKeepsLastFrameUntilStopThenReleasesIt();
     currentGenerationDeviceLostPausesAudioFlushesQueuesClearsPresenterAndRequestsCpuOnlyDecode();
     fallbackDuringSeekGapUsesEffectiveClockResumePosition();
     queuedPresenterResultWithZeroIdTriggersFallback();
