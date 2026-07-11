@@ -43,7 +43,7 @@ public:
     void setVolume(float volume);
     void setMuted(bool muted);
     void stopComponents();
-    void seek(qint64 positionMs, int generation);
+    void seek(qint64 positionMs, int generation, bool resumeAfterSeek = false);
 
 signals:
     void mediaInfoReady(qint64 durationMs, int width, int height,
@@ -63,12 +63,14 @@ signals:
 
 private slots:
     void onDecoderSeekCompleted(int generation, int serial);
-    void onNativeRenderingFailed();
+    void onSurfaceNativeRenderingFailed();
+    void onSdkNativeRenderingFailed();
 
 private:
     void createSdkRuntimeChain();
     void destroySdkRuntimeChain();
     void updateNativeVideoRenderingEnabled();
+    void disableNativeVideoRenderingAfterFailure(bool notifySdkSession);
 
     std::unique_ptr<SdkPlaybackAdapter> m_sdkAdapter;
     std::unique_ptr<QtRhiVideoPresenter> m_sdkVideoPresenter;

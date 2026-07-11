@@ -5,10 +5,12 @@ add_library(media_sdk_core STATIC
     src/HardwareDecoderBackend.h
     src/HardwareDecoderFactory.cpp
     src/HardwareDecoderFactory.h
+    src/Frame.cpp
     src/Player.cpp
     src/PlaybackController.cpp
     src/DecodeWorker.cpp
     src/QueuePolicy.h
+    src/SeekAudioTrimmer.cpp
     src/StreamDecoder.cpp
     src/VideoToolboxBackend.cpp
     src/VideoToolboxBackend.h
@@ -127,5 +129,43 @@ if(BUILD_TESTING)
     target_link_libraries(MediaSdkCorePlaybackWorkerTest PRIVATE media_sdk_core FFmpeg::all)
     add_test(NAME media_sdk_core_playback_worker
         COMMAND $<TARGET_FILE:MediaSdkCorePlaybackWorkerTest>
+    )
+
+    add_executable(MediaSdkCoreSeekPrerollGateTest
+        tests/tst_media_core_seek_preroll_gate.cpp
+    )
+    target_compile_features(MediaSdkCoreSeekPrerollGateTest PRIVATE cxx_std_20)
+    set_target_properties(MediaSdkCoreSeekPrerollGateTest PROPERTIES
+        CXX_EXTENSIONS OFF
+        AUTOMOC OFF
+        AUTOUIC OFF
+        AUTORCC OFF
+    )
+    target_include_directories(MediaSdkCoreSeekPrerollGateTest PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/include"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src"
+    )
+    target_link_libraries(MediaSdkCoreSeekPrerollGateTest PRIVATE media_sdk_core)
+    add_test(NAME media_sdk_core_seek_preroll_gate
+        COMMAND $<TARGET_FILE:MediaSdkCoreSeekPrerollGateTest>
+    )
+
+    add_executable(MediaSdkCoreSeekAudioTrimmerTest
+        tests/tst_media_core_seek_audio_trimmer.cpp
+    )
+    target_compile_features(MediaSdkCoreSeekAudioTrimmerTest PRIVATE cxx_std_20)
+    set_target_properties(MediaSdkCoreSeekAudioTrimmerTest PROPERTIES
+        CXX_EXTENSIONS OFF
+        AUTOMOC OFF
+        AUTOUIC OFF
+        AUTORCC OFF
+    )
+    target_include_directories(MediaSdkCoreSeekAudioTrimmerTest PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/include"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src"
+    )
+    target_link_libraries(MediaSdkCoreSeekAudioTrimmerTest PRIVATE media_sdk_core)
+    add_test(NAME media_sdk_core_seek_audio_trimmer
+        COMMAND $<TARGET_FILE:MediaSdkCoreSeekAudioTrimmerTest>
     )
 endif()

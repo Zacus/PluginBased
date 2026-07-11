@@ -143,10 +143,21 @@ public:
             m_runtimeEofForwarded = true;
         }
 
+        forwardRuntimeClockPosition(*coreTimeline, runtimeTimeline);
         forward({
             .metadata = *coreTimeline,
             .payload = EndOfFileEvent {},
         });
+    }
+
+    void onPlaybackClockTick(runtime::RuntimeTimeline runtimeTimeline,
+                             runtime::ClockSnapshot clock)
+    {
+        const auto coreTimeline = m_timeline.coreForRuntimeTimeline(runtimeTimeline);
+        if (!coreTimeline.has_value())
+            return;
+
+        forwardRuntimeClockPosition(*coreTimeline, runtimeTimeline, clock);
     }
 
 private:
@@ -230,12 +241,28 @@ private:
         if (!runtimeTimeline.has_value())
             return;
 
-        const auto clock = m_runtimeControl.playbackClock(*runtimeTimeline);
-        if (!clock.has_value() || !clock->valid || clock->generation != runtimeTimeline->generation)
+        forwardRuntimeClockPosition(event.metadata, *runtimeTimeline);
+    }
+
+    void forwardRuntimeClockPosition(EventMetadata metadata,
+                                     runtime::RuntimeTimeline runtimeTimeline)
+    {
+        const auto clock = m_runtimeControl.playbackClock(runtimeTimeline);
+        if (!clock.has_value())
+            return;
+
+        forwardRuntimeClockPosition(metadata, runtimeTimeline, *clock);
+    }
+
+    void forwardRuntimeClockPosition(EventMetadata metadata,
+                                     runtime::RuntimeTimeline runtimeTimeline,
+                                     runtime::ClockSnapshot clock)
+    {
+        if (!clock.valid || clock.generation != runtimeTimeline.generation)
             return;
 
         const auto runtimePosition =
-            std::chrono::duration_cast<std::chrono::milliseconds>(clock->position);
+            std::chrono::duration_cast<std::chrono::milliseconds>(clock.position);
 
         {
             std::lock_guard lock(m_mutex);
@@ -252,7 +279,7 @@ private:
         }
 
         forward({
-            .metadata = event.metadata,
+            .metadata = metadata,
             .payload = PositionChangedEvent {
                 .position = runtimePosition,
             },

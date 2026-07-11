@@ -90,9 +90,9 @@ public:
         m_player.stop();
     }
 
-    Result<void> seek(std::chrono::milliseconds position) override
+    Result<void> seek(std::chrono::milliseconds position, SeekPlaybackMode mode) override
     {
-        return m_player.seek(position);
+        return m_player.seek(position, mode);
     }
 
 private:
@@ -150,6 +150,11 @@ public:
     void completeSeek(runtime::SessionId sessionId, runtime::Generation generation) override
     {
         m_player.completeSeek(sessionId, generation);
+    }
+
+    void notifyPresenterFailure(runtime::PresentStatus reason) override
+    {
+        m_player.notifyPresenterFailure(reason);
     }
 
     void stop() override
@@ -369,6 +374,11 @@ struct PlaybackSession::Impl final
 
     Result<void> seek(std::chrono::milliseconds position)
     {
+        return seek(position, SeekPlaybackMode::PreservePlaybackState);
+    }
+
+    Result<void> seek(std::chrono::milliseconds position, SeekPlaybackMode mode)
+    {
         if (position < std::chrono::milliseconds { 0 })
             return sessionFailure(MediaErrorCode::SeekFailed, "Cannot seek to a negative position");
 
@@ -377,6 +387,8 @@ struct PlaybackSession::Impl final
             return sessionFailure(MediaErrorCode::InternalStateError, "PlaybackSession is not open");
 
         const auto stateBeforeSeek = playbackCommandState();
+        const bool resumeAfterSeek = mode == SeekPlaybackMode::ResumePlayback
+            || stateBeforeSeek == PlaybackCommandState::Playing;
         if (handles.runtimePlayer) {
             handles.runtimePlayer->seek(std::chrono::duration_cast<std::chrono::microseconds>(position));
             eventRouter.beginSeek(handles.runtimePlayer->timeline(), position);
@@ -384,16 +396,34 @@ struct PlaybackSession::Impl final
             eventRouter.cancelFrameAcceptance();
         }
 
-        const auto seekResult = handles.corePlayer->seek(position);
+        const auto coreSeekMode = resumeAfterSeek
+            ? SeekPlaybackMode::ResumePlayback
+            : SeekPlaybackMode::PreservePlaybackState;
+        const auto seekResult = handles.corePlayer->seek(position, coreSeekMode);
         if (!seekResult.ok())
             return seekResult;
 
-        if (stateBeforeSeek == PlaybackCommandState::Playing) {
+        if (resumeAfterSeek) {
+            // EOF 后恢复播放必须和 seek 组成一个语义，不能再靠 seek 后补发 core.play()。
+            {
+                std::lock_guard lock(m_mutex);
+                if (core == handles.corePlayer)
+                    commandState = PlaybackCommandState::Playing;
+            }
             if (handles.runtimePlayer)
                 handles.runtimePlayer->resume();
-            handles.corePlayer->play();
         }
         return seekResult;
+    }
+
+    void notifyNativeRenderingFailed()
+    {
+        const auto runtime = currentRuntimePlayer();
+        if (!runtime)
+            return;
+
+        // 外部 Surface 只能报告失败原因；代际切换、队列中止和 CPU fallback 统一交给 RuntimePlayer 状态机处理。
+        runtime->notifyPresenterFailure(runtime::PresentStatus::UnsupportedNativeHandle);
     }
 
     runtime::RuntimeTimeline timeline() const
@@ -579,6 +609,14 @@ private:
         notifyRuntimeDiagnostics();
     }
 
+    void onPlaybackClockTick(runtime::RuntimeTimeline runtimeTimeline,
+                             runtime::ClockSnapshot clock) override
+    {
+        if (!timelineState.acceptsRuntimeTimeline(runtimeTimeline))
+            return;
+        eventRouter.onPlaybackClockTick(runtimeTimeline, clock);
+    }
+
     void onRuntimeError(MediaError error) override
     {
         const auto runtime = currentRuntimePlayer();
@@ -651,7 +689,7 @@ private:
         }
 
         fallbackCore->play();
-        const auto seekResult = fallbackCore->seek(fallbackPosition);
+        const auto seekResult = fallbackCore->seek(fallbackPosition, SeekPlaybackMode::ResumePlayback);
         if (!seekResult.ok()) {
             emitError(*coreMetadata, seekResult.error());
             return;
@@ -776,6 +814,16 @@ void PlaybackSession::stop()
 Result<void> PlaybackSession::seek(std::chrono::milliseconds position)
 {
     return m_impl->seek(position);
+}
+
+Result<void> PlaybackSession::seek(std::chrono::milliseconds position, SeekPlaybackMode mode)
+{
+    return m_impl->seek(position, mode);
+}
+
+void PlaybackSession::notifyNativeRenderingFailed()
+{
+    m_impl->notifyNativeRenderingFailed();
 }
 
 runtime::RuntimeTimeline PlaybackSession::timeline() const

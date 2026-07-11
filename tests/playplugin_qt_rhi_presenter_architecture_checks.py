@@ -99,7 +99,6 @@ def check_presenter_contract() -> None:
     assert_contains(header, "QPointer<FFmpegSurface>", PRESENTER_H)
     assert_contains(header, "std::atomic_uint64_t m_nextPresentId", PRESENTER_H)
     assert_contains(header, "setEvents(media_sdk::runtime::IVideoPresenterEvents* events)", PRESENTER_H)
-    assert_contains(combined, "media_sdk::runtime::PresentCompletion", PRESENTER_CPP)
     assert_contains(combined, "UnsupportedNativeHandle", PRESENTER_CPP)
     assert_contains(combined, "QMetaObject::invokeMethod", PRESENTER_CPP)
     assert_contains(combined, "Qt::QueuedConnection", PRESENTER_CPP)
@@ -107,14 +106,12 @@ def check_presenter_contract() -> None:
     assert_contains(combined, "av_frame_clone", PRESENTER_CPP)
     assert_contains(combined, "surface->onFrameReady", PRESENTER_CPP)
     assert_contains(combined, "surface->clear()", PRESENTER_CPP)
-    assert_contains(source, "diagnosticsSnapshot()", PRESENTER_CPP)
-    assert_contains(source, "media_sdk::runtime::PresentDiagnostics", PRESENTER_CPP)
-    assert_contains(source, "afterRendering", PRESENTER_CPP)
-    assert_contains(source, "Qt::SingleShotConnection", PRESENTER_CPP)
-    assert_contains(source, "Qt::BlockingQueuedConnection", PRESENTER_CPP)
-    assert_contains(source, "Qt video surface has no QQuickWindow", PRESENTER_CPP)
-    assert_contains(source, "Qt scene graph did not draw the native VideoToolbox texture", PRESENTER_CPP)
-    assert_contains(source, "diagnostics.nativeTextureFailed = 1", PRESENTER_CPP)
+    assert_contains(source, "PresentStatus::Presented", PRESENTER_CPP)
+    assert_not_contains(source, "Qt::BlockingQueuedConnection", PRESENTER_CPP)
+    assert_not_contains(source, "afterRendering", PRESENTER_CPP)
+    assert_not_contains(source, "QTimer::singleShot", PRESENTER_CPP)
+    assert_not_contains(source, "PresentStatus::Skipped", PRESENTER_CPP)
+    assert_not_contains(source, "dispatchQueuedCompletion", PRESENTER_CPP)
 
     for forbidden in (
         "sws_scale",
@@ -130,7 +127,7 @@ def check_presenter_contract() -> None:
     assert_contains(metal_bridge_source, "releaseNativeTextures", METAL_BRIDGE_MM)
 
     for token in ("nativeTextureCreated", "nativeTextureDrawn", "cpuMemcpy", "cpuTransferred"):
-        assert_contains(source, token, PRESENTER_CPP)
+        assert_contains(surface_source, token, SURFACE_CPP)
 
 
 def check_scene_graph_dependency_location() -> None:
@@ -198,10 +195,12 @@ def check_sdk_playback_adapter_contract() -> None:
     assert_contains(pipeline_header, "SdkPlaybackAdapter", PLAYBACK_PIPELINE_H)
     assert_contains(pipeline_source, "m_sdkAdapter->openFile(url)", PLAYBACK_PIPELINE_CPP)
     assert_contains(pipeline_source, "m_sdkAdapter->setPaused(paused)", PLAYBACK_PIPELINE_CPP)
-    assert_contains(pipeline_source, "m_sdkAdapter->seek(positionMs, generation)", PLAYBACK_PIPELINE_CPP)
+    assert_contains(pipeline_source, "m_sdkAdapter->seek(positionMs, generation, resumeAfterSeek)", PLAYBACK_PIPELINE_CPP)
     assert_contains(pipeline_source, "m_sdkAdapter->setVideoToolboxDirectRenderingEnabled(enabled)", PLAYBACK_PIPELINE_CPP)
     assert_contains(pipeline_source, "m_surface && m_surface->supportsNativeVideoToolboxRendering()", PLAYBACK_PIPELINE_CPP)
-    assert_contains(pipeline_source, "&PlaybackPipeline::onNativeRenderingFailed", PLAYBACK_PIPELINE_CPP)
+    assert_contains(pipeline_source, "&FFmpegSurface::nativeRenderingFailed", PLAYBACK_PIPELINE_CPP)
+    assert_contains(pipeline_source, "&PlaybackPipeline::onSurfaceNativeRenderingFailed", PLAYBACK_PIPELINE_CPP)
+    assert_contains(pipeline_source, "&PlaybackPipeline::onSdkNativeRenderingFailed", PLAYBACK_PIPELINE_CPP)
     assert_not_contains(pipeline_source, "decode event bridge is pending", PLAYBACK_PIPELINE_CPP)
 
 

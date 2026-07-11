@@ -20,6 +20,8 @@ struct VideoPresenterCapabilities {
 enum class PresentStatus {
     Presented,
     Queued,
+    // Frame was consumed without drawing, e.g. the output window is not renderable.
+    Skipped,
     UnsupportedNativeHandle,
     DeviceLost,
     Failed

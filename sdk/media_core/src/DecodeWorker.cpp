@@ -1,7 +1,11 @@
 #include "DecodeWorker.h"
 
+#include "SeekAudioTrimmer.h"
+
 #include <algorithm>
 #include <cstring>
+#include <limits>
+#include <optional>
 #include <utility>
 #include <vector>
 
@@ -65,6 +69,23 @@ bool isDeliveredFramePush(DecodeFramePushResult result)
         || result.status == DecodeFramePushStatus::Backpressured;
 }
 
+int preferredSeekStreamIndex(const OpenedMedia& media)
+{
+    if (media.videoStreamIndex >= 0 && media.videoCodecContext)
+        return media.videoStreamIndex;
+    if (media.audioStreamIndex >= 0 && media.audioCodecContext)
+        return media.audioStreamIndex;
+    return -1;
+}
+
+std::optional<std::chrono::milliseconds> toMilliseconds(
+    std::optional<std::chrono::microseconds> value)
+{
+    if (!value.has_value())
+        return std::nullopt;
+    return std::chrono::duration_cast<std::chrono::milliseconds>(*value);
+}
+
 } // namespace
 
 DecodeWorker::DecodeWorker(PlayerConfig config, IEventSink& events, IDecodeFrameSink& frames)
@@ -119,13 +140,18 @@ void DecodeWorker::submitStop()
 
 Result<void> DecodeWorker::submitSeek(std::chrono::milliseconds position)
 {
+    return submitSeek(position, SeekPlaybackMode::PreservePlaybackState);
+}
+
+Result<void> DecodeWorker::submitSeek(std::chrono::milliseconds position, SeekPlaybackMode mode)
+{
     if (position < std::chrono::milliseconds { 0 })
     {
         return Result<void>::failure(makeError(MediaErrorCode::SeekFailed,
                                               "Cannot seek to a negative position"));
     }
 
-    submit({ .type = CommandType::Seek, .position = position });
+    submit({ .type = CommandType::Seek, .position = position, .seekPlaybackMode = mode });
     return Result<void>::success();
 }
 
@@ -178,15 +204,15 @@ bool DecodeWorker::tryTakeCommand(Command& command)
     return true;
 }
 
-std::chrono::milliseconds DecodeWorker::coalescedSeekPosition(std::chrono::milliseconds position)
+DecodeWorker::Command DecodeWorker::coalescedSeekCommand(Command command)
 {
     std::scoped_lock lock(m_mutex);
     while (!m_commands.empty() && m_commands.front().type == CommandType::Seek)
     {
-        position = m_commands.front().position;
+        command = std::move(m_commands.front());
         m_commands.pop_front();
     }
-    return position;
+    return command;
 }
 
 void DecodeWorker::handleCommand(Command command, WorkerStopToken stopToken)
@@ -214,10 +240,19 @@ void DecodeWorker::handleCommand(Command command, WorkerStopToken stopToken)
         break;
     case CommandType::Seek:
     {
-        const bool wasPlaying = m_playing;
-        if (!handleSeek(coalescedSeekPosition(command.position)))
+        command = coalescedSeekCommand(std::move(command));
+        // 恢复播放 intent 必须进入同一个 seek 命令，避免独立 Play 命令打断暂停预滚。
+        const bool resumeAfterSeek = command.seekPlaybackMode == SeekPlaybackMode::ResumePlayback;
+        const bool wasPlaying = m_playing || resumeAfterSeek;
+        const auto seekPosition = command.position;
+        if (!handleSeek(seekPosition, wasPlaying))
             break;
-        if (wasPlaying)
+        if (resumeAfterSeek && !m_playing)
+        {
+            m_playing = true;
+            emitState(PlayerState::Playing);
+        }
+        if (m_playing)
             decodeUntilBlocked(stopToken);
         else
             decodeSeekPreroll(stopToken);
@@ -270,6 +305,8 @@ void DecodeWorker::decodeUntilBlocked(WorkerStopToken stopToken)
         if (ret == AVERROR_EOF)
         {
             flushDecoders();
+            if (m_seekGate)
+                emitPendingSeekFallbackCompletion();
             emitEvent(makeEvent(EndOfFileEvent {}));
             m_playing = false;
             emitState(PlayerState::Finished);
@@ -326,7 +363,10 @@ void DecodeWorker::decodeSeekPreroll(WorkerStopToken stopToken)
     const bool targetVideo = m_media.videoStreamIndex >= 0 && m_media.videoCodecContext;
     const bool targetAudio = !targetVideo && m_media.audioStreamIndex >= 0 && m_media.audioCodecContext;
     if (!targetVideo && !targetAudio)
+    {
+        emitPendingSeekFallbackCompletion();
         return;
+    }
 
     bool delivered = false;
     auto packet = makePacket();
@@ -342,7 +382,12 @@ void DecodeWorker::decodeSeekPreroll(WorkerStopToken stopToken)
 
         const int ret = av_read_frame(m_media.formatContext.get(), packet.get());
         if (ret == AVERROR_EOF)
+        {
+            flushDecoders();
+            if (m_seekGate)
+                emitPendingSeekFallbackCompletion();
             return;
+        }
         if (ret < 0)
         {
             emitError(makeError(MediaErrorCode::DecodeFailed,
@@ -392,13 +437,12 @@ void DecodeWorker::decodeSeekPreroll(WorkerStopToken stopToken)
     }
 }
 
-bool DecodeWorker::handleSeek(std::chrono::milliseconds position)
+bool DecodeWorker::handleSeek(std::chrono::milliseconds position, bool wasPlaying)
 {
     if (!m_hasMedia)
         return false;
 
-    const auto targetUs = std::chrono::duration_cast<std::chrono::microseconds>(position).count();
-    const int ret = av_seek_frame(m_media.formatContext.get(), -1, targetUs, AVSEEK_FLAG_BACKWARD);
+    const int ret = seekDemuxer(position);
     if (ret < 0)
     {
         emitError(makeError(MediaErrorCode::SeekFailed,
@@ -413,9 +457,141 @@ bool DecodeWorker::handleSeek(std::chrono::milliseconds position)
         avcodec_flush_buffers(m_media.audioCodecContext.get());
     ++m_generation;
 
-    emitEvent(makeEvent(SeekCompletedEvent { position }));
-    emitEvent(makeEvent(PositionChangedEvent { position }));
+    beginAccurateSeek(position, wasPlaying);
     return true;
+}
+
+int DecodeWorker::seekDemuxer(std::chrono::milliseconds position)
+{
+    const auto targetUs = std::chrono::duration_cast<std::chrono::microseconds>(position).count();
+    const int preferredStream = preferredSeekStreamIndex(m_media);
+    int ret = -1;
+    if (preferredStream >= 0)
+    {
+        const AVRational timeBase = m_media.formatContext->streams[preferredStream]->time_base;
+        const auto targetTs = av_rescale_q(targetUs, AV_TIME_BASE_Q, timeBase);
+        // 专业播放器 seek 应锚定主媒体流，避免复杂容器的全局时间索引落到 EOF 附近。
+        ret = avformat_seek_file(m_media.formatContext.get(),
+                                 preferredStream,
+                                 std::numeric_limits<std::int64_t>::min(),
+                                 targetTs,
+                                 targetTs,
+                                 AVSEEK_FLAG_BACKWARD);
+        if (ret < 0)
+            ret = av_seek_frame(m_media.formatContext.get(),
+                                preferredStream,
+                                targetTs,
+                                AVSEEK_FLAG_BACKWARD);
+    }
+    if (ret < 0)
+        ret = av_seek_frame(m_media.formatContext.get(), -1, targetUs, AVSEEK_FLAG_BACKWARD);
+    return ret;
+}
+
+void DecodeWorker::beginAccurateSeek(std::chrono::milliseconds position, bool preferAudioCompletion)
+{
+    const auto target = std::chrono::duration_cast<std::chrono::microseconds>(position);
+    const bool hasAudio = m_media.audioStreamIndex >= 0 && m_media.audioCodecContext;
+    const bool hasVideo = m_media.videoStreamIndex >= 0 && m_media.videoCodecContext;
+    m_pendingSeekTarget = target;
+    m_seekTailVideoFrame.reset();
+    m_seekGate.emplace(SeekPrerollGateConfig {
+        .target = target,
+        .generation = m_generation,
+        .hasVideo = hasVideo,
+        .hasAudio = hasAudio,
+        .preferAudioCompletion = preferAudioCompletion && hasAudio,
+        .allowVideoTailFallback = preferAudioCompletion && hasVideo,
+        .maxDiscardedVideoFrames = m_config.accurateSeekMaxDiscardedVideoFrames,
+        .maxDiscardedAudioFrames = m_config.accurateSeekMaxDiscardedAudioFrames,
+    });
+}
+
+void DecodeWorker::emitSeekCompletedIfReady()
+{
+    if (!m_seekGate)
+        return;
+
+    if (m_seekGate->shouldEmitCompletion())
+    {
+        // seek 完成事件代表目标侧媒体已经进入交付路径，而不是 av_seek_frame 已返回。
+        const auto completedTarget = m_pendingSeekTarget.value_or(m_seekGate->completionPosition());
+        const auto requested = std::chrono::duration_cast<std::chrono::milliseconds>(completedTarget);
+        const auto firstAudio = toMilliseconds(m_seekGate->firstAudioPts());
+        const auto firstVideo = toMilliseconds(m_seekGate->firstVideoPts());
+        const bool audioGap = firstAudio.has_value()
+            && *firstAudio > requested + std::chrono::milliseconds { 50 };
+        emitEvent(makeEvent(SeekCompletedEvent {
+            .position = requested,
+            .requestedPosition = requested,
+            .firstAudioPts = firstAudio,
+            .firstVideoPts = firstVideo,
+            .exact = true,
+            .audioGap = audioGap,
+        }));
+        const auto position = requested;
+        emitEvent(makeEvent(PositionChangedEvent { position }));
+        m_seekGate->markCompletionSent();
+    }
+
+    if (m_seekGate && m_seekGate->readyToRetire())
+    {
+        m_seekGate.reset();
+        m_pendingSeekTarget.reset();
+    }
+}
+
+void DecodeWorker::emitSeekFallbackCompletion()
+{
+    if (!m_seekGate)
+        return;
+
+    // 丢弃上限只释放 seek 请求等待；gate 继续保留，防止目标前帧绕过精确过滤。
+    if (!m_seekGate->completionSent())
+    {
+        const auto completedTarget = m_pendingSeekTarget.value_or(m_seekGate->completionPosition());
+        const auto requested = std::chrono::duration_cast<std::chrono::milliseconds>(completedTarget);
+        const auto firstAudio = toMilliseconds(m_seekGate->firstAudioPts());
+        const auto firstVideo = toMilliseconds(m_seekGate->firstVideoPts());
+        const bool audioGap = firstAudio.has_value()
+            && *firstAudio > requested + std::chrono::milliseconds { 50 };
+        emitEvent(makeEvent(SeekCompletedEvent {
+            .position = requested,
+            .requestedPosition = requested,
+            .firstAudioPts = firstAudio,
+            .firstVideoPts = firstVideo,
+            .exact = false,
+            .audioGap = audioGap,
+        }));
+        const auto position = requested;
+        emitEvent(makeEvent(PositionChangedEvent { position }));
+        m_seekGate->markCompletionSent();
+    }
+}
+
+void DecodeWorker::emitPendingSeekFallbackCompletion()
+{
+    if (!m_seekGate)
+        return;
+
+    // EOF 清理仍然要释放 gate；此时已经没有后续帧会绕过 seek 过滤。
+    emitSeekFallbackCompletion();
+    publishSeekTailVideoFrameIfAvailable();
+    m_seekGate.reset();
+    m_pendingSeekTarget.reset();
+    m_seekTailVideoFrame.reset();
+}
+
+void DecodeWorker::publishSeekTailVideoFrameIfAvailable()
+{
+    if (!m_seekTailVideoFrame.has_value())
+        return;
+
+    // 目标点已经越过视频尾帧时不存在严格意义上的目标侧视频帧；
+    // EOF 后交付最近的目标前视频帧，避免 seek 到尾段后画面保持黑屏。
+    auto pushResult = m_frames.pushVideo(std::move(*m_seekTailVideoFrame), frameMetadata());
+    (void)handleFramePushResult(pushResult);
+    m_seekTailVideoFrame.reset();
 }
 
 void DecodeWorker::closeMedia()
@@ -428,6 +604,9 @@ void DecodeWorker::closeMedia()
     m_hasMedia = false;
     m_playing = false;
     m_decodeStats = {};
+    m_seekGate.reset();
+    m_pendingSeekTarget.reset();
+    m_seekTailVideoFrame.reset();
 }
 
 Result<void> DecodeWorker::decodePacket(AVCodecContext* codecContext,
@@ -443,42 +622,146 @@ Result<void> DecodeWorker::decodePacket(AVCodecContext* codecContext,
         timeBase,
         [this, video, prerollTarget, prerollDelivered](AVFramePtr frame) {
             if (video)
+                return handleDecodedVideoFrame(std::move(frame), prerollTarget, prerollDelivered);
+            return handleDecodedAudioFrame(std::move(frame), prerollTarget, prerollDelivered);
+        });
+}
+
+StreamDecoder::FrameHandlerStatus DecodeWorker::handleDecodedVideoFrame(
+    AVFramePtr frame,
+    DecodePrerollTarget prerollTarget,
+    bool* prerollDelivered)
+{
+    ++m_decodeStats.decodedVideoFrames;
+    bool seekTargetVideoReady = false;
+    std::chrono::microseconds seekTargetVideoPts { 0 };
+    if (m_seekGate)
+    {
+        // 精确 seek 预滚期间，目标点前的视频帧不能进入像素处理和 runtime 队列。
+        const bool missingVideoPts = frame->pts == AV_NOPTS_VALUE;
+        const auto framePts = missingVideoPts
+            ? m_seekGate->completionPosition()
+            : std::chrono::microseconds { frame->pts };
+        const auto decision = missingVideoPts
+            ? m_seekGate->inspectMissingVideoPts(m_generation)
+            : m_seekGate->inspectVideo(framePts, m_generation);
+        if (decision.action == SeekPrerollAction::Discard)
+        {
+            m_seekGate->markVideoDiscarded();
+            if (!missingVideoPts && m_seekGate->allowsVideoTailFallback())
             {
-                ++m_decodeStats.decodedVideoFrames;
+                // 尾帧候选只用于 EOF fallback；处理失败不能让本来应丢弃的目标前帧中断 seek。
                 auto processed = m_videoFrameProcessor.process(
                     std::move(frame),
                     { .preferNativeVideoFrames = m_config.preferNativeVideoFrames },
                     m_media.hardwareDecoder.get(),
                     &m_decodeStats);
-                if (!processed.ok())
-                {
-                    emitError(processed.error());
-                    return StreamDecoder::FrameHandlerStatus::Reject;
-                }
-                auto pushResult = m_frames.pushVideo(std::move(processed.value()), frameMetadata());
-                const auto status = handleFramePushResult(pushResult);
-                if (prerollTarget == DecodePrerollTarget::Video && isDeliveredFramePush(pushResult))
-                {
-                    if (prerollDelivered)
-                        *prerollDelivered = true;
-                    return StreamDecoder::FrameHandlerStatus::Stop;
-                }
-                return status;
+                if (processed.ok())
+                    m_seekTailVideoFrame = std::move(processed.value());
             }
-
-            AudioFrame audioFrame = makeAudioFrame(std::move(frame));
-            emitEvent(makeEvent(PositionChangedEvent {
-                std::chrono::duration_cast<std::chrono::milliseconds>(audioFrame.pts()) }));
-            auto pushResult = m_frames.pushAudio(std::move(audioFrame), frameMetadata());
-            const auto status = handleFramePushResult(pushResult);
-            if (prerollTarget == DecodePrerollTarget::Audio && isDeliveredFramePush(pushResult))
+            bool acceptMissingPtsFallback = false;
+            if (m_seekGate->discardLimitReached())
             {
-                if (prerollDelivered)
-                    *prerollDelivered = true;
-                return StreamDecoder::FrameHandlerStatus::Stop;
+                // 超过预滚保护边界后先释放 seek completion，但继续过滤直到目标侧帧或真实 EOF。
+                emitSeekFallbackCompletion();
+                // 无 PTS 媒体无法继续做精确时间比较；达到边界后降级接受一个可渲染帧恢复画面。
+                acceptMissingPtsFallback = missingVideoPts;
             }
-            return status;
-        });
+            if (!acceptMissingPtsFallback)
+                return StreamDecoder::FrameHandlerStatus::Continue;
+            seekTargetVideoReady = true;
+            seekTargetVideoPts = framePts;
+        }
+        else if (decision.action == SeekPrerollAction::Accept)
+        {
+            seekTargetVideoReady = true;
+            seekTargetVideoPts = framePts;
+        }
+        else if (decision.action == SeekPrerollAction::Stale)
+        {
+            return StreamDecoder::FrameHandlerStatus::Continue;
+        }
+    }
+    auto processed = m_videoFrameProcessor.process(
+        std::move(frame),
+        { .preferNativeVideoFrames = m_config.preferNativeVideoFrames },
+        m_media.hardwareDecoder.get(),
+        &m_decodeStats);
+    if (!processed.ok())
+    {
+        emitError(processed.error());
+        return StreamDecoder::FrameHandlerStatus::Reject;
+    }
+    if (seekTargetVideoReady && m_seekGate)
+    {
+        // completion 必须先于 frame push：session 需要先接受新 generation，runtime 才能接收目标帧。
+        m_seekGate->markVideoAccepted(seekTargetVideoPts);
+        m_seekTailVideoFrame.reset();
+        emitSeekCompletedIfReady();
+    }
+    auto pushResult = m_frames.pushVideo(std::move(processed.value()), frameMetadata());
+    const auto status = handleFramePushResult(pushResult);
+    if (prerollTarget == DecodePrerollTarget::Video && isDeliveredFramePush(pushResult))
+    {
+        if (prerollDelivered)
+            *prerollDelivered = true;
+        return StreamDecoder::FrameHandlerStatus::Stop;
+    }
+    return status;
+}
+
+StreamDecoder::FrameHandlerStatus DecodeWorker::handleDecodedAudioFrame(
+    AVFramePtr frame,
+    DecodePrerollTarget prerollTarget,
+    bool* prerollDelivered)
+{
+    AudioFrame audioFrame = makeAudioFrame(std::move(frame));
+    const bool pendingAudioSeek = m_seekGate && m_pendingSeekTarget.has_value();
+    if (pendingAudioSeek)
+    {
+        // seek 预滚期间先裁剪/丢弃目标前 samples，避免提前污染 position 和 runtime audio queue。
+        auto trimResult = trimAudioFrameForSeek(audioFrame, *m_pendingSeekTarget);
+        if (trimResult.status == SeekAudioTrimStatus::Discard)
+        {
+            if (m_seekGate)
+            {
+                m_seekGate->markAudioDiscarded();
+                if (m_seekGate->discardLimitReached())
+                {
+                    // 音频连续落在目标前时也先释放 completion，但不能放行目标前 samples。
+                    emitSeekFallbackCompletion();
+                }
+            }
+            return StreamDecoder::FrameHandlerStatus::Continue;
+        }
+        if (trimResult.status == SeekAudioTrimStatus::Invalid)
+        {
+            emitError(makeError(MediaErrorCode::DecodeFailed,
+                                "Failed to trim audio for accurate seek"));
+            return StreamDecoder::FrameHandlerStatus::Reject;
+        }
+        audioFrame = std::move(trimResult.frame);
+        if (m_seekGate)
+        {
+            // completion 必须先于 frame push：session 建立新 generation 映射后，目标音频帧才不会被判旧。
+            m_seekGate->markAudioAccepted(audioFrame.pts());
+            emitSeekCompletedIfReady();
+        }
+    }
+    else
+    {
+        emitEvent(makeEvent(PositionChangedEvent {
+            std::chrono::duration_cast<std::chrono::milliseconds>(audioFrame.pts()) }));
+    }
+    auto pushResult = m_frames.pushAudio(std::move(audioFrame), frameMetadata());
+    const auto status = handleFramePushResult(pushResult);
+    if (prerollTarget == DecodePrerollTarget::Audio && isDeliveredFramePush(pushResult))
+    {
+        if (prerollDelivered)
+            *prerollDelivered = true;
+        return StreamDecoder::FrameHandlerStatus::Stop;
+    }
+    return status;
 }
 
 void DecodeWorker::flushDecoders()
@@ -489,17 +772,7 @@ void DecodeWorker::flushDecoders()
             m_media.videoCodecContext.get(),
             m_media.formatContext->streams[m_media.videoStreamIndex]->time_base,
             [this](AVFramePtr frame) {
-                auto processed = m_videoFrameProcessor.process(
-                    std::move(frame),
-                    { .preferNativeVideoFrames = m_config.preferNativeVideoFrames },
-                    m_media.hardwareDecoder.get(),
-                    &m_decodeStats);
-                if (!processed.ok())
-                {
-                    emitError(processed.error());
-                    return StreamDecoder::FrameHandlerStatus::Reject;
-                }
-                return emitVideoFrame(std::move(processed.value()));
+                return handleDecodedVideoFrame(std::move(frame));
             });
     }
     if (m_media.audioCodecContext)
@@ -508,8 +781,7 @@ void DecodeWorker::flushDecoders()
             m_media.audioCodecContext.get(),
             m_media.formatContext->streams[m_media.audioStreamIndex]->time_base,
             [this](AVFramePtr frame) {
-                AudioFrame audioFrame = makeAudioFrame(std::move(frame));
-                return handleFramePushResult(m_frames.pushAudio(std::move(audioFrame), frameMetadata()));
+                return handleDecodedAudioFrame(std::move(frame));
             });
     }
 }
@@ -535,11 +807,6 @@ void DecodeWorker::emitState(PlayerState state)
 void DecodeWorker::emitError(MediaError error)
 {
     emitEvent(makeEvent(ErrorEvent { std::move(error) }));
-}
-
-StreamDecoder::FrameHandlerStatus DecodeWorker::emitVideoFrame(VideoFrame frame)
-{
-    return handleFramePushResult(m_frames.pushVideo(std::move(frame), frameMetadata()));
 }
 
 DecodeFrameMetadata DecodeWorker::frameMetadata() const

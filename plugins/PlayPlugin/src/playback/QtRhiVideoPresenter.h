@@ -10,7 +10,6 @@
 #include <mutex>
 
 class FFmpegSurface;
-struct QtRhiVideoPresenterEventState;
 struct VideoFrameData;
 using VideoFrameDataPtr = std::shared_ptr<VideoFrameData>;
 
@@ -37,11 +36,10 @@ private:
 
     bool surfaceSupportsNativeRendering(const QPointer<FFmpegSurface>& surface) const;
     VideoFrameDataPtr makeSurfaceFrame(const media_sdk::VideoFrame& frame) const;
-    void complete(media_sdk::runtime::PresentCompletion completion);
 
     QPointer<FFmpegSurface> m_surface;
-    std::shared_ptr<QtRhiVideoPresenterEventState> m_eventState;
     std::atomic_uint64_t m_nextPresentId { 0 };
+    mutable std::atomic_bool m_nativeRenderingSupported { false };
     mutable std::mutex m_mutex;
     std::deque<PendingPresent> m_pending;
 };

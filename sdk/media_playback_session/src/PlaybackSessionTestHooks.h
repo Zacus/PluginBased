@@ -23,7 +23,7 @@ public:
     virtual void pause() = 0;
     virtual void stop() = 0;
     [[nodiscard("seek result determines whether core accepted the seek command")]]
-    virtual Result<void> seek(std::chrono::milliseconds position) = 0;
+    virtual Result<void> seek(std::chrono::milliseconds position, SeekPlaybackMode mode) = 0;
 };
 
 class IPlaybackSessionRuntimePlayer {
@@ -42,6 +42,7 @@ public:
     virtual void setAudioControls(runtime::RuntimeAudioControls controls) = 0;
     virtual void seek(std::chrono::microseconds position) = 0;
     virtual void completeSeek(runtime::SessionId sessionId, runtime::Generation generation) = 0;
+    virtual void notifyPresenterFailure(runtime::PresentStatus reason) = 0;
     virtual void stop() = 0;
     [[nodiscard("diagnostics verify queue, fallback, native, and clock behavior")]]
     virtual runtime::RuntimeDiagnostics diagnostics() const = 0;

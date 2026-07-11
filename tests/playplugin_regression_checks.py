@@ -30,8 +30,8 @@ def main() -> None:
             "PlayerEngine should keep completion tracking for SDK EOF/audio/video drain")
     require("m_completion.setStreams" in engine_cpp,
             "PlayerEngine should derive completion streams from SDK media info")
-    require("m_pipeline->seek(positionMs, seekGeneration)" in engine_cpp,
-            "PlayerEngine should keep generation-based seek completion")
+    require("m_pipeline->seek(positionMs, seekGeneration, resumeAfterSeek)" in engine_cpp,
+            "PlayerEngine should keep generation-based seek completion and pass resume intent")
     require("m_position = posMs" in engine_cpp[engine_cpp.find("void PlayerEngine::onDecoderPosition"):],
             "SDK decoder position should drive UI progress")
 
@@ -67,10 +67,10 @@ def main() -> None:
 
     require("supportsNativeVideoToolboxRendering" in ffmpeg_surface_cpp + read("plugins/PlayPlugin/src/video/FFmpegSurface.h"),
             "FFmpegSurface should still expose native rendering capability")
-    require("diagnosticsSnapshot()" in presenter_cpp,
-            "QtRhiVideoPresenter should still report presentation diagnostics")
-    require("nativeTextureFailed" in presenter_cpp and "cpuMemcpy" in presenter_cpp,
-            "QtRhiVideoPresenter should preserve native and CPU fallback diagnostics")
+    require("diagnosticsSnapshot()" in ffmpeg_surface_cpp,
+            "FFmpegSurface should keep render diagnostics at the Qt rendering boundary")
+    require("nativeRenderingFailed" in pipeline_cpp,
+            "PlaybackPipeline should react to native rendering failures from the Qt surface")
 
     require("onMoved: root.seekRequested" not in control_bar_qml,
             "Seek bar should not flood SDK seek while dragging")

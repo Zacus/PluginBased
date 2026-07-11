@@ -1,5 +1,8 @@
 add_library(media_sdk_playback_session STATIC
     src/PlaybackSession.cpp
+    src/SessionAudioConverter.cpp
+    src/SessionFrameRouter.cpp
+    src/SessionTimeline.cpp
 )
 
 add_library(media_sdk::playback_session ALIAS media_sdk_playback_session)

@@ -139,7 +139,7 @@ void PlayerEngine::seek(qint64 positionMs)
     const int seekGeneration = ++m_seekGeneration;
 
     // 通知各组件 seek
-    m_pipeline->seek(positionMs, seekGeneration);
+    m_pipeline->seek(positionMs, seekGeneration, resumeAfterSeek);
 
     // 立即更新 UI 进度条（不等音频时钟重建）
     m_position = positionMs;
@@ -147,7 +147,6 @@ void PlayerEngine::seek(qint64 positionMs)
 
     if (resumeAfterSeek)
     {
-        m_pipeline->setPaused(false);
         setState(Playing);
     }
 }

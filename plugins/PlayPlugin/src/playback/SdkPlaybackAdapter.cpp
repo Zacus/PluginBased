@@ -97,14 +97,20 @@ public:
         m_session.stop();
     }
 
-    media_sdk::Result<void> seek(std::chrono::milliseconds position) override
+    media_sdk::Result<void> seek(std::chrono::milliseconds position,
+                                 media_sdk::SeekPlaybackMode mode) override
     {
-        return m_session.seek(position);
+        return m_session.seek(position, mode);
     }
 
     void setAudioControls(media_sdk::runtime::RuntimeAudioControls controls) override
     {
         m_session.setAudioControls(controls);
+    }
+
+    void notifyNativeRenderingFailed() override
+    {
+        m_session.notifyNativeRenderingFailed();
     }
 
     media_sdk::runtime::RuntimeTimeline timeline() const override
@@ -226,12 +232,12 @@ void SdkPlaybackAdapter::setPaused(bool paused)
     paused ? session->pause() : session->play();
 }
 
-void SdkPlaybackAdapter::seek(qint64 positionMs, int generation)
+void SdkPlaybackAdapter::seek(qint64 positionMs, int generation, bool resumeAfterSeek)
 {
     if (!isObjectThread(*this)) {
         QMetaObject::invokeMethod(this,
-                                  [this, positionMs, generation]() {
-                                      seek(positionMs, generation);
+                                  [this, positionMs, generation, resumeAfterSeek]() {
+                                      seek(positionMs, generation, resumeAfterSeek);
                                   },
                                   Qt::QueuedConnection);
         return;
@@ -248,13 +254,22 @@ void SdkPlaybackAdapter::seek(qint64 positionMs, int generation)
     if (!session)
         return;
 
-    const auto result = session->seek(std::chrono::milliseconds(positionMs));
+    const auto mode = resumeAfterSeek
+        ? media_sdk::SeekPlaybackMode::ResumePlayback
+        : media_sdk::SeekPlaybackMode::PreservePlaybackState;
+    const auto result = session->seek(std::chrono::milliseconds(positionMs), mode);
     if (!result.ok()) {
         {
             std::lock_guard lock(m_mutex);
             m_pendingSeekRequests.takeForCompletedPosition(std::chrono::milliseconds(positionMs));
         }
         emit errorOccurred(QString::fromStdString(result.error().message));
+        return;
+    }
+
+    if (resumeAfterSeek) {
+        std::lock_guard lock(m_mutex);
+        m_paused = false;
     }
 }
 
@@ -299,6 +314,28 @@ void SdkPlaybackAdapter::setVideoToolboxDirectRenderingEnabled(bool enabled)
 
     std::lock_guard lock(m_mutex);
     m_directNativeVideoEnabled = enabled;
+}
+
+void SdkPlaybackAdapter::notifyNativeRenderingFailed()
+{
+    if (!isObjectThread(*this)) {
+        QMetaObject::invokeMethod(this,
+                                  [this]() {
+                                      notifyNativeRenderingFailed();
+                                  },
+                                  Qt::QueuedConnection);
+        return;
+    }
+
+    ISdkPlaybackSession* session = nullptr;
+    {
+        std::lock_guard lock(m_mutex);
+        m_directNativeVideoEnabled = false;
+        session = m_session.get();
+    }
+
+    if (session)
+        session->notifyNativeRenderingFailed();
 }
 
 void SdkPlaybackAdapter::setVolume(float volume)

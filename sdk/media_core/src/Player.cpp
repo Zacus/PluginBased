@@ -51,4 +51,9 @@ Result<void> Player::seek(std::chrono::milliseconds position)
     return m_impl->controller.seek(position);
 }
 
+Result<void> Player::seek(std::chrono::milliseconds position, SeekPlaybackMode mode)
+{
+    return m_impl->controller.seek(position, mode);
+}
+
 } // namespace media_sdk

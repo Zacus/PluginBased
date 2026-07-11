@@ -95,6 +95,15 @@ media_sdk::Result<void> success()
     return media_sdk::Result<void>::success();
 }
 
+media_sdk::Result<void> seekFailure()
+{
+    return media_sdk::Result<void>::failure({
+        .code = media_sdk::MediaErrorCode::SeekFailed,
+        .message = "seek failed",
+        .detail = {},
+    });
+}
+
 class DummyAudioOutput final : public media_sdk::runtime::IAudioOutput {
 public:
     media_sdk::Result<void> open(const media_sdk::runtime::AudioFormat&) override
@@ -187,7 +196,8 @@ public:
     void play() override;
     void pause() override;
     void stop() override;
-    media_sdk::Result<void> seek(std::chrono::milliseconds position) override;
+    media_sdk::Result<void> seek(std::chrono::milliseconds position,
+                                  media_sdk::SeekPlaybackMode mode) override;
 
     void emitMediaInfo(media_sdk::EventMetadata metadata)
     {
@@ -231,6 +241,7 @@ public:
     int seekCount = 0;
     std::filesystem::path lastOpenedPath;
     std::chrono::milliseconds lastSeekPosition { 0 };
+    media_sdk::SeekPlaybackMode lastSeekMode = media_sdk::SeekPlaybackMode::PreservePlaybackState;
 
 private:
     TestContext& m_context;
@@ -258,6 +269,7 @@ public:
     void seek(std::chrono::microseconds position) override;
     void completeSeek(media_sdk::runtime::SessionId sessionId,
                       media_sdk::runtime::Generation generation) override;
+    void notifyPresenterFailure(media_sdk::runtime::PresentStatus reason) override;
     void stop() override;
     media_sdk::runtime::RuntimeDiagnostics diagnostics() const override;
     media_sdk::runtime::ClockSnapshot clock() const override;
@@ -266,6 +278,16 @@ public:
     void triggerEndOfStreamPresented()
     {
         m_events->onEndOfStreamPresented(currentTimeline);
+    }
+
+    void triggerPlaybackClockTick(std::chrono::microseconds position)
+    {
+        m_events->onPlaybackClockTick(currentTimeline, {
+            .position = position,
+            .generation = currentTimeline.generation,
+            .valid = true,
+            .paused = paused,
+        });
     }
 
     void triggerRuntimeError(media_sdk::MediaError error)
@@ -281,6 +303,7 @@ public:
     int resumeCount = 0;
     int seekCount = 0;
     int completeSeekCount = 0;
+    int presenterFailureCount = 0;
     int stopCount = 0;
     bool paused = false;
     media_sdk::runtime::RuntimeAudioControls lastAudioControls {};
@@ -304,6 +327,7 @@ struct TestContext {
     bool blockRuntimeOpen = false;
     bool runtimeOpenEntered = false;
     bool releaseRuntimeOpen = false;
+    bool failNextSeek = false;
 };
 
 media_sdk::Result<void> FakeCorePlayer::open(const std::filesystem::path& path)
@@ -332,11 +356,17 @@ void FakeCorePlayer::stop()
     m_context.operations.push_back("core.stop");
 }
 
-media_sdk::Result<void> FakeCorePlayer::seek(std::chrono::milliseconds position)
+media_sdk::Result<void> FakeCorePlayer::seek(std::chrono::milliseconds position,
+                                             media_sdk::SeekPlaybackMode mode)
 {
     ++seekCount;
     lastSeekPosition = position;
+    lastSeekMode = mode;
     m_context.operations.push_back("core.seek");
+    if (m_context.failNextSeek) {
+        m_context.failNextSeek = false;
+        return seekFailure();
+    }
     return success();
 }
 
@@ -406,6 +436,12 @@ void FakeRuntimePlayer::completeSeek(media_sdk::runtime::SessionId,
 {
     ++completeSeekCount;
     m_context.operations.push_back("runtime.completeSeek");
+}
+
+void FakeRuntimePlayer::notifyPresenterFailure(media_sdk::runtime::PresentStatus)
+{
+    ++presenterFailureCount;
+    m_context.operations.push_back("runtime.notifyPresenterFailure");
 }
 
 void FakeRuntimePlayer::stop()
@@ -598,6 +634,11 @@ void seekCallsRuntimeSeekBeforeCoreSeek()
 
     context.core->emitSeekCompleted(coreTimeline(10, 4), 750ms);
     assert(context.runtime->completeSeekCount == 1);
+    assert((context.operations == std::vector<std::string> {
+        "runtime.seek",
+        "core.seek",
+        "runtime.completeSeek",
+    }));
     assert(events.events.size() == 2);
     assert(std::holds_alternative<media_sdk::SeekCompletedEvent>(events.events.back().payload));
 }
@@ -641,12 +682,61 @@ void seekWhilePlayingReappliesPlaybackAfterSeekCommand()
     const auto result = session->seek(800ms);
 
     assert(result.ok());
+    assert(context.core->lastSeekMode == media_sdk::SeekPlaybackMode::ResumePlayback);
     assert((context.operations == std::vector<std::string> {
         "runtime.seek",
         "core.seek",
         "runtime.resume",
-        "core.play",
     }));
+}
+
+void resumeSeekUsesAtomicCoreSeekWithoutQueuedPlay()
+{
+    TestContext context;
+    DummyAudioOutput audio;
+    DummyVideoPresenter presenter;
+    auto session = makeSession(context, &audio, &presenter);
+    assert(session->open("sample.mov").ok());
+    context.core->emitMediaInfo(coreTimeline(10, 3));
+    session->pause();
+    context.operations.clear();
+
+    const auto result = session->seek(23678ms, media_sdk::SeekPlaybackMode::ResumePlayback);
+
+    assert(result.ok());
+    assert(context.core->lastSeekMode == media_sdk::SeekPlaybackMode::ResumePlayback);
+    assert((context.operations == std::vector<std::string> {
+        "runtime.seek",
+        "core.seek",
+        "runtime.resume",
+    }));
+    assert(context.core->playCount == 0);
+    assert(!context.runtime->paused);
+}
+
+void failedResumeSeekDoesNotPromotePausedSessionToPlaying()
+{
+    TestContext context;
+    DummyAudioOutput audio;
+    DummyVideoPresenter presenter;
+    auto session = makeSession(context, &audio, &presenter);
+    assert(session->open("sample.mov").ok());
+    context.core->emitMediaInfo(coreTimeline(10, 3));
+    session->pause();
+    context.operations.clear();
+
+    context.failNextSeek = true;
+    const auto failed = session->seek(23678ms, media_sdk::SeekPlaybackMode::ResumePlayback);
+
+    assert(!failed.ok());
+    assert(context.runtime->resumeCount == 0);
+    assert(context.runtime->paused);
+    assert(context.core->lastSeekMode == media_sdk::SeekPlaybackMode::ResumePlayback);
+
+    const auto retry = session->seek(1200ms);
+
+    assert(retry.ok());
+    assert(context.core->lastSeekMode == media_sdk::SeekPlaybackMode::PreservePlaybackState);
 }
 
 void pauseBeforeMediaInfoPausesRuntimeAfterItOpens()
@@ -749,6 +839,7 @@ void seekWhilePausedDoesNotResumeAfterSeekCompletion()
         assert(operation != "runtime.resume");
         assert(operation != "core.play");
     }
+    assert(context.core->lastSeekMode == media_sdk::SeekPlaybackMode::PreservePlaybackState);
     assert(context.runtime->paused);
 }
 
@@ -888,8 +979,31 @@ void coreEofWaitsForRuntimeEndOfStreamBeforeExternalEof()
     assert(events.events.empty());
 
     context.runtime->triggerEndOfStreamPresented();
+    assert(events.events.size() == 2);
+    assert(std::holds_alternative<media_sdk::PositionChangedEvent>(events.events[0].payload));
+    assert(std::holds_alternative<media_sdk::EndOfFileEvent>(events.events[1].payload));
+}
+
+void runtimeClockTickForwardsExternalPosition()
+{
+    TestContext context;
+    DummyAudioOutput audio;
+    DummyVideoPresenter presenter;
+    RecordingSessionEvents events;
+    auto session = makeSession(context, &audio, &presenter, &events);
+    assert(session->open("sample.mov").ok());
+    context.core->emitMediaInfo(coreTimeline(10, 3));
+    events.events.clear();
+
+    context.runtime->triggerPlaybackClockTick(23001ms);
+
     assert(events.events.size() == 1);
-    assert(std::holds_alternative<media_sdk::EndOfFileEvent>(events.events.back().payload));
+    const auto* position =
+        std::get_if<media_sdk::PositionChangedEvent>(&events.events[0].payload);
+    assert(position);
+    assert(position->position == 23001ms);
+    assert(events.events[0].metadata.sessionId == 10);
+    assert(events.events[0].metadata.generation == 3);
 }
 
 void stopStopsCoreAndRuntimeExactlyOnce()
@@ -1010,6 +1124,8 @@ int main()
     seekCallsRuntimeSeekBeforeCoreSeek();
     runtimeErrorIsForwardedAsSessionErrorEvent();
     seekWhilePlayingReappliesPlaybackAfterSeekCommand();
+    resumeSeekUsesAtomicCoreSeekWithoutQueuedPlay();
+    failedResumeSeekDoesNotPromotePausedSessionToPlaying();
     pauseBeforeMediaInfoPausesRuntimeAfterItOpens();
     playBeforeMediaInfoResumesRuntimeAfterItOpens();
     seekWhilePlayingCancelsOldFramePushUntilSeekCompletes();
@@ -1019,6 +1135,7 @@ int main()
     stopSuppressesLateCoreError();
     openAnotherFileRejectsPreviousFileFramesAndEof();
     coreEofWaitsForRuntimeEndOfStreamBeforeExternalEof();
+    runtimeClockTickForwardsExternalPosition();
     stopStopsCoreAndRuntimeExactlyOnce();
     diagnosticsAndTimelineForwardRuntimeValues();
     audioControlsAreAppliedBeforeAndAfterRuntimeOpen();
