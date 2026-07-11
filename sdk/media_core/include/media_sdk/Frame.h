@@ -4,7 +4,6 @@
 #include <cstddef>
 #include <memory>
 #include <span>
-#include <utility>
 #include <vector>
 
 namespace media_sdk {
@@ -67,30 +66,19 @@ struct VideoFrameDesc {
 class VideoFrame
 {
 public:
-    VideoFrame() = default;
-    explicit VideoFrame(const VideoFrameDesc& desc)
-        : m_width(desc.width)
-        , m_height(desc.height)
-        , m_pixelFormat(desc.pixelFormat)
-        , m_colorRange(desc.colorRange)
-        , m_colorSpace(desc.colorSpace)
-        , m_pts(desc.pts)
-        , m_planes(desc.planes.begin(), desc.planes.end())
-        , m_nativeHandle(desc.nativeHandle)
-        , m_storage(desc.storage)
-    {
-    }
+    VideoFrame();
+    explicit VideoFrame(const VideoFrameDesc& desc);
 
-    int width() const { return m_width; }
-    int height() const { return m_height; }
-    PixelFormat pixelFormat() const { return m_pixelFormat; }
-    ColorRange colorRange() const { return m_colorRange; }
-    ColorSpace colorSpace() const { return m_colorSpace; }
-    std::chrono::microseconds pts() const { return m_pts; }
-    std::span<const PlaneView> planes() const { return m_planes; }
-    NativeHandle nativeHandle() const { return m_nativeHandle; }
-    bool hasStorage() const { return static_cast<bool>(m_storage); }
-    std::shared_ptr<void> storage() const { return m_storage; }
+    int width() const;
+    int height() const;
+    PixelFormat pixelFormat() const;
+    ColorRange colorRange() const;
+    ColorSpace colorSpace() const;
+    std::chrono::microseconds pts() const;
+    std::span<const PlaneView> planes() const;
+    NativeHandle nativeHandle() const;
+    bool hasStorage() const;
+    std::shared_ptr<void> storage() const;
 
 private:
     int m_width = 0;
@@ -123,38 +111,21 @@ struct AudioFrameDesc {
 class AudioFrame
 {
 public:
-    AudioFrame() = default;
-    explicit AudioFrame(const AudioFrameDesc& desc)
-        : m_sampleFormat(desc.sampleFormat)
-        , m_sampleRate(desc.sampleRate)
-        , m_channels(desc.channels)
-        , m_pts(desc.pts)
-        , m_samples(desc.samples.begin(), desc.samples.end())
-        , m_storage(desc.storage)
-    {
-    }
+    AudioFrame();
+    explicit AudioFrame(const AudioFrameDesc& desc);
 
     static AudioFrame fromOwnedSamples(AudioSampleFormat sampleFormat,
                                        int sampleRate,
                                        int channels,
                                        std::chrono::microseconds pts,
-                                       std::vector<std::byte> samples)
-    {
-        AudioFrame frame;
-        frame.m_sampleFormat = sampleFormat;
-        frame.m_sampleRate = sampleRate;
-        frame.m_channels = channels;
-        frame.m_pts = pts;
-        frame.m_samples = std::move(samples);
-        return frame;
-    }
+                                       std::vector<std::byte> samples);
 
-    AudioSampleFormat sampleFormat() const { return m_sampleFormat; }
-    int sampleRate() const { return m_sampleRate; }
-    int channels() const { return m_channels; }
-    std::chrono::microseconds pts() const { return m_pts; }
-    std::span<const std::byte> samples() const { return m_samples; }
-    bool hasStorage() const { return static_cast<bool>(m_storage); }
+    AudioSampleFormat sampleFormat() const;
+    int sampleRate() const;
+    int channels() const;
+    std::chrono::microseconds pts() const;
+    std::span<const std::byte> samples() const;
+    bool hasStorage() const;
 
 private:
     AudioSampleFormat m_sampleFormat = AudioSampleFormat::Unknown;

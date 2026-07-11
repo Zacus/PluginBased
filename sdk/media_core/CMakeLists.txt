@@ -5,10 +5,12 @@ add_library(media_sdk_core STATIC
     src/HardwareDecoderBackend.h
     src/HardwareDecoderFactory.cpp
     src/HardwareDecoderFactory.h
+    src/Frame.cpp
     src/Player.cpp
     src/PlaybackController.cpp
     src/DecodeWorker.cpp
     src/QueuePolicy.h
+    src/SeekAudioTrimmer.cpp
     src/StreamDecoder.cpp
     src/VideoToolboxBackend.cpp
     src/VideoToolboxBackend.h

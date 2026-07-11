@@ -1,4 +1,5 @@
 add_library(media_sdk_playback_runtime STATIC
+    src/AudioSilence.cpp
     src/AvSyncScheduler.cpp
     src/MasterClock.cpp
     src/NativeFallbackController.cpp
