@@ -14,7 +14,9 @@
 #include <condition_variable>
 #include <cstdint>
 #include <cstring>
+#include <functional>
 #include <limits>
+#include <memory>
 #include <mutex>
 #include <thread>
 #include <utility>
@@ -22,6 +24,8 @@
 
 namespace media_sdk::runtime {
 namespace {
+
+using SteadyClock = std::chrono::steady_clock;
 
 AvSyncConfig toAvSyncConfig(RuntimeSyncConfig config)
 {
@@ -32,6 +36,94 @@ AvSyncConfig toAvSyncConfig(RuntimeSyncConfig config)
         .maxConsecutiveDropsBeforeForceRender = config.maxConsecutiveDropsBeforeForceRender,
     };
 }
+
+class RuntimeClockTicker final {
+public:
+    using Callback = std::function<void()>;
+
+    RuntimeClockTicker(std::chrono::microseconds interval, Callback callback)
+        : m_state(std::make_shared<State>(interval, std::move(callback)))
+    {
+    }
+
+    ~RuntimeClockTicker()
+    {
+        stop();
+    }
+
+    RuntimeClockTicker(const RuntimeClockTicker&) = delete;
+    RuntimeClockTicker& operator=(const RuntimeClockTicker&) = delete;
+
+    void start()
+    {
+        stop();
+        auto state = m_state;
+        if (state->interval <= std::chrono::microseconds::zero() || !state->callback)
+            return;
+
+        std::uint64_t runId = 0;
+        {
+            std::lock_guard lock(state->mutex);
+            state->running = true;
+            runId = ++state->runId;
+        }
+        state->thread = std::thread([state, runId]() { run(state, runId); });
+    }
+
+    void stop()
+    {
+        auto state = m_state;
+        {
+            std::lock_guard lock(state->mutex);
+            state->running = false;
+            ++state->runId;
+        }
+        state->cv.notify_all();
+        if (!state->thread.joinable())
+            return;
+        if (state->thread.get_id() == std::this_thread::get_id()) {
+            // clock tick 回调允许调用 RuntimePlayer::stop()；此时不能 join 自己。
+            // 线程函数持有 state 的 shared_ptr，detach 后会在本轮回调返回后自行退出。
+            state->thread.detach();
+            return;
+        }
+        state->thread.join();
+    }
+
+private:
+    struct State {
+        State(std::chrono::microseconds initialInterval, Callback initialCallback)
+            : interval(initialInterval)
+            , callback(std::move(initialCallback))
+        {
+        }
+
+        std::chrono::microseconds interval { std::chrono::milliseconds(100) };
+        Callback callback;
+        std::mutex mutex;
+        std::condition_variable cv;
+        std::thread thread;
+        bool running = false;
+        std::uint64_t runId = 0;
+    };
+
+    static void run(std::shared_ptr<State> state, std::uint64_t runId)
+    {
+        std::unique_lock lock(state->mutex);
+        while (state->running && state->runId == runId) {
+            if (state->cv.wait_for(lock, state->interval, [&state, runId]() {
+                    return !state->running || state->runId != runId;
+                })) {
+                break;
+            }
+            lock.unlock();
+            state->callback();
+            lock.lock();
+        }
+    }
+
+    std::shared_ptr<State> m_state;
+};
 
 bool isFailureStatus(PresentStatus status)
 {
@@ -169,6 +261,9 @@ struct RuntimePlayer::Impl {
         , audioQueue(config.audioQueueCapacity)
         , videoQueue(config.videoQueueCapacity)
         , scheduler(toAvSyncConfig(config.syncConfig))
+        , clockTicker(config.syncConfig.positionTickInterval, [this]() {
+            publishPlaybackClockTick();
+        })
     {
     }
 
@@ -221,6 +316,7 @@ struct RuntimePlayer::Impl {
         dependencies.videoPresenter->setEvents(&owner);
         audioThread = std::thread([this]() { audioLoop(); });
         videoThread = std::thread([this]() { videoLoop(); });
+        clockTicker.start();
         return Result<void>::success();
     }
 
@@ -323,6 +419,7 @@ struct RuntimePlayer::Impl {
             if (!running || paused)
                 return;
             paused = true;
+            pauseSeekGapClockLocked();
             shouldPause = true;
         }
 
@@ -338,18 +435,24 @@ struct RuntimePlayer::Impl {
             std::lock_guard lock(m_mutex);
             if (!running || !paused || fallbackPending)
                 return;
-            paused = false;
             shouldResume = true;
-            pausedSeekPrerollPending = false;
-            pausedSeekPrerollReserved = false;
         }
 
         if (shouldResume) {
             auto resumeResult = dependencies.audioOutput->resume();
-            if (!resumeResult.ok()) {
-                std::lock_guard lock(m_mutex);
-                if (running)
+            std::lock_guard lock(m_mutex);
+            if (resumeResult.ok()) {
+                if (running) {
+                    paused = false;
+                    pausedSeekPrerollPending = false;
+                    pausedSeekPrerollReserved = false;
+                    resumeSeekGapClockLocked();
+                }
+            } else {
+                if (running) {
                     paused = true;
+                    pauseSeekGapClockLocked();
+                }
             }
         }
         m_controlChanged.notify_all();
@@ -376,17 +479,23 @@ struct RuntimePlayer::Impl {
             fallbackPending = false;
             pausedSeekPrerollPending = false;
             pausedSeekPrerollReserved = false;
-            paused = false;
             scheduler.reset(completedGeneration);
             shouldResume = true;
         }
 
         if (shouldResume) {
             auto resumeResult = dependencies.audioOutput->resume();
-            if (!resumeResult.ok()) {
-                std::lock_guard lock(m_mutex);
-                if (running && isCurrentLocked(completedSessionId, completedGeneration))
+            std::lock_guard lock(m_mutex);
+            if (resumeResult.ok()) {
+                if (running && isCurrentLocked(completedSessionId, completedGeneration)) {
+                    paused = false;
+                    resumeSeekGapClockLocked();
+                }
+            } else {
+                if (running && isCurrentLocked(completedSessionId, completedGeneration)) {
                     paused = true;
+                    pauseSeekGapClockLocked();
+                }
             }
         }
         m_controlChanged.notify_all();
@@ -415,7 +524,8 @@ struct RuntimePlayer::Impl {
             presentTracker.setMaxPending(dependencies.videoPresenter->capabilities().maxPendingFrames);
             scheduler.reset(nextGeneration);
             fallbackController.reset(activeSession, nextGeneration, config.outputPolicy);
-            seekClockAnchor.begin(nextGeneration, position);
+            seekClockAnchor.begin(nextGeneration, position, config.maxSeekAudioGapFill);
+            seekGapClock = {};
         }
 
         audioQueue.abort();
@@ -444,6 +554,7 @@ struct RuntimePlayer::Impl {
             pausedSeekPrerollPending = false;
             pausedSeekPrerollReserved = false;
             seekClockAnchor.clear();
+            seekGapClock = {};
             generation = 0;
             diagnostics.queueAbortCount += 2;
             shouldStop = true;
@@ -456,6 +567,7 @@ struct RuntimePlayer::Impl {
         videoQueue.abort();
         m_controlChanged.notify_all();
         m_presentCapacityChanged.notify_all();
+        clockTicker.stop();
 
         dependencies.audioOutput->pause();
         (void)dependencies.audioOutput->flush();
@@ -466,6 +578,7 @@ struct RuntimePlayer::Impl {
 
         std::lock_guard lock(m_mutex);
         seekClockAnchor.clear();
+        seekGapClock = {};
         presentTracker.clear();
         audioEofSeen = false;
         videoEofSeen = false;
@@ -499,10 +612,7 @@ struct RuntimePlayer::Impl {
         if (!active || !dependencies.audioOutput)
             return {};
 
-        auto snapshot = dependencies.audioOutput->clock();
-        if (snapshot.generation != activeGeneration)
-            snapshot.valid = false;
-        return snapshot;
+        return effectivePlaybackClock(activeGeneration);
     }
 
     void onPresentComplete(PresentCompletion completion)
@@ -565,6 +675,10 @@ struct RuntimePlayer::Impl {
                 framePts);
             if (gapDecision.shouldFill && !writeSeekGapSilence(queuedFrame.sessionId, gapDecision))
                 continue;
+            if (gapDecision.exceedsMaxGap
+                && !waitUntilSeekGapClockReachesAudio(queuedFrame.sessionId, gapDecision)) {
+                continue;
+            }
 
             const auto writeResult = dependencies.audioOutput->write({
                 .bytes = outputSamples,
@@ -574,6 +688,11 @@ struct RuntimePlayer::Impl {
             if (writeResult.ok()) {
                 {
                     std::lock_guard lock(m_mutex);
+                    if (seekGapClock.active
+                        && seekGapClock.sessionId == queuedFrame.sessionId
+                        && seekGapClock.generation == frameGeneration) {
+                        seekGapClock = {};
+                    }
                     ++diagnostics.audioWritten;
                 }
             }
@@ -591,6 +710,56 @@ struct RuntimePlayer::Impl {
         return seekClockAnchor.inspectFirstAudio(checkedGeneration, firstAudioPts);
     }
 
+    bool waitUntilSeekGapClockReachesAudio(
+        SessionId checkedSessionId,
+        SeekAudioGapDecision decision)
+    {
+        {
+            std::lock_guard lock(m_mutex);
+            if (!isCurrentLocked(checkedSessionId, decision.generation))
+                return false;
+            // 大 gap 不写超长静音；使用自驱动时钟保持 position/video 调度连续，
+            // 到达首个真实音频 PTS 后再切回底层音频时钟。
+            seekGapClock = {
+                .active = true,
+                .paused = paused,
+                .sessionId = checkedSessionId,
+                .generation = decision.generation,
+                .basePosition = decision.target,
+                .targetAudioPts = decision.firstAudioPts,
+                .baseTime = SteadyClock::now(),
+            };
+        }
+        m_controlChanged.notify_all();
+
+        while (true) {
+            std::unique_lock lock(m_mutex);
+            if (!running || !isCurrentLocked(checkedSessionId, decision.generation))
+                return false;
+            if (!seekGapClock.active
+                || seekGapClock.sessionId != checkedSessionId
+                || seekGapClock.generation != decision.generation) {
+                return false;
+            }
+            if (seekGapClock.paused) {
+                m_controlChanged.wait(lock, [this, checkedSessionId, generation = decision.generation]() {
+                    return !running || !isCurrentLocked(checkedSessionId, generation)
+                        || !seekGapClock.active || !seekGapClock.paused;
+                });
+                continue;
+            }
+
+            const auto position = seekGapClockPositionLocked(SteadyClock::now());
+            if (position >= seekGapClock.targetAudioPts)
+                return true;
+
+            const auto waitTime = std::min<std::chrono::microseconds>(
+                seekGapClock.targetAudioPts - position,
+                std::chrono::milliseconds(20));
+            m_controlChanged.wait_for(lock, waitTime);
+        }
+    }
+
     bool writeSeekGapSilence(SessionId checkedSessionId, SeekAudioGapDecision decision)
     {
         constexpr auto kSilenceChunkDuration = std::chrono::milliseconds(20);
@@ -598,7 +767,7 @@ struct RuntimePlayer::Impl {
         auto chunkPts = decision.target;
 
         while (remaining > std::chrono::microseconds::zero()) {
-            if (!canWriteSeekGapSilence(checkedSessionId, decision.generation))
+            if (!waitUntilCanWriteSeekGapSilence(checkedSessionId, decision.generation))
                 return false;
 
             const auto chunkDuration = std::min<std::chrono::microseconds>(
@@ -631,10 +800,109 @@ struct RuntimePlayer::Impl {
         return true;
     }
 
-    bool canWriteSeekGapSilence(SessionId checkedSessionId, Generation checkedGeneration) const
+    bool waitUntilCanWriteSeekGapSilence(SessionId checkedSessionId, Generation checkedGeneration)
     {
-        std::lock_guard lock(m_mutex);
+        std::unique_lock lock(m_mutex);
+        m_controlChanged.wait(lock, [this, checkedSessionId, checkedGeneration]() {
+            return !running || !isCurrentLocked(checkedSessionId, checkedGeneration) || !paused;
+        });
         return isCurrentLocked(checkedSessionId, checkedGeneration) && !paused;
+    }
+
+    ClockSnapshot audioClockSnapshotForGeneration(Generation activeGeneration) const
+    {
+        auto snapshot = dependencies.audioOutput->clock();
+        if (snapshot.generation != activeGeneration)
+            snapshot.valid = false;
+        return snapshot;
+    }
+
+    ClockSnapshot syntheticPlaybackClockLocked(
+        Generation activeGeneration,
+        ClockSnapshot snapshot,
+        std::chrono::microseconds position) const
+    {
+        return {
+            .position = position,
+            .hardwareLatency = snapshot.hardwareLatency,
+            .queuedDuration = std::chrono::microseconds { 0 },
+            .generation = activeGeneration,
+            .valid = true,
+            .paused = paused,
+        };
+    }
+
+    ClockSnapshot seekGapPlaybackClockLocked(
+        Generation activeGeneration,
+        ClockSnapshot snapshot) const
+    {
+        const auto position = seekGapClockPositionLocked(SteadyClock::now());
+        if (snapshot.valid && snapshot.position >= position)
+            return snapshot;
+        return syntheticPlaybackClockLocked(activeGeneration, snapshot, position);
+    }
+
+    ClockSnapshot seekAnchorPlaybackClockLocked(
+        Generation activeGeneration,
+        ClockSnapshot snapshot) const
+    {
+        const auto target = seekClockAnchor.target();
+        if (snapshot.valid && snapshot.position >= target)
+            return snapshot;
+        return syntheticPlaybackClockLocked(activeGeneration, snapshot, target);
+    }
+
+    ClockSnapshot effectivePlaybackClock(Generation activeGeneration) const
+    {
+        const auto snapshot = audioClockSnapshotForGeneration(activeGeneration);
+
+        ClockSnapshot result;
+        bool seekGapActive = false;
+        bool seekAnchorActive = false;
+        {
+            std::lock_guard lock(m_mutex);
+            seekGapActive = seekGapClock.active && seekGapClock.generation == activeGeneration;
+            seekAnchorActive = config.audioClockEnabled && seekClockAnchor.activeFor(activeGeneration);
+            // 时钟优先级：大 gap 自驱动时钟 > 首音频前 seek target 锚点 > 底层音频时钟。
+            if (!running)
+                result = snapshot;
+            else if (seekGapActive)
+                result = seekGapPlaybackClockLocked(activeGeneration, snapshot);
+            else if (seekAnchorActive)
+                result = seekAnchorPlaybackClockLocked(activeGeneration, snapshot);
+            else
+                result = snapshot;
+        }
+        return result;
+    }
+
+    std::chrono::microseconds seekGapClockPositionLocked(
+        SteadyClock::time_point now) const
+    {
+        if (!seekGapClock.active)
+            return std::chrono::microseconds { 0 };
+        if (seekGapClock.paused)
+            return seekGapClock.basePosition;
+        const auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(
+            now - seekGapClock.baseTime);
+        return std::min(seekGapClock.targetAudioPts, seekGapClock.basePosition + elapsed);
+    }
+
+    void pauseSeekGapClockLocked()
+    {
+        if (!seekGapClock.active || seekGapClock.paused)
+            return;
+        seekGapClock.basePosition = seekGapClockPositionLocked(SteadyClock::now());
+        seekGapClock.baseTime = {};
+        seekGapClock.paused = true;
+    }
+
+    void resumeSeekGapClockLocked()
+    {
+        if (!seekGapClock.active || !seekGapClock.paused)
+            return;
+        seekGapClock.baseTime = SteadyClock::now();
+        seekGapClock.paused = false;
     }
 
     RuntimeAudioControls currentAudioControls() const
@@ -674,9 +942,9 @@ struct RuntimePlayer::Impl {
             return;
 
         while (true) {
-            auto clock = dependencies.audioOutput->clock();
-            if (!config.audioClockEnabled)
-                clock.valid = false;
+            auto clock = config.audioClockEnabled
+                ? effectivePlaybackClock(queuedFrame.generation)
+                : ClockSnapshot {};
             const auto decision = pausedPreroll
                 ? VideoScheduleDecision {
                     .action = VideoScheduleAction::Render,
@@ -721,18 +989,29 @@ struct RuntimePlayer::Impl {
             }
 
             bool trackFailed = false;
+            bool earlyFailure = false;
+            PresentStatus earlyFailureStatus = PresentStatus::Failed;
             {
                 std::lock_guard lock(m_mutex);
                 if (!isCurrentLocked(frameSessionId, frameGeneration))
                     return;
 
                 if (result.status == PresentStatus::Queued) {
-                    trackFailed = !presentTracker.track({
+                    const auto trackResult = presentTracker.trackResult({
                         .id = result.id,
                         .sessionId = frameSessionId,
                         .generation = frameGeneration,
                         .nativeFrame = presentedNativeFrame,
                     });
+                    if (trackResult.action == PresentTrackAction::Rejected) {
+                        trackFailed = true;
+                    } else if (trackResult.action == PresentTrackAction::ConsumedFailure) {
+                        earlyFailure = true;
+                        earlyFailureStatus = trackResult.completionStatus;
+                        accumulatePresentDiagnostics(trackResult.diagnostics);
+                    } else if (trackResult.action == PresentTrackAction::ConsumedSuccess) {
+                        accumulatePresentDiagnostics(trackResult.diagnostics);
+                    }
                 }
 
                 if (!trackFailed) {
@@ -747,6 +1026,8 @@ struct RuntimePlayer::Impl {
             }
             if (trackFailed)
                 handlePresentFailure(PresentStatus::Failed);
+            if (earlyFailure)
+                handlePresentFailure(earlyFailureStatus);
             return;
         }
     }
@@ -786,11 +1067,15 @@ struct RuntimePlayer::Impl {
     bool waitForPresentCapacity(SessionId checkedSessionId, Generation checkedGeneration)
     {
         std::unique_lock lock(m_mutex);
-        m_presentCapacityChanged.wait(lock, [this, checkedSessionId, checkedGeneration]() {
-            return !running
-                || !isCurrentLocked(checkedSessionId, checkedGeneration)
-                || presentTracker.hasCapacity();
-        });
+        while (running
+            && isCurrentLocked(checkedSessionId, checkedGeneration)
+            && !presentTracker.hasCapacity()) {
+            m_presentCapacityChanged.wait(lock, [this, checkedSessionId, checkedGeneration]() {
+                    return !running
+                        || !isCurrentLocked(checkedSessionId, checkedGeneration)
+                        || presentTracker.hasCapacity();
+                });
+        }
         return running && isCurrentLocked(checkedSessionId, checkedGeneration);
     }
 
@@ -842,7 +1127,7 @@ struct RuntimePlayer::Impl {
 
     void handlePresentFailure(PresentStatus reason)
     {
-        const auto clock = dependencies.audioOutput->clock();
+        const auto clock = snapshotClock();
         FallbackTransition transition;
         SessionId activeSession = 0;
         RuntimeFallbackAction fallbackAction;
@@ -871,6 +1156,7 @@ struct RuntimePlayer::Impl {
             videoEofSeen = false;
             eofNotificationSent = false;
             seekClockAnchor.clear();
+            seekGapClock = {};
             presentTracker.clear();
             presentTracker.reset(activeSession, generation);
             presentTracker.setMaxPending(dependencies.videoPresenter->capabilities().maxPendingFrames);
@@ -964,15 +1250,60 @@ struct RuntimePlayer::Impl {
             videoThread.join();
     }
 
+    void publishPlaybackClockTick()
+    {
+        SessionId activeSessionId = 0;
+        Generation activeGeneration = 0;
+        {
+            std::lock_guard lock(m_mutex);
+            // 无音频媒体不能复用 audioOutput 时钟发布 position tick；
+            // video-only 需要独立的单调媒体时钟，避免把占位音频快照暴露给上层。
+            if (!running || paused || generation == 0 || !config.audioClockEnabled)
+                return;
+            activeSessionId = sessionId;
+            activeGeneration = generation;
+        }
+
+        const auto clock = effectivePlaybackClock(activeGeneration);
+        if (!clock.valid || clock.generation != activeGeneration)
+            return;
+
+        {
+            std::lock_guard lock(m_mutex);
+            if (!isCurrentLocked(activeSessionId, activeGeneration) || paused)
+                return;
+        }
+
+        if (dependencies.events) {
+            dependencies.events->onPlaybackClockTick(
+                {
+                    .sessionId = activeSessionId,
+                    .generation = activeGeneration,
+                },
+                clock);
+        }
+    }
+
     RuntimePlayer& owner;
     RuntimePlayerConfig config;
     RuntimePlayerDependencies dependencies;
     RuntimeFrameQueue<RuntimeAudioFrame> audioQueue;
     RuntimeFrameQueue<RuntimeVideoFrame> videoQueue;
     AvSyncScheduler scheduler;
+    RuntimeClockTicker clockTicker;
     PresentTracker presentTracker;
     NativeFallbackController fallbackController;
     SeekClockAnchor seekClockAnchor;
+    struct SeekGapClock {
+        bool active = false;
+        bool paused = false;
+        SessionId sessionId = 0;
+        Generation generation = 0;
+        std::chrono::microseconds basePosition { 0 };
+        std::chrono::microseconds targetAudioPts { 0 };
+        SteadyClock::time_point baseTime {};
+    };
+    SeekGapClock seekGapClock;
     std::atomic<float> audioVolume { sanitizeAudioControls(config.audioControls).volume };
     std::atomic_bool audioMuted { sanitizeAudioControls(config.audioControls).muted };
     mutable std::mutex m_mutex;

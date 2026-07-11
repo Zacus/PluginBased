@@ -18,6 +18,7 @@ struct RuntimeSyncConfig {
     std::chrono::microseconds lateDropThreshold { std::chrono::milliseconds(100) };
     std::chrono::microseconds maxScheduledWait { std::chrono::milliseconds(40) };
     int maxConsecutiveDropsBeforeForceRender = 8;
+    std::chrono::microseconds positionTickInterval { std::chrono::milliseconds(100) };
 };
 
 struct RuntimePlayerConfig {
@@ -32,6 +33,7 @@ struct RuntimePlayerConfig {
     VideoOutputPolicy outputPolicy = VideoOutputPolicy::PreferNative;
     RuntimeSyncConfig syncConfig {};
     bool audioClockEnabled = true;
+    std::chrono::microseconds maxSeekAudioGapFill { std::chrono::milliseconds(2000) };
 };
 
 struct RuntimePlayerDependencies {
@@ -45,6 +47,7 @@ public:
     virtual ~IRuntimePlayerEvents() = default;
     virtual void onFallbackToCpuRequested(RuntimeFallbackAction action) = 0;
     virtual void onEndOfStreamPresented(RuntimeTimeline) {}
+    virtual void onPlaybackClockTick(RuntimeTimeline, ClockSnapshot) {}
     virtual void onRuntimeError(MediaError) {}
 };
 

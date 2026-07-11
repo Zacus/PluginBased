@@ -41,6 +41,47 @@ void acceptsCompletionForCurrentSessionGenerationAndPresentId()
     assert(tracker.pendingCount() == 0);
 }
 
+void treatsSkippedCompletionAsSuccessfulConsumption()
+{
+    media_sdk::runtime::PresentTracker tracker;
+    tracker.reset(10, 4);
+    assert(tracker.track(makePresent(1, 10, 4)));
+
+    const auto action = tracker.complete(10, 4, completion(1, media_sdk::runtime::PresentStatus::Skipped));
+
+    assert(action == media_sdk::runtime::PresentCompletionAction::AcceptedSuccess);
+    assert(tracker.pendingCount() == 0);
+}
+
+void consumesCompletionThatArrivesBeforeTrack()
+{
+    media_sdk::runtime::PresentTracker tracker;
+    tracker.reset(10, 4);
+
+    const auto early = tracker.complete(10, 4, completion(1, media_sdk::runtime::PresentStatus::Skipped));
+    assert(early == media_sdk::runtime::PresentCompletionAction::IgnoredUnknown);
+    assert(tracker.pendingCount() == 0);
+
+    const auto result = tracker.trackResult(makePresent(1, 10, 4));
+    assert(result.action == media_sdk::runtime::PresentTrackAction::ConsumedSuccess);
+    assert(result.completionStatus == media_sdk::runtime::PresentStatus::Skipped);
+    assert(tracker.pendingCount() == 0);
+}
+
+void reportsEarlyFailureWhenCompletionArrivesBeforeTrack()
+{
+    media_sdk::runtime::PresentTracker tracker;
+    tracker.reset(10, 4);
+
+    const auto early = tracker.complete(10, 4, completion(1, media_sdk::runtime::PresentStatus::DeviceLost));
+    assert(early == media_sdk::runtime::PresentCompletionAction::IgnoredUnknown);
+
+    const auto result = tracker.trackResult(makePresent(1, 10, 4, true));
+    assert(result.action == media_sdk::runtime::PresentTrackAction::ConsumedFailure);
+    assert(result.completionStatus == media_sdk::runtime::PresentStatus::DeviceLost);
+    assert(tracker.pendingCount() == 0);
+}
+
 void ignoresCompletionFromOldGeneration()
 {
     media_sdk::runtime::PresentTracker tracker;
@@ -121,6 +162,9 @@ void clearCancelsAllPendingPresents()
 int main()
 {
     acceptsCompletionForCurrentSessionGenerationAndPresentId();
+    treatsSkippedCompletionAsSuccessfulConsumption();
+    consumesCompletionThatArrivesBeforeTrack();
+    reportsEarlyFailureWhenCompletionArrivesBeforeTrack();
     ignoresCompletionFromOldGeneration();
     ignoresUnknownPresentId();
     reportsFailureForCurrentNativePresent();

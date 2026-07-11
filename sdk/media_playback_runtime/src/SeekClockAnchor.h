@@ -67,6 +67,16 @@ public:
         };
     }
 
+    [[nodiscard]] bool activeFor(Generation generation) const
+    {
+        return m_active && generation == m_generation;
+    }
+
+    [[nodiscard]] std::chrono::microseconds target() const
+    {
+        return m_target;
+    }
+
 private:
     bool m_active = false;
     Generation m_generation = 0;
