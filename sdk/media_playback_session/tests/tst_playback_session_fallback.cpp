@@ -236,6 +236,7 @@ public:
     void seek(std::chrono::microseconds) override {}
     void completeSeek(media_sdk::runtime::SessionId sessionId,
                       media_sdk::runtime::Generation generation) override;
+    void notifyPresenterFailure(media_sdk::runtime::PresentStatus reason) override;
     void stop() override {}
     media_sdk::runtime::RuntimeDiagnostics diagnostics() const override;
     media_sdk::runtime::ClockSnapshot clock() const override;
@@ -261,9 +262,13 @@ public:
     int openCount = 0;
     int videoPushCount = 0;
     int completeSeekCount = 0;
+    int presenterFailureCount = 0;
+    media_sdk::runtime::PresentStatus lastPresenterFailure =
+        media_sdk::runtime::PresentStatus::Presented;
     media_sdk::runtime::RuntimeTimeline currentTimeline = runtimeTimeline(100, 1);
     media_sdk::runtime::RuntimeVideoFrame lastVideo {};
     media_sdk::runtime::IRuntimePlayerEvents* events = nullptr;
+    std::chrono::microseconds clockPosition { 0 };
 };
 
 struct TestContext {
@@ -331,6 +336,14 @@ void FakeRuntimePlayer::completeSeek(media_sdk::runtime::SessionId,
     ++completeSeekCount;
 }
 
+void FakeRuntimePlayer::notifyPresenterFailure(media_sdk::runtime::PresentStatus reason)
+{
+    ++presenterFailureCount;
+    lastPresenterFailure = reason;
+    ++currentTimeline.generation;
+    triggerFallback(clockPosition);
+}
+
 media_sdk::runtime::RuntimeDiagnostics FakeRuntimePlayer::diagnostics() const
 {
     return {};
@@ -339,7 +352,7 @@ media_sdk::runtime::RuntimeDiagnostics FakeRuntimePlayer::diagnostics() const
 media_sdk::runtime::ClockSnapshot FakeRuntimePlayer::clock() const
 {
     return {
-        .position = {},
+        .position = clockPosition,
         .generation = currentTimeline.generation,
         .valid = true,
     };
@@ -443,6 +456,28 @@ void nativeFallbackReopensCoreWithCpuFramesAndSeeksToResumePosition()
     assert(context.runtime->lastVideo.generation == 1);
 }
 
+void externalNativeFailureUsesRuntimeFallbackState()
+{
+    TestContext context;
+    RecordingSessionEvents events;
+    auto session = makeSession(context, events);
+    openNativeSession(context, *session, coreTimeline(10, 3));
+    context.runtime->clockPosition = 2300ms;
+
+    session->notifyNativeRenderingFailed();
+
+    assert(context.runtime->presenterFailureCount == 1);
+    assert(context.runtime->lastPresenterFailure
+           == media_sdk::runtime::PresentStatus::UnsupportedNativeHandle);
+    assert(context.cores.size() == 2);
+    assert(!context.coreConfigs[1].preferNativeVideoFrames);
+    assert(context.cores[0]->stopCount == 1);
+    assert(context.cores[1]->openCount == 1);
+    assert(context.cores[1]->seekCount == 1);
+    assert(context.cores[1]->lastSeekPosition == 2300ms);
+    assert(events.nativeRenderingFailedCount == 1);
+}
+
 void repeatedFallbackForSameGenerationIsIgnored()
 {
     TestContext context;
@@ -527,6 +562,7 @@ void fallbackWithNextRuntimeGenerationStillReopensCpuCore()
 int main()
 {
     nativeFallbackReopensCoreWithCpuFramesAndSeeksToResumePosition();
+    externalNativeFailureUsesRuntimeFallbackState();
     repeatedFallbackForSameGenerationIsIgnored();
     fallbackSeekFailureEmitsErrorEvent();
     fallbackWhilePausedRestoresPausedCoreState();

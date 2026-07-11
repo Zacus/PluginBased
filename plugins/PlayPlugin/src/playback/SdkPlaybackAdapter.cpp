@@ -108,6 +108,11 @@ public:
         m_session.setAudioControls(controls);
     }
 
+    void notifyNativeRenderingFailed() override
+    {
+        m_session.notifyNativeRenderingFailed();
+    }
+
     media_sdk::runtime::RuntimeTimeline timeline() const override
     {
         return m_session.timeline();
@@ -309,6 +314,28 @@ void SdkPlaybackAdapter::setVideoToolboxDirectRenderingEnabled(bool enabled)
 
     std::lock_guard lock(m_mutex);
     m_directNativeVideoEnabled = enabled;
+}
+
+void SdkPlaybackAdapter::notifyNativeRenderingFailed()
+{
+    if (!isObjectThread(*this)) {
+        QMetaObject::invokeMethod(this,
+                                  [this]() {
+                                      notifyNativeRenderingFailed();
+                                  },
+                                  Qt::QueuedConnection);
+        return;
+    }
+
+    ISdkPlaybackSession* session = nullptr;
+    {
+        std::lock_guard lock(m_mutex);
+        m_directNativeVideoEnabled = false;
+        session = m_session.get();
+    }
+
+    if (session)
+        session->notifyNativeRenderingFailed();
 }
 
 void SdkPlaybackAdapter::setVolume(float volume)

@@ -152,6 +152,11 @@ public:
         m_player.completeSeek(sessionId, generation);
     }
 
+    void notifyPresenterFailure(runtime::PresentStatus reason) override
+    {
+        m_player.notifyPresenterFailure(reason);
+    }
+
     void stop() override
     {
         m_player.stop();
@@ -409,6 +414,16 @@ struct PlaybackSession::Impl final
                 handles.runtimePlayer->resume();
         }
         return seekResult;
+    }
+
+    void notifyNativeRenderingFailed()
+    {
+        const auto runtime = currentRuntimePlayer();
+        if (!runtime)
+            return;
+
+        // 外部 Surface 只能报告失败原因；代际切换、队列中止和 CPU fallback 统一交给 RuntimePlayer 状态机处理。
+        runtime->notifyPresenterFailure(runtime::PresentStatus::UnsupportedNativeHandle);
     }
 
     runtime::RuntimeTimeline timeline() const
@@ -804,6 +819,11 @@ Result<void> PlaybackSession::seek(std::chrono::milliseconds position)
 Result<void> PlaybackSession::seek(std::chrono::milliseconds position, SeekPlaybackMode mode)
 {
     return m_impl->seek(position, mode);
+}
+
+void PlaybackSession::notifyNativeRenderingFailed()
+{
+    m_impl->notifyNativeRenderingFailed();
 }
 
 runtime::RuntimeTimeline PlaybackSession::timeline() const

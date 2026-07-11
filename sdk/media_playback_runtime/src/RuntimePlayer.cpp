@@ -1194,6 +1194,13 @@ struct RuntimePlayer::Impl {
         m_presentCapacityChanged.notify_all();
     }
 
+    void notifyPresenterFailure(PresentStatus reason)
+    {
+        if (!isFailureStatus(reason))
+            return;
+        handlePresentFailure(reason);
+    }
+
     void reportRuntimeError(MediaError error) const
     {
         if (dependencies.events)
@@ -1375,6 +1382,11 @@ void RuntimePlayer::seek(std::chrono::microseconds position)
 void RuntimePlayer::completeSeek(SessionId sessionId, Generation generation)
 {
     m_impl->completeSeek(sessionId, generation);
+}
+
+void RuntimePlayer::notifyPresenterFailure(PresentStatus reason)
+{
+    m_impl->notifyPresenterFailure(reason);
 }
 
 void RuntimePlayer::stop()

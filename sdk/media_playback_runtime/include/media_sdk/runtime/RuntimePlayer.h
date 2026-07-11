@@ -71,6 +71,7 @@ public:
     void setAudioControls(RuntimeAudioControls controls);
     void seek(std::chrono::microseconds position);
     void completeSeek(SessionId sessionId, Generation generation);
+    void notifyPresenterFailure(PresentStatus reason);
     void stop();
     RuntimeDiagnostics diagnostics() const;
     [[nodiscard("clock snapshots are the authoritative playback position source")]]

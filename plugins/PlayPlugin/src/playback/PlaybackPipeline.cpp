@@ -25,7 +25,7 @@ void PlaybackPipeline::setSurface(FFmpegSurface* surface)
 {
     if (m_surface) {
         disconnect(m_surface.data(), &FFmpegSurface::nativeRenderingFailed,
-                   this, &PlaybackPipeline::onNativeRenderingFailed);
+                   this, &PlaybackPipeline::onSurfaceNativeRenderingFailed);
     }
     destroySdkRuntimeChain();
     m_surface = surface;
@@ -97,15 +97,25 @@ void PlaybackPipeline::onDecoderSeekCompleted(int generation, int serial)
     emit seekCompleted(generation, serial);
 }
 
-void PlaybackPipeline::onNativeRenderingFailed()
+void PlaybackPipeline::onSurfaceNativeRenderingFailed()
+{
+    disableNativeVideoRenderingAfterFailure(true);
+}
+
+void PlaybackPipeline::onSdkNativeRenderingFailed()
+{
+    disableNativeVideoRenderingAfterFailure(false);
+}
+
+void PlaybackPipeline::disableNativeVideoRenderingAfterFailure(bool notifySdkSession)
 {
     if (!m_nativeVideoRenderingEnabled)
         return;
 
     m_nativeVideoRenderingEnabled = false;
-    if (m_sdkAdapter)
-        m_sdkAdapter->setVideoToolboxDirectRenderingEnabled(false);
-    LOG_WARN("PlaybackPipeline: disabled VideoToolbox native rendering after Surface failure");
+    if (notifySdkSession && m_sdkAdapter)
+        m_sdkAdapter->notifyNativeRenderingFailed();
+    LOG_WARN("PlaybackPipeline: disabled VideoToolbox native rendering after native render failure");
     emit nativeRenderingFailed();
 }
 
@@ -139,9 +149,9 @@ void PlaybackPipeline::createSdkRuntimeChain()
     connect(m_sdkAdapter.get(), &SdkPlaybackAdapter::endOfVideo,
             this, &PlaybackPipeline::endOfVideo);
     connect(m_sdkAdapter.get(), &SdkPlaybackAdapter::nativeRenderingFailed,
-            this, &PlaybackPipeline::onNativeRenderingFailed);
+            this, &PlaybackPipeline::onSdkNativeRenderingFailed);
     connect(m_surface.data(), &FFmpegSurface::nativeRenderingFailed,
-            this, &PlaybackPipeline::onNativeRenderingFailed,
+            this, &PlaybackPipeline::onSurfaceNativeRenderingFailed,
             Qt::UniqueConnection);
 #else
     LOG_WARN("PlaybackPipeline: SDK runtime mode requires a platform audio output");

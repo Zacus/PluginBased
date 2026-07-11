@@ -35,6 +35,8 @@ public:
                 media_sdk::session::PlaybackSessionDependencies dependencies)
         : events(dependencies.events)
         , lastAudioControls(config.runtime.audioControls)
+        , preferNativeVideoFrames(config.preferNativeVideoFrames)
+        , corePreferNativeVideoFrames(config.core.preferNativeVideoFrames)
     {
     }
 
@@ -75,6 +77,11 @@ public:
         ++audioControlCount;
     }
 
+    void notifyNativeRenderingFailed() override
+    {
+        ++nativeRenderingFailureCount;
+    }
+
     media_sdk::runtime::RuntimeTimeline timeline() const override
     {
         return { .sessionId = 100, .generation = 7 };
@@ -86,7 +93,10 @@ public:
     int pauseCount = 0;
     int stopCount = 0;
     int audioControlCount = 0;
+    int nativeRenderingFailureCount = 0;
     bool emitErrorOnStop = false;
+    bool preferNativeVideoFrames = false;
+    bool corePreferNativeVideoFrames = false;
     std::chrono::milliseconds lastSeek { 0 };
     media_sdk::SeekPlaybackMode lastSeekMode = media_sdk::SeekPlaybackMode::PreservePlaybackState;
     media_sdk::runtime::RuntimeAudioControls lastAudioControls {};
@@ -166,6 +176,25 @@ void resumeSeekPassesPlaybackIntentToSession()
     assert(harness.sessions[0]->lastSeekMode == media_sdk::SeekPlaybackMode::ResumePlayback);
 }
 
+void nativeRenderingFailureNotifiesCurrentSessionAndDisablesFutureNative()
+{
+    AdapterHarness harness;
+
+    harness.adapter.setVideoToolboxDirectRenderingEnabled(true);
+    harness.adapter.openFile(QUrl::fromLocalFile("/tmp/a.mov"));
+    assert(harness.sessions.size() == 1);
+    assert(harness.sessions[0]->preferNativeVideoFrames);
+    assert(harness.sessions[0]->corePreferNativeVideoFrames);
+
+    harness.adapter.notifyNativeRenderingFailed();
+    assert(harness.sessions[0]->nativeRenderingFailureCount == 1);
+
+    harness.adapter.openFile(QUrl::fromLocalFile("/tmp/b.mov"));
+    assert(harness.sessions.size() == 2);
+    assert(!harness.sessions[1]->preferNativeVideoFrames);
+    assert(!harness.sessions[1]->corePreferNativeVideoFrames);
+}
+
 } // namespace
 
 int main(int argc, char** argv)
@@ -176,5 +205,6 @@ int main(int argc, char** argv)
     stopTimeEventsFromOldSessionAreIgnoredAfterReopen();
     audioControlsApplyToFutureAndCurrentSession();
     resumeSeekPassesPlaybackIntentToSession();
+    nativeRenderingFailureNotifiesCurrentSessionAndDisablesFutureNative();
     return 0;
 }

@@ -269,6 +269,7 @@ public:
     void seek(std::chrono::microseconds position) override;
     void completeSeek(media_sdk::runtime::SessionId sessionId,
                       media_sdk::runtime::Generation generation) override;
+    void notifyPresenterFailure(media_sdk::runtime::PresentStatus reason) override;
     void stop() override;
     media_sdk::runtime::RuntimeDiagnostics diagnostics() const override;
     media_sdk::runtime::ClockSnapshot clock() const override;
@@ -302,6 +303,7 @@ public:
     int resumeCount = 0;
     int seekCount = 0;
     int completeSeekCount = 0;
+    int presenterFailureCount = 0;
     int stopCount = 0;
     bool paused = false;
     media_sdk::runtime::RuntimeAudioControls lastAudioControls {};
@@ -434,6 +436,12 @@ void FakeRuntimePlayer::completeSeek(media_sdk::runtime::SessionId,
 {
     ++completeSeekCount;
     m_context.operations.push_back("runtime.completeSeek");
+}
+
+void FakeRuntimePlayer::notifyPresenterFailure(media_sdk::runtime::PresentStatus)
+{
+    ++presenterFailureCount;
+    m_context.operations.push_back("runtime.notifyPresenterFailure");
 }
 
 void FakeRuntimePlayer::stop()

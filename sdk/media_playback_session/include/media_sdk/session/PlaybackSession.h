@@ -35,6 +35,7 @@ public:
     Result<void> seek(std::chrono::milliseconds position);
     [[nodiscard("seek result determines whether the seek command was accepted")]]
     Result<void> seek(std::chrono::milliseconds position, SeekPlaybackMode mode);
+    void notifyNativeRenderingFailed();
     [[nodiscard("timeline is required for stale callback checks")]]
     runtime::RuntimeTimeline timeline() const;
     [[nodiscard("diagnostics verify queue, fallback, native, and clock behavior")]]

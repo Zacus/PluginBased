@@ -199,7 +199,8 @@ def check_sdk_playback_adapter_contract() -> None:
     assert_contains(pipeline_source, "m_sdkAdapter->setVideoToolboxDirectRenderingEnabled(enabled)", PLAYBACK_PIPELINE_CPP)
     assert_contains(pipeline_source, "m_surface && m_surface->supportsNativeVideoToolboxRendering()", PLAYBACK_PIPELINE_CPP)
     assert_contains(pipeline_source, "&FFmpegSurface::nativeRenderingFailed", PLAYBACK_PIPELINE_CPP)
-    assert_contains(pipeline_source, "&PlaybackPipeline::onNativeRenderingFailed", PLAYBACK_PIPELINE_CPP)
+    assert_contains(pipeline_source, "&PlaybackPipeline::onSurfaceNativeRenderingFailed", PLAYBACK_PIPELINE_CPP)
+    assert_contains(pipeline_source, "&PlaybackPipeline::onSdkNativeRenderingFailed", PLAYBACK_PIPELINE_CPP)
     assert_not_contains(pipeline_source, "decode event bridge is pending", PLAYBACK_PIPELINE_CPP)
 
 

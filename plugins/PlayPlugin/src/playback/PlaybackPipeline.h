@@ -63,12 +63,14 @@ signals:
 
 private slots:
     void onDecoderSeekCompleted(int generation, int serial);
-    void onNativeRenderingFailed();
+    void onSurfaceNativeRenderingFailed();
+    void onSdkNativeRenderingFailed();
 
 private:
     void createSdkRuntimeChain();
     void destroySdkRuntimeChain();
     void updateNativeVideoRenderingEnabled();
+    void disableNativeVideoRenderingAfterFailure(bool notifySdkSession);
 
     std::unique_ptr<SdkPlaybackAdapter> m_sdkAdapter;
     std::unique_ptr<QtRhiVideoPresenter> m_sdkVideoPresenter;
