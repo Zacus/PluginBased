@@ -34,6 +34,11 @@ media_sdk::AVFramePtr makeBufferedFrame(AVPixelFormat format,
     return frame;
 }
 
+std::shared_ptr<AVFrame> storageFrame(const media_sdk::VideoFrame& frame)
+{
+    return std::static_pointer_cast<AVFrame>(frame.storage());
+}
+
 class FakeHardwareBackend final : public media_sdk::HardwareDecoderBackend
 {
 public:
@@ -183,6 +188,149 @@ void testHardwareTransferDoesNotUseNormalizerAllocationPath()
     assert(stats.normalizedPixelBufferAllocations == 0);
 }
 
+void testConvertedFramesReusePoolWithoutSharingInFlightSlot()
+{
+    media_sdk::VideoFrameProcessor processor;
+    auto first = processor.process(makeBufferedFrame(AV_PIX_FMT_RGB24,
+                                                     12,
+                                                     12,
+                                                     1'000,
+                                                     AVCOL_RANGE_MPEG,
+                                                     AVCOL_SPC_BT709));
+    auto second = processor.process(makeBufferedFrame(AV_PIX_FMT_RGB24,
+                                                      12,
+                                                      12,
+                                                      2'000,
+                                                      AVCOL_RANGE_MPEG,
+                                                      AVCOL_SPC_BT709));
+    assert(first.ok());
+    assert(second.ok());
+    auto firstStorage = storageFrame(first.value());
+    auto secondStorage = storageFrame(second.value());
+    assert(firstStorage);
+    assert(secondStorage);
+    assert(firstStorage.get() != secondStorage.get());
+    assert(first.value().planes()[0].data
+           == reinterpret_cast<const std::byte*>(firstStorage->data[0]));
+
+    AVFrame* releasedSlot = firstStorage.get();
+    firstStorage.reset();
+    first.value() = {};
+    bool releasedSlotReused = false;
+    for (int attempt = 0; attempt < 3 && !releasedSlotReused; ++attempt) {
+        auto next = processor.process(makeBufferedFrame(AV_PIX_FMT_RGB24,
+                                                        12,
+                                                        12,
+                                                        3'000 + attempt,
+                                                        AVCOL_RANGE_MPEG,
+                                                        AVCOL_SPC_BT709));
+        assert(next.ok());
+        releasedSlotReused = storageFrame(next.value()).get() == releasedSlot;
+    }
+
+    const auto stats = processor.picturePoolStats();
+    assert(releasedSlotReused);
+    assert(stats.allocationCount == 3);
+    assert(stats.reuseCount >= 3);
+    assert(stats.transientAllocationCount == 0);
+}
+
+void testResolutionChangeRetiresOldPoolEpoch()
+{
+    media_sdk::VideoFrameProcessor processor;
+    auto oldResolution = processor.process(makeBufferedFrame(AV_PIX_FMT_RGB24,
+                                                             12,
+                                                             12,
+                                                             1'000,
+                                                             AVCOL_RANGE_MPEG,
+                                                             AVCOL_SPC_BT709));
+    auto newResolution = processor.process(makeBufferedFrame(AV_PIX_FMT_RGB24,
+                                                             20,
+                                                             16,
+                                                             2'000,
+                                                             AVCOL_RANGE_MPEG,
+                                                             AVCOL_SPC_BT709));
+    assert(oldResolution.ok());
+    assert(newResolution.ok());
+    assert(newResolution.value().width() == 20);
+    assert(newResolution.value().height() == 16);
+
+    oldResolution.value() = {};
+    assert(processor.picturePoolStats().incompatibleReturnCount == 1);
+}
+
+void testFailedConversionDoesNotPoisonNextFrame()
+{
+    media_sdk::VideoFrameProcessor processor;
+    auto invalid = media_sdk::makeFrame();
+    assert(invalid);
+    invalid->format = AV_PIX_FMT_RGB24;
+    invalid->width = 0;
+    invalid->height = 12;
+
+    auto failed = processor.process(std::move(invalid));
+    assert(!failed.ok());
+
+    auto recovered = processor.process(makeBufferedFrame(AV_PIX_FMT_RGB24,
+                                                         12,
+                                                         12,
+                                                         3'000,
+                                                         AVCOL_RANGE_MPEG,
+                                                         AVCOL_SPC_BT709));
+    assert(recovered.ok());
+    assert(recovered.value().planes().size() == 3);
+}
+
+void testNativeAndSupportedCpuFramesBypassPicturePool()
+{
+    media_sdk::VideoFrameProcessor processor;
+    auto cpuResult = processor.process(makeBufferedFrame(AV_PIX_FMT_NV12,
+                                                         8,
+                                                         8,
+                                                         1'000,
+                                                         AVCOL_RANGE_MPEG,
+                                                         AVCOL_SPC_BT709));
+    assert(cpuResult.ok());
+    assert(processor.picturePoolStats().acquireCount == 0);
+
+    auto native = media_sdk::makeFrame();
+    int nativeHandle = 7;
+    native->format = AV_PIX_FMT_VIDEOTOOLBOX;
+    native->width = 8;
+    native->height = 8;
+    native->data[3] = reinterpret_cast<std::uint8_t*>(&nativeHandle);
+    auto nativeResult = processor.process(std::move(native));
+    assert(nativeResult.ok());
+    assert(nativeResult.value().pixelFormat() == media_sdk::PixelFormat::Native);
+    assert(processor.picturePoolStats().acquireCount == 0);
+}
+
+void testResetKeepsOldStorageAliveAndCreatesNewPoolState()
+{
+    media_sdk::VideoFrameProcessor processor;
+    auto beforeReset = processor.process(makeBufferedFrame(AV_PIX_FMT_RGB24,
+                                                           12,
+                                                           12,
+                                                           1'000,
+                                                           AVCOL_RANGE_MPEG,
+                                                           AVCOL_SPC_BT709));
+    assert(beforeReset.ok());
+    auto oldStorage = storageFrame(beforeReset.value());
+    const std::uint8_t* oldData = oldStorage->data[0];
+
+    processor.reset();
+
+    assert(oldStorage->data[0] == oldData);
+    auto afterReset = processor.process(makeBufferedFrame(AV_PIX_FMT_RGB24,
+                                                          12,
+                                                          12,
+                                                          2'000,
+                                                          AVCOL_RANGE_MPEG,
+                                                          AVCOL_SPC_BT709));
+    assert(afterReset.ok());
+    assert(processor.picturePoolStats().allocationCount == 3);
+}
+
 } // namespace
 
 int main()
@@ -193,5 +341,10 @@ int main()
     testVideoToolboxNativeHandleDescriptor();
     testHardwareBackendUsesStringViewName();
     testHardwareTransferDoesNotUseNormalizerAllocationPath();
+    testConvertedFramesReusePoolWithoutSharingInFlightSlot();
+    testResolutionChangeRetiresOldPoolEpoch();
+    testFailedConversionDoesNotPoisonNextFrame();
+    testNativeAndSupportedCpuFramesBypassPicturePool();
+    testResetKeepsOldStorageAliveAndCreatesNewPoolState();
     return 0;
 }
