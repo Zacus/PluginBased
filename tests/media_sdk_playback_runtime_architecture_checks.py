@@ -228,7 +228,9 @@ def main() -> None:
         )
 
     ring_buffer_header = PLATFORM_AUDIO_MACOS / "src" / "CoreAudioRingBuffer.h"
+    ring_buffer_source = PLATFORM_AUDIO_MACOS / "src" / "CoreAudioRingBuffer.cpp"
     ring_buffer = read(ring_buffer_header)
+    ring_buffer_impl = read(ring_buffer_source)
     for token in (
         "SPSC PCM ring buffer",
         "read() is lock-free",
@@ -264,16 +266,16 @@ def main() -> None:
             raise AssertionError(
                 f"{ring_buffer_header} should use fixed-capacity vector ring operations, found {token!r}"
             )
-    write_start = ring_buffer.find("inline bool CoreAudioRingBuffer::write")
-    write_end = ring_buffer.find("inline CoreAudioRingBufferReadResult CoreAudioRingBuffer::read")
+    write_start = ring_buffer_impl.find("bool CoreAudioRingBuffer::write")
+    write_end = ring_buffer_impl.find("CoreAudioRingBufferReadResult CoreAudioRingBuffer::read")
     if write_start < 0 or write_end < 0:
-        raise AssertionError(f"{ring_buffer_header} should define write() before read()")
-    write_body = ring_buffer[write_start:write_end]
+        raise AssertionError(f"{ring_buffer_source} should define write() before read()")
+    write_body = ring_buffer_impl[write_start:write_end]
     for token in (
         "std::atomic_wait_explicit",
         "m_wakeupSequence",
     ):
-        assert_contains(write_body, token, ring_buffer_header)
+        assert_contains(write_body, token, ring_buffer_source)
     for token in (
         "wait_for",
         "std::chrono::milliseconds { 1 }",
@@ -282,18 +284,18 @@ def main() -> None:
     ):
         if token in write_body:
             raise AssertionError(
-                f"{ring_buffer_header} write() must not poll for producer wakeups, found {token!r}"
+                f"{ring_buffer_source} write() must not poll for producer wakeups, found {token!r}"
             )
-    read_start = ring_buffer.find("inline CoreAudioRingBufferReadResult CoreAudioRingBuffer::read")
-    read_end = ring_buffer.find("inline void CoreAudioRingBuffer::flush")
+    read_start = ring_buffer_impl.find("CoreAudioRingBufferReadResult CoreAudioRingBuffer::read")
+    read_end = ring_buffer_impl.find("void CoreAudioRingBuffer::flush")
     if read_start < 0 or read_end < 0:
-        raise AssertionError(f"{ring_buffer_header} should define read() before flush()")
-    read_body = ring_buffer[read_start:read_end]
+        raise AssertionError(f"{ring_buffer_source} should define read() before flush()")
+    read_body = ring_buffer_impl[read_start:read_end]
     for token in (
         "epoch % 2 != 0",
         "epoch != m_epoch.load",
     ):
-        assert_contains(read_body, token, ring_buffer_header)
+        assert_contains(read_body, token, ring_buffer_source)
     for token in (
         "std::scoped_lock",
         "std::unique_lock",
@@ -304,9 +306,9 @@ def main() -> None:
     ):
         if token in read_body:
             raise AssertionError(
-                f"{ring_buffer_header} read() must be lock-free for CoreAudio callbacks, found {token!r}"
+                f"{ring_buffer_source} read() must be lock-free for CoreAudio callbacks, found {token!r}"
             )
-    flush_body = ring_buffer[read_end:ring_buffer.find("inline void CoreAudioRingBuffer::close")]
+    flush_body = ring_buffer_impl[read_end:ring_buffer_impl.find("void CoreAudioRingBuffer::close")]
     require_order = (
         flush_body.find("beginControlUpdate();"),
         flush_body.find("resetCursors();"),
@@ -314,19 +316,19 @@ def main() -> None:
     )
     if not (0 <= require_order[0] < require_order[1] < require_order[2]):
         raise AssertionError(
-            f"{ring_buffer_header} flush() must publish seqlock epoch after cursor reset"
+            f"{ring_buffer_source} flush() must publish seqlock epoch after cursor reset"
         )
-    clock_start = ring_buffer.find("inline runtime::ClockSnapshot CoreAudioRingBuffer::clock")
-    clock_end = ring_buffer.find("inline std::size_t CoreAudioRingBuffer::bytesPerSample")
+    clock_start = ring_buffer_impl.find("runtime::ClockSnapshot CoreAudioRingBuffer::clock")
+    clock_end = ring_buffer_impl.find("std::size_t CoreAudioRingBuffer::bytesPerSample")
     if clock_start < 0 or clock_end < 0:
-        raise AssertionError(f"{ring_buffer_header} should define clock() before bytesPerSample()")
-    clock_body = ring_buffer[clock_start:clock_end]
+        raise AssertionError(f"{ring_buffer_source} should define clock() before bytesPerSample()")
+    clock_body = ring_buffer_impl[clock_start:clock_end]
     for token in (
         "epoch % 2 != 0",
         "epoch != m_epoch.load",
         ".valid = false",
     ):
-        assert_contains(clock_body, token, ring_buffer_header)
+        assert_contains(clock_body, token, ring_buffer_source)
     for token in (
         "std::scoped_lock",
         "std::unique_lock",
@@ -336,7 +338,7 @@ def main() -> None:
     ):
         if token in clock_body:
             raise AssertionError(
-                f"{ring_buffer_header} clock() must use lock-free seqlock snapshots, found {token!r}"
+                f"{ring_buffer_source} clock() must use lock-free seqlock snapshots, found {token!r}"
             )
 
     concrete_include = '#include "media_sdk/platform/macos/CoreAudioAudioOutput.h"'

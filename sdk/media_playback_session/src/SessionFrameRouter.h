@@ -22,26 +22,7 @@ concept RuntimeFrameSink = requires(RuntimeSink& sink,
     { sink.enqueueVideo(std::move(video)) } -> std::same_as<runtime::RuntimeFramePushResult>;
 };
 
-inline DecodeFramePushResult mapRuntimeFramePushResult(runtime::RuntimeFramePushResult result)
-{
-    using DecodeStatus = DecodeFramePushStatus;
-    using RuntimeStatus = runtime::RuntimeFramePushStatus;
-
-    switch (result.status) {
-    case RuntimeStatus::Accepted:
-        return { .status = DecodeStatus::Accepted, .waitTime = result.waitTime };
-    case RuntimeStatus::Backpressured:
-        return { .status = DecodeStatus::Backpressured, .waitTime = result.waitTime };
-    case RuntimeStatus::RejectedGeneration:
-        return { .status = DecodeStatus::StaleGeneration, .waitTime = result.waitTime };
-    case RuntimeStatus::Cancelled:
-        return { .status = DecodeStatus::Cancelled, .waitTime = result.waitTime };
-    case RuntimeStatus::Closed:
-        return { .status = DecodeStatus::Closed, .waitTime = result.waitTime };
-    }
-
-    return { .status = DecodeStatus::Closed, .waitTime = result.waitTime };
-}
+DecodeFramePushResult mapRuntimeFramePushResult(runtime::RuntimeFramePushResult result);
 
 template<RuntimeFrameSink RuntimeSink>
 class BasicSessionFrameRouter final : public IDecodeFrameSink

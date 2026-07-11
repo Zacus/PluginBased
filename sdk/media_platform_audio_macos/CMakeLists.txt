@@ -1,6 +1,7 @@
 add_library(media_sdk_platform_audio_macos STATIC
     src/CoreAudioAudioOutput.cpp
     src/CoreAudioOutputEngine.cpp
+    src/CoreAudioRingBuffer.cpp
     src/MacAudioUnitRenderDevice.cpp
 )
 
@@ -33,6 +34,7 @@ if(BUILD_TESTING)
     add_executable(MediaSdkPlatformAudioMacosEngineTest
         tests/tst_core_audio_output_engine.cpp
         src/CoreAudioOutputEngine.cpp
+        src/CoreAudioRingBuffer.cpp
     )
     target_compile_features(MediaSdkPlatformAudioMacosEngineTest PRIVATE cxx_std_20)
     set_target_properties(MediaSdkPlatformAudioMacosEngineTest PROPERTIES
