@@ -164,6 +164,8 @@ void FFmpegSurface::clear()
 {
     {
         QMutexLocker lock(&m_mutex);
+        m_pendingFrame.reset();
+        m_dirty = false;
         m_clearPending = true; // 标记正在清除，updatePaintNode 里可选地处理（如显示纯黑）
     }
     QMetaObject::invokeMethod(this, "update", Qt::QueuedConnection);

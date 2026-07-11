@@ -335,6 +335,27 @@ if(BUILD_TESTING)
         COMMAND $<TARGET_FILE:PlayPluginSdkPlaybackAdapterTest>
         WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
     )
+    add_executable(PlayPluginVideoFrameBridgeTest
+        tests/tst_playplugin_video_frame_bridge.cpp
+        "${PLAYPLUGIN_TEST_PLUGIN_ROOT}/PlayPlugin/src/playback/SdkVideoFrameBridge.cpp"
+    )
+    target_include_directories(PlayPluginVideoFrameBridgeTest PRIVATE
+        "${PLAYPLUGIN_TEST_PLUGIN_ROOT}/PlayPlugin/src"
+    )
+    target_link_libraries(PlayPluginVideoFrameBridgeTest PRIVATE
+        Qt6::Core
+        media_sdk::core
+        FFmpeg::all
+    )
+    if(APPLE)
+        target_link_libraries(PlayPluginVideoFrameBridgeTest PRIVATE
+            "-framework CoreVideo"
+        )
+    endif()
+    add_test(NAME playplugin_video_frame_bridge
+        COMMAND $<TARGET_FILE:PlayPluginVideoFrameBridgeTest>
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+    )
     add_test(NAME app_theme_service_checks
         COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tests/app_theme_service_checks.py"
         WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"

@@ -70,6 +70,7 @@ qt_add_qml_module(PlayPlugin
         src/playback/PlaybackContext.h  src/playback/PlaybackContext.cpp
         src/playback/PlaybackCompletionTracker.h src/playback/PlaybackCompletionTracker.cpp
         src/playback/SdkPlaybackAdapter.h src/playback/SdkPlaybackAdapter.cpp
+        src/playback/SdkVideoFrameBridge.h src/playback/SdkVideoFrameBridge.cpp
         src/playback/QtRhiVideoPresenter.h src/playback/QtRhiVideoPresenter.cpp
         src/playback/PlaybackPipeline.h src/playback/PlaybackPipeline.cpp
         src/playback/PlayerEngine.h     src/playback/PlayerEngine.cpp

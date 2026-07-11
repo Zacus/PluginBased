@@ -137,6 +137,9 @@ void VideoNode::clearToBlack()
         markDirty(QSGNode::DirtyMaterial);
         return;
     }
+    m_material.pending.valid = false;
+    m_material.pending.frameData.reset();
+    m_material.currentFrame.reset();
     if (m_material.tex_y) {
         m_material.pendingBlackFrame = true;
         m_material.paramsDirty = true;
