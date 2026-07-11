@@ -122,8 +122,8 @@ void testUnsupportedCpuFormatNormalizesToYuv420P()
     assert(result.value().colorSpace() == media_sdk::ColorSpace::Bt709);
     assert(result.value().planes().size() == 3);
     assert(stats.normalizedVideoFrames == 1);
-    assert(stats.normalizedFrameHeaderAllocations == 1);
-    assert(stats.normalizedPixelBufferAllocations == 1);
+    assert(stats.normalizedFrameHeaderAllocations == 3);
+    assert(stats.normalizedPixelBufferAllocations == 3);
     assert(stats.sourcePixelFormat == AV_PIX_FMT_RGB24);
     assert(stats.cpuPixelFormat == AV_PIX_FMT_YUV420P);
 }

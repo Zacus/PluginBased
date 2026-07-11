@@ -1,5 +1,6 @@
 #pragma once
 
+#include "CpuVideoPicturePool.h"
 #include "DecodePerformance.h"
 #include "FFmpegUtils.h"
 #include "HardwareDecoderBackend.h"
@@ -15,23 +16,28 @@ struct VideoFrameProcessOptions {
 class VideoFrameProcessor
 {
 public:
+    VideoFrameProcessor();
+    ~VideoFrameProcessor();
+
     void reset();
 
     Result<VideoFrame> process(AVFramePtr frame,
                                VideoFrameProcessOptions options = {},
                                HardwareDecoderBackend* hardwareDecoder = nullptr,
                                DecodePerformanceStats* stats = nullptr);
+    [[nodiscard]] VideoPicturePoolStats picturePoolStats() const;
 
 private:
     AVFramePtr transferHardwareFrameToCpu(AVFramePtr frame,
                                           HardwareDecoderBackend* hardwareDecoder,
                                           DecodePerformanceStats* stats);
-    AVFramePtr normalizeVideoFrame(AVFramePtr frame, DecodePerformanceStats* stats);
-    Result<VideoFrame> createVideoFrame(AVFramePtr frame, DecodePerformanceStats* stats) const;
+    VideoPictureRef normalizeVideoFrame(AVFramePtr frame, DecodePerformanceStats* stats);
+    Result<VideoFrame> createVideoFrame(VideoPictureRef frame) const;
     Result<VideoFrame> createNativeVideoFrame(AVFramePtr frame, DecodePerformanceStats* stats) const;
     void copyFrameMetadata(const AVFrame* source, AVFrame* destination) const;
 
     SwsContextPtr m_videoSwsContext;
+    std::unique_ptr<CpuVideoPicturePool> m_cpuPicturePool;
 };
 
 } // namespace media_sdk

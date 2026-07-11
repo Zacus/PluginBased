@@ -165,10 +165,10 @@ std::vector<PlaneView> planeViews(const AVFrame* frame)
     return planes;
 }
 
-std::shared_ptr<void> shareFrameStorage(AVFramePtr frame, AVFrame*& rawFrame)
+VideoPictureRef shareFrameStorage(AVFramePtr frame)
 {
-    rawFrame = frame.release();
-    std::shared_ptr<AVFrame> sharedFrame(rawFrame, [](AVFrame* releasedFrame) {
+    AVFrame* rawFrame = frame.release();
+    VideoPictureRef sharedFrame(rawFrame, [](AVFrame* releasedFrame) {
         if (releasedFrame)
             av_frame_free(&releasedFrame);
     });
@@ -177,9 +177,18 @@ std::shared_ptr<void> shareFrameStorage(AVFramePtr frame, AVFrame*& rawFrame)
 
 } // namespace
 
+VideoFrameProcessor::VideoFrameProcessor()
+    : m_cpuPicturePool(std::make_unique<CpuVideoPicturePool>())
+{
+}
+
+VideoFrameProcessor::~VideoFrameProcessor() = default;
+
 void VideoFrameProcessor::reset()
 {
     m_videoSwsContext.reset();
+    m_cpuPicturePool->close();
+    m_cpuPicturePool = std::make_unique<CpuVideoPicturePool>();
 }
 
 Result<VideoFrame> VideoFrameProcessor::process(AVFramePtr frame,
@@ -200,11 +209,16 @@ Result<VideoFrame> VideoFrameProcessor::process(AVFramePtr frame,
     if (!frame)
         return processingFailure("Failed to transfer hardware frame to CPU memory");
 
-    frame = normalizeVideoFrame(std::move(frame), stats);
-    if (!frame)
+    auto normalizedFrame = normalizeVideoFrame(std::move(frame), stats);
+    if (!normalizedFrame)
         return processingFailure("Failed to normalize video frame pixel format");
 
-    return createVideoFrame(std::move(frame), stats);
+    return createVideoFrame(std::move(normalizedFrame));
+}
+
+VideoPicturePoolStats VideoFrameProcessor::picturePoolStats() const
+{
+    return m_cpuPicturePool->stats();
 }
 
 AVFramePtr VideoFrameProcessor::transferHardwareFrameToCpu(AVFramePtr frame,
@@ -245,31 +259,37 @@ AVFramePtr VideoFrameProcessor::transferHardwareFrameToCpu(AVFramePtr frame,
     return cpuFrame;
 }
 
-AVFramePtr VideoFrameProcessor::normalizeVideoFrame(AVFramePtr frame, DecodePerformanceStats* stats)
+VideoPictureRef VideoFrameProcessor::normalizeVideoFrame(AVFramePtr frame,
+                                                         DecodePerformanceStats* stats)
 {
-    if (!frame || isRendererSupportedVideoFormat(frame->format))
-        return frame;
+    if (!frame)
+        return {};
+    if (isRendererSupportedVideoFormat(frame->format))
+        return shareFrameStorage(std::move(frame));
 
     const auto started = std::chrono::steady_clock::now();
-    auto converted = makeFrame();
+    const auto poolStatsBefore = m_cpuPicturePool->stats();
+    auto converted = m_cpuPicturePool->acquire({
+        .width = frame->width,
+        .height = frame->height,
+        .pixelFormat = AV_PIX_FMT_YUV420P,
+        .alignment = 32,
+    });
+    const auto poolStatsAfter = m_cpuPicturePool->stats();
     if (!converted)
         return {};
-    if (stats)
-        ++stats->normalizedFrameHeaderAllocations;
+    if (stats) {
+        const auto allocationsBefore = poolStatsBefore.allocationCount
+            + poolStatsBefore.transientAllocationCount;
+        const auto allocationsAfter = poolStatsAfter.allocationCount
+            + poolStatsAfter.transientAllocationCount;
+        const auto allocations = allocationsAfter - allocationsBefore;
+        stats->normalizedFrameHeaderAllocations += static_cast<std::int64_t>(allocations);
+        stats->normalizedPixelBufferAllocations += static_cast<std::int64_t>(allocations);
+    }
 
-    converted->format = AV_PIX_FMT_YUV420P;
-    converted->width = frame->width;
-    converted->height = frame->height;
     copyFrameMetadata(frame.get(), converted.get());
-
-    int ret = av_frame_get_buffer(converted.get(), 32);
-    if (ret < 0)
-        return {};
-    if (stats)
-        ++stats->normalizedPixelBufferAllocations;
-
-    ret = av_frame_make_writable(converted.get());
-    if (ret < 0)
+    if (av_frame_is_writable(converted.get()) == 0)
         return {};
 
     SwsContext* oldContext = m_videoSwsContext.release();
@@ -292,13 +312,13 @@ AVFramePtr VideoFrameProcessor::normalizeVideoFrame(AVFramePtr frame, DecodePerf
     }
     m_videoSwsContext.reset(sws);
 
-    ret = sws_scale(m_videoSwsContext.get(),
-                    frame->data,
-                    frame->linesize,
-                    0,
-                    frame->height,
-                    converted->data,
-                    converted->linesize);
+    const int ret = sws_scale(m_videoSwsContext.get(),
+                              frame->data,
+                              frame->linesize,
+                              0,
+                              frame->height,
+                              converted->data,
+                              converted->linesize);
     if (ret <= 0)
         return {};
 
@@ -316,14 +336,12 @@ AVFramePtr VideoFrameProcessor::normalizeVideoFrame(AVFramePtr frame, DecodePerf
     return converted;
 }
 
-Result<VideoFrame> VideoFrameProcessor::createVideoFrame(AVFramePtr frame,
-                                                         DecodePerformanceStats* stats) const
+Result<VideoFrame> VideoFrameProcessor::createVideoFrame(VideoPictureRef frame) const
 {
     if (!frame)
         return processingFailure("Cannot create VideoFrame from null AVFrame");
 
-    AVFrame* rawFrame = nullptr;
-    std::shared_ptr<void> storage = shareFrameStorage(std::move(frame), rawFrame);
+    AVFrame* rawFrame = frame.get();
     const auto planes = planeViews(rawFrame);
 
     return Result<VideoFrame>::success(VideoFrame({
@@ -335,7 +353,7 @@ Result<VideoFrame> VideoFrameProcessor::createVideoFrame(AVFramePtr frame,
         .pts = framePts(rawFrame),
         .planes = planes,
         .nativeHandle = {},
-        .storage = std::move(storage),
+        .storage = std::move(frame),
     }));
 }
 
@@ -348,8 +366,8 @@ Result<VideoFrame> VideoFrameProcessor::createNativeVideoFrame(AVFramePtr frame,
     if (stats)
         ++stats->nativeVideoFrames;
 
-    AVFrame* rawFrame = nullptr;
-    std::shared_ptr<void> storage = shareFrameStorage(std::move(frame), rawFrame);
+    auto storage = shareFrameStorage(std::move(frame));
+    AVFrame* rawFrame = storage.get();
     NativeHandle handle {
         .kind = NativeHandleKind::VideoToolboxPixelBuffer,
         .handle = rawFrame->data[3],
