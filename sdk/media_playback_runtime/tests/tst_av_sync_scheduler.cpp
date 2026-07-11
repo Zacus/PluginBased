@@ -136,6 +136,43 @@ void ignoresAudioClockFromOldGeneration()
     assert(decision.lateness == 0us);
 }
 
+void smoothsVideoOnlyClockAgainstSingleDelayedObservation()
+{
+    auto now = media_sdk::runtime::MasterClock::SteadyClock::time_point {};
+    media_sdk::runtime::MasterClock clock([&now]()
+    {
+        return now;
+    });
+    clock.reset(4);
+
+    const auto invalidClock = audioClock(0us, 4, false);
+    const auto anchored = clock.positionForVideoFrame(0ms, invalidClock, 4);
+    assert(anchored == 0ms);
+
+    now += 150ms;
+    const auto smoothed = clock.positionForVideoFrame(40ms, invalidClock, 4);
+    assert(smoothed - 40ms < lateDropThreshold);
+}
+
+void repeatedVideoOnlyDecisionForSameFrameDoesNotCompoundSmoothing()
+{
+    auto now = media_sdk::runtime::MasterClock::SteadyClock::time_point {};
+    media_sdk::runtime::MasterClock clock([&now]()
+    {
+        return now;
+    });
+    clock.reset(4);
+
+    const auto invalidClock = audioClock(0us, 4, false);
+    (void)clock.positionForVideoFrame(0ms, invalidClock, 4);
+
+    now += 150ms;
+    const auto firstDecisionPosition = clock.positionForVideoFrame(40ms, invalidClock, 4);
+    now += 10ms;
+    const auto repeatedDecisionPosition = clock.positionForVideoFrame(40ms, invalidClock, 4);
+    assert(repeatedDecisionPosition == firstDecisionPosition + 10ms);
+}
+
 } // namespace
 
 int main()
@@ -146,4 +183,6 @@ int main()
     forcesRenderAfterEightConsecutiveDrops();
     usesVideoMonotonicClockWhenAudioClockInvalid();
     ignoresAudioClockFromOldGeneration();
+    smoothsVideoOnlyClockAgainstSingleDelayedObservation();
+    repeatedVideoOnlyDecisionForSameFrameDoesNotCompoundSmoothing();
 }
