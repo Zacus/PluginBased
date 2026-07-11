@@ -23,6 +23,10 @@ PlaybackPipeline::~PlaybackPipeline()
 
 void PlaybackPipeline::setSurface(FFmpegSurface* surface)
 {
+    if (m_surface) {
+        disconnect(m_surface.data(), &FFmpegSurface::nativeRenderingFailed,
+                   this, &PlaybackPipeline::onNativeRenderingFailed);
+    }
     destroySdkRuntimeChain();
     m_surface = surface;
     createSdkRuntimeChain();
@@ -82,10 +86,10 @@ void PlaybackPipeline::stopComponents()
         m_sdkAdapter->stopDecoding();
 }
 
-void PlaybackPipeline::seek(qint64 positionMs, int generation)
+void PlaybackPipeline::seek(qint64 positionMs, int generation, bool resumeAfterSeek)
 {
     if (m_sdkAdapter)
-        m_sdkAdapter->seek(positionMs, generation);
+        m_sdkAdapter->seek(positionMs, generation, resumeAfterSeek);
 }
 
 void PlaybackPipeline::onDecoderSeekCompleted(int generation, int serial)
@@ -136,6 +140,9 @@ void PlaybackPipeline::createSdkRuntimeChain()
             this, &PlaybackPipeline::endOfVideo);
     connect(m_sdkAdapter.get(), &SdkPlaybackAdapter::nativeRenderingFailed,
             this, &PlaybackPipeline::onNativeRenderingFailed);
+    connect(m_surface.data(), &FFmpegSurface::nativeRenderingFailed,
+            this, &PlaybackPipeline::onNativeRenderingFailed,
+            Qt::UniqueConnection);
 #else
     LOG_WARN("PlaybackPipeline: SDK runtime mode requires a platform audio output");
 #endif

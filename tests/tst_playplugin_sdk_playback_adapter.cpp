@@ -61,9 +61,11 @@ public:
             events->onEvent(errorEvent(10, 1));
     }
 
-    media_sdk::Result<void> seek(std::chrono::milliseconds position) override
+    media_sdk::Result<void> seek(std::chrono::milliseconds position,
+                                  media_sdk::SeekPlaybackMode mode) override
     {
         lastSeek = position;
+        lastSeekMode = mode;
         return media_sdk::Result<void>::success();
     }
 
@@ -86,6 +88,7 @@ public:
     int audioControlCount = 0;
     bool emitErrorOnStop = false;
     std::chrono::milliseconds lastSeek { 0 };
+    media_sdk::SeekPlaybackMode lastSeekMode = media_sdk::SeekPlaybackMode::PreservePlaybackState;
     media_sdk::runtime::RuntimeAudioControls lastAudioControls {};
 };
 
@@ -151,6 +154,18 @@ void audioControlsApplyToFutureAndCurrentSession()
     assert(!harness.sessions[0]->lastAudioControls.muted);
 }
 
+void resumeSeekPassesPlaybackIntentToSession()
+{
+    AdapterHarness harness;
+
+    harness.adapter.openFile(QUrl::fromLocalFile("/tmp/a.mov"));
+    harness.adapter.seek(23678, 1, true);
+
+    assert(harness.sessions.size() == 1);
+    assert(harness.sessions[0]->lastSeek == 23678ms);
+    assert(harness.sessions[0]->lastSeekMode == media_sdk::SeekPlaybackMode::ResumePlayback);
+}
+
 } // namespace
 
 int main(int argc, char** argv)
@@ -160,5 +175,6 @@ int main(int argc, char** argv)
     openAfterPauseStartsNewSessionPlaying();
     stopTimeEventsFromOldSessionAreIgnoredAfterReopen();
     audioControlsApplyToFutureAndCurrentSession();
+    resumeSeekPassesPlaybackIntentToSession();
     return 0;
 }

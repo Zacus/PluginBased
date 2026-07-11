@@ -23,7 +23,8 @@ public:
     virtual void pause() = 0;
     virtual void stop() = 0;
     [[nodiscard("seek result determines whether adapter should keep pending seek state")]]
-    virtual media_sdk::Result<void> seek(std::chrono::milliseconds position) = 0;
+    virtual media_sdk::Result<void> seek(std::chrono::milliseconds position,
+                                         media_sdk::SeekPlaybackMode mode) = 0;
     virtual void setAudioControls(media_sdk::runtime::RuntimeAudioControls controls) = 0;
     [[nodiscard("timeline maps SDK generation back to Qt seek serials")]]
     virtual media_sdk::runtime::RuntimeTimeline timeline() const = 0;
@@ -49,7 +50,7 @@ public:
 
     void openFile(const QUrl& url);
     void setPaused(bool paused);
-    void seek(qint64 positionMs, int generation);
+    void seek(qint64 positionMs, int generation, bool resumeAfterSeek = false);
     void stopDecoding();
     void setVideoToolboxDirectRenderingEnabled(bool enabled);
     void setVolume(float volume);

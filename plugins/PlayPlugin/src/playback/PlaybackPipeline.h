@@ -43,7 +43,7 @@ public:
     void setVolume(float volume);
     void setMuted(bool muted);
     void stopComponents();
-    void seek(qint64 positionMs, int generation);
+    void seek(qint64 positionMs, int generation, bool resumeAfterSeek = false);
 
 signals:
     void mediaInfoReady(qint64 durationMs, int width, int height,

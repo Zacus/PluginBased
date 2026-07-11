@@ -3,8 +3,6 @@
 #include "common/FFmpegUtils.h"
 #include "video/FFmpegSurface.h"
 
-#include <QMetaObject>
-#include <QQuickWindow>
 #include <QThread>
 
 #if defined(Q_OS_APPLE)
@@ -14,12 +12,6 @@
 #include <memory>
 #include <mutex>
 #include <utility>
-
-struct QtRhiVideoPresenterEventState
-{
-    std::mutex mutex;
-    media_sdk::runtime::IVideoPresenterEvents* events = nullptr;
-};
 
 namespace {
 
@@ -62,49 +54,14 @@ NativeVideoFrame nativeVideoFrameFrom(const media_sdk::VideoFrame& frame, const 
     return native;
 }
 
-std::uint64_t counterDelta(std::uint64_t before, std::uint64_t after)
-{
-    return after >= before ? after - before : 0;
-}
-
-media_sdk::runtime::PresentDiagnostics diagnosticsDelta(
-    const FFmpegSurfaceDiagnostics& before,
-    const FFmpegSurfaceDiagnostics& after)
-{
-    return {
-        .nativeTextureCreated = counterDelta(before.nativeTextureCreated, after.nativeTextureCreated),
-        .nativeTextureFailed = 0,
-        .nativeTextureDrawn = counterDelta(before.nativeTextureDrawn, after.nativeTextureDrawn),
-        .cpuCopied = 0,
-        .cpuTransferred = counterDelta(before.cpuTransferred, after.cpuTransferred),
-        .cpuMemcpy = counterDelta(before.cpuMemcpy, after.cpuMemcpy),
-    };
-}
-
-void dispatchCompletion(
-    const std::weak_ptr<QtRhiVideoPresenterEventState>& weakState,
-    media_sdk::runtime::PresentCompletion completion)
-{
-    const auto state = weakState.lock();
-    if (!state)
-        return;
-
-    media_sdk::runtime::IVideoPresenterEvents* events = nullptr;
-    {
-        std::lock_guard lock(state->mutex);
-        events = state->events;
-    }
-
-    if (events)
-        events->onPresentComplete(std::move(completion));
-}
-
 } // namespace
 
 QtRhiVideoPresenter::QtRhiVideoPresenter(FFmpegSurface* surface)
     : m_surface(surface)
-    , m_eventState(std::make_shared<QtRhiVideoPresenterEventState>())
 {
+    if (surface && surface->thread() == QThread::currentThread())
+        m_nativeRenderingSupported.store(surface->supportsNativeVideoToolboxRendering(),
+                                         std::memory_order_relaxed);
 }
 
 QtRhiVideoPresenter::~QtRhiVideoPresenter()
@@ -126,8 +83,7 @@ media_sdk::runtime::VideoPresenterCapabilities QtRhiVideoPresenter::capabilities
 
 void QtRhiVideoPresenter::setEvents(media_sdk::runtime::IVideoPresenterEvents* events)
 {
-    std::lock_guard lock(m_eventState->mutex);
-    m_eventState->events = events;
+    Q_UNUSED(events);
 }
 
 media_sdk::runtime::PresentResult QtRhiVideoPresenter::present(
@@ -139,32 +95,17 @@ media_sdk::runtime::PresentResult QtRhiVideoPresenter::present(
     const QPointer<FFmpegSurface> surface = m_surface;
 
     if (!surface) {
-        complete(media_sdk::runtime::PresentCompletion {
-            id,
-            media_sdk::runtime::PresentStatus::Failed,
-            "Qt video surface is no longer available",
-        });
         return { id, media_sdk::runtime::PresentStatus::Failed };
     }
 
     if (frame.pixelFormat() == media_sdk::PixelFormat::Native &&
         frame.nativeHandle().kind == media_sdk::NativeHandleKind::VideoToolboxPixelBuffer &&
         !surfaceSupportsNativeRendering(surface)) {
-        complete(media_sdk::runtime::PresentCompletion {
-            id,
-            media_sdk::runtime::PresentStatus::UnsupportedNativeHandle,
-            "Qt scene graph is not using the Metal RHI native VideoToolbox path",
-        });
         return { id, media_sdk::runtime::PresentStatus::UnsupportedNativeHandle };
     }
 
     auto surfaceFrame = makeSurfaceFrame(frame);
     if (!surfaceFrame) {
-        complete(media_sdk::runtime::PresentCompletion {
-            id,
-            media_sdk::runtime::PresentStatus::Failed,
-            "SDK video frame does not contain cloneable FFmpeg frame storage",
-        });
         return { id, media_sdk::runtime::PresentStatus::Failed };
     }
 
@@ -174,58 +115,10 @@ media_sdk::runtime::PresentResult QtRhiVideoPresenter::present(
         m_pending.push_back(PendingPresent { id, std::move(frame), surfaceFrame, timing });
     }
 
-    const auto beforeDiagnostics = surface->diagnosticsSnapshot();
-    const bool expectsNativeDraw = frame.pixelFormat() == media_sdk::PixelFormat::Native &&
-        frame.nativeHandle().kind == media_sdk::NativeHandleKind::VideoToolboxPixelBuffer;
-    const std::weak_ptr<QtRhiVideoPresenterEventState> weakEventState = m_eventState;
-    QMetaObject::invokeMethod(surface, [surface, surfaceFrame, id, weakEventState, beforeDiagnostics, expectsNativeDraw]() {
-        if (surface) {
-            surface->onFrameReady(surfaceFrame);
-
-            auto* window = surface->window();
-            if (!window) {
-                dispatchCompletion(weakEventState, {
-                    .id = id,
-                    .status = media_sdk::runtime::PresentStatus::Failed,
-                    .detail = "Qt video surface has no QQuickWindow",
-                    .diagnostics = {},
-                });
-                return;
-            }
-
-            QObject::connect(
-                window,
-                &QQuickWindow::afterRendering,
-                surface,
-                [surface, id, weakEventState, beforeDiagnostics, expectsNativeDraw]() {
-                    if (!surface)
-                        return;
-                    const auto afterDiagnostics = surface->diagnosticsSnapshot();
-                    auto diagnostics = diagnosticsDelta(beforeDiagnostics, afterDiagnostics);
-                    const bool nativeDrawFailed = expectsNativeDraw && diagnostics.nativeTextureDrawn == 0;
-                    if (nativeDrawFailed) {
-                        diagnostics.nativeTextureFailed = 1;
-                        dispatchCompletion(weakEventState, {
-                            .id = id,
-                            .status = media_sdk::runtime::PresentStatus::UnsupportedNativeHandle,
-                            .detail = "Qt scene graph did not draw the native VideoToolbox texture",
-                            .diagnostics = diagnostics,
-                        });
-                        return;
-                    }
-
-                    dispatchCompletion(weakEventState, {
-                        .id = id,
-                        .status = media_sdk::runtime::PresentStatus::Presented,
-                        .detail = {},
-                        .diagnostics = diagnostics,
-                    });
-                },
-                static_cast<Qt::ConnectionType>(Qt::DirectConnection | Qt::SingleShotConnection));
-        }
-    }, Qt::QueuedConnection);
-
-    return { id, media_sdk::runtime::PresentStatus::Queued };
+    // Qt 的真实绘制由 Scene Graph 异步调度，切换应用/Space 时可能暂停或降频。
+    // 对 SDK runtime 来说，presenter 已经接收并缓存最新帧，不能再用 Qt 绘制回调反压解码和音频。
+    surface->onFrameReady(surfaceFrame);
+    return { id, media_sdk::runtime::PresentStatus::Presented };
 }
 
 bool QtRhiVideoPresenter::surfaceSupportsNativeRendering(
@@ -234,18 +127,13 @@ bool QtRhiVideoPresenter::surfaceSupportsNativeRendering(
     if (!surface)
         return false;
 
-    if (surface->thread() == QThread::currentThread())
-        return surface->supportsNativeVideoToolboxRendering();
+    if (surface->thread() == QThread::currentThread()) {
+        const bool supported = surface->supportsNativeVideoToolboxRendering();
+        m_nativeRenderingSupported.store(supported, std::memory_order_relaxed);
+        return supported;
+    }
 
-    bool supported = false;
-    const bool invoked = QMetaObject::invokeMethod(
-        surface,
-        [&surface, &supported]() {
-            if (surface)
-                supported = surface->supportsNativeVideoToolboxRendering();
-        },
-        Qt::BlockingQueuedConnection);
-    return invoked && supported;
+    return m_nativeRenderingSupported.load(std::memory_order_relaxed);
 }
 
 VideoFrameDataPtr QtRhiVideoPresenter::makeSurfaceFrame(const media_sdk::VideoFrame& frame) const
@@ -287,9 +175,4 @@ void QtRhiVideoPresenter::clear()
             surface->clear();
         }
     }, Qt::QueuedConnection);
-}
-
-void QtRhiVideoPresenter::complete(media_sdk::runtime::PresentCompletion completion)
-{
-    dispatchCompletion(m_eventState, std::move(completion));
 }
