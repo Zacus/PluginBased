@@ -1,6 +1,10 @@
 #include "CpuVideoPicturePool.h"
 
 #include <cassert>
+#include <mutex>
+#include <set>
+#include <thread>
+#include <vector>
 
 namespace {
 
@@ -184,6 +188,48 @@ void inFlightFrameOutlivesPoolFacade()
     inFlight.reset();
 }
 
+void concurrentAcquireReleaseDoesNotDuplicateSlots()
+{
+    constexpr int threadCount = 8;
+    constexpr int iterationsPerThread = 400;
+    media_sdk::CpuVideoPicturePool pool({ .capacity = 8, .initialRetained = 4 });
+    std::mutex activeMutex;
+    std::set<AVFrame*> activeFrames;
+    std::vector<std::thread> workers;
+    workers.reserve(threadCount);
+
+    for (int threadIndex = 0; threadIndex < threadCount; ++threadIndex) {
+        workers.emplace_back([&, threadIndex]() {
+            for (int iteration = 0; iteration < iterationsPerThread; ++iteration) {
+                auto frame = pool.acquire(validKey());
+                assert(frame);
+                {
+                    std::lock_guard lock(activeMutex);
+                    assert(activeFrames.insert(frame.get()).second);
+                }
+
+                frame->pts = threadIndex * iterationsPerThread + iteration;
+
+                {
+                    std::lock_guard lock(activeMutex);
+                    assert(activeFrames.erase(frame.get()) == 1);
+                }
+                frame.reset();
+            }
+        });
+    }
+
+    for (auto& worker : workers)
+        worker.join();
+
+    const auto stats = pool.stats();
+    assert(activeFrames.empty());
+    assert(stats.acquireCount == threadCount * iterationsPerThread);
+    assert(stats.inFlightCount == 0);
+    assert(stats.retainedCount <= 8);
+    assert(stats.highWatermark <= threadCount);
+}
+
 } // namespace
 
 int main()
@@ -198,5 +244,6 @@ int main()
     formatChangeRetiresOldEpochFrames();
     closeReleasesIdleAndDoesNotWaitForInFlightFrame();
     inFlightFrameOutlivesPoolFacade();
+    concurrentAcquireReleaseDoesNotDuplicateSlots();
     return 0;
 }
