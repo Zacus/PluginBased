@@ -1,6 +1,7 @@
 #pragma once
 
 #include "media_sdk/Result.h"
+#include "media_sdk/SeekTypes.h"
 #include "media_sdk/runtime/RuntimeTypes.h"
 #include "media_sdk/session/PlaybackSessionTypes.h"
 
@@ -32,6 +33,8 @@ public:
     void setAudioControls(runtime::RuntimeAudioControls controls);
     [[nodiscard("seek result determines whether the seek command was accepted")]]
     Result<void> seek(std::chrono::milliseconds position);
+    [[nodiscard("seek result determines whether the seek command was accepted")]]
+    Result<void> seek(std::chrono::milliseconds position, SeekPlaybackMode mode);
     [[nodiscard("timeline is required for stale callback checks")]]
     runtime::RuntimeTimeline timeline() const;
     [[nodiscard("diagnostics verify queue, fallback, native, and clock behavior")]]

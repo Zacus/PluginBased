@@ -183,7 +183,8 @@ public:
     void play() override;
     void pause() override;
     void stop() override;
-    media_sdk::Result<void> seek(std::chrono::milliseconds position) override;
+    media_sdk::Result<void> seek(std::chrono::milliseconds position,
+                                  media_sdk::SeekPlaybackMode mode) override;
 
     void emitMediaInfo(media_sdk::EventMetadata metadata)
     {
@@ -294,7 +295,8 @@ void FakeCorePlayer::stop()
     ++stopCount;
 }
 
-media_sdk::Result<void> FakeCorePlayer::seek(std::chrono::milliseconds position)
+media_sdk::Result<void> FakeCorePlayer::seek(std::chrono::milliseconds position,
+                                             media_sdk::SeekPlaybackMode)
 {
     ++seekCount;
     lastSeekPosition = position;

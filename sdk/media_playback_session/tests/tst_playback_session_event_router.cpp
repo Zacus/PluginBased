@@ -214,6 +214,57 @@ void positionChangedIsForwardedOnlyForAcceptedCoreTimeline()
     assert(position->position == 300ms);
 }
 
+void runtimeClockTickForwardsPositionForAcceptedTimeline()
+{
+    media_sdk::session::SessionTimeline timeline;
+    RecordingRuntimeControl runtime;
+    RecordingSessionEvents events;
+    media_sdk::session::SessionEventRouter<RecordingRuntimeControl> router(
+        runtime,
+        timeline,
+        &events);
+
+    router.beginOpen();
+    router.onEvent(mediaInfoEvent(coreTimeline(10, 3)));
+    events.events.clear();
+
+    router.onPlaybackClockTick(runtimeTimeline(19, 7), {
+        .position = 23000ms,
+        .generation = 7,
+        .valid = true,
+    });
+    assert(events.events.empty());
+
+    router.onPlaybackClockTick(runtimeTimeline(20, 7), {
+        .position = 23000ms,
+        .generation = 7,
+        .valid = true,
+    });
+    assert(events.events.size() == 1);
+    const auto* firstPosition =
+        std::get_if<media_sdk::PositionChangedEvent>(&events.events.back().payload);
+    assert(firstPosition);
+    assert(firstPosition->position == 23000ms);
+
+    router.onPlaybackClockTick(runtimeTimeline(20, 7), {
+        .position = 23000ms,
+        .generation = 7,
+        .valid = true,
+    });
+    assert(events.events.size() == 1);
+
+    router.onPlaybackClockTick(runtimeTimeline(20, 7), {
+        .position = 23250ms,
+        .generation = 7,
+        .valid = true,
+    });
+    assert(events.events.size() == 2);
+    const auto* secondPosition =
+        std::get_if<media_sdk::PositionChangedEvent>(&events.events.back().payload);
+    assert(secondPosition);
+    assert(secondPosition->position == 23250ms);
+}
+
 void seekCompletedCompletesRuntimeTimelineAndResumesFrameAcceptance()
 {
     media_sdk::session::SessionTimeline timeline;
@@ -358,13 +409,44 @@ void runtimeEndOfStreamPresentedEmitsExternalEof()
     assert(events.events.empty());
 
     router.onEndOfStreamPresented(runtimeTimeline(20, 7));
-    assert(events.events.size() == 1);
+    assert(events.events.size() == 2);
+    assert(std::holds_alternative<media_sdk::PositionChangedEvent>(events.events[0].payload));
+    assert(events.events[0].metadata.sessionId == 10);
+    assert(events.events[0].metadata.generation == 3);
     assert(std::holds_alternative<media_sdk::EndOfFileEvent>(events.events.back().payload));
     assert(events.events.back().metadata.sessionId == 10);
     assert(events.events.back().metadata.generation == 3);
 
     router.onEndOfStreamPresented(runtimeTimeline(20, 7));
-    assert(events.events.size() == 1);
+    assert(events.events.size() == 2);
+}
+
+void runtimeEndOfStreamPresentedForwardsFinalRuntimeClockBeforeExternalEof()
+{
+    media_sdk::session::SessionTimeline timeline;
+    RecordingRuntimeControl runtime;
+    RecordingSessionEvents events;
+    media_sdk::session::SessionEventRouter<RecordingRuntimeControl> router(
+        runtime,
+        timeline,
+        &events);
+
+    router.beginOpen();
+    router.onEvent(mediaInfoEvent(coreTimeline(10, 3)));
+    runtime.nextClock.position = 22769ms;
+    router.onEvent(positionEvent(coreTimeline(10, 3), 22000ms));
+    router.onEvent(eofEvent(coreTimeline(10, 3)));
+    events.events.clear();
+
+    runtime.nextClock.position = 24337ms;
+    router.onEndOfStreamPresented(runtimeTimeline(20, 7));
+
+    assert(events.events.size() == 2);
+    const auto* finalPosition =
+        std::get_if<media_sdk::PositionChangedEvent>(&events.events[0].payload);
+    assert(finalPosition);
+    assert(finalPosition->position == 24337ms);
+    assert(std::holds_alternative<media_sdk::EndOfFileEvent>(events.events[1].payload));
 }
 
 void runtimeEndOfStreamPresentedWithoutCoreEofIsIgnored()
@@ -471,11 +553,13 @@ int main()
 {
     mediaInfoOpensRuntimeBeforeExternalFrameAcceptance();
     positionChangedIsForwardedOnlyForAcceptedCoreTimeline();
+    runtimeClockTickForwardsPositionForAcceptedTimeline();
     seekCompletedCompletesRuntimeTimelineAndResumesFrameAcceptance();
     seekForwardsRuntimeClockPositionsInsteadOfDecoderPositions();
     seekForwardsAnchoredRuntimeClockAtTarget();
     coreEndOfFileEnqueuesRuntimeEofWithoutExternalEof();
     runtimeEndOfStreamPresentedEmitsExternalEof();
+    runtimeEndOfStreamPresentedForwardsFinalRuntimeClockBeforeExternalEof();
     runtimeEndOfStreamPresentedWithoutCoreEofIsIgnored();
     beginSeekClearsQueuedCoreEofUntilNewRuntimeDrain();
     cancelFrameAcceptanceDropsPendingSeekCompletion();

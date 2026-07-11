@@ -23,7 +23,7 @@ public:
     virtual void pause() = 0;
     virtual void stop() = 0;
     [[nodiscard("seek result determines whether core accepted the seek command")]]
-    virtual Result<void> seek(std::chrono::milliseconds position) = 0;
+    virtual Result<void> seek(std::chrono::milliseconds position, SeekPlaybackMode mode) = 0;
 };
 
 class IPlaybackSessionRuntimePlayer {
