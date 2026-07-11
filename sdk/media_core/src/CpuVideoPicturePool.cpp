@@ -18,16 +18,23 @@ struct CpuVideoPicturePool::PoolState : std::enable_shared_from_this<PoolState> 
     {
     }
 
-    VideoPictureRef lease(AVFramePtr frame, VideoPictureKey key, std::uint64_t epoch)
+    VideoPictureRef lease(AVFramePtr frame,
+                          VideoPictureKey key,
+                          std::uint64_t epoch,
+                          bool retained)
     {
         AVFrame* rawFrame = frame.release();
         return VideoPictureRef(rawFrame,
-                               [state = shared_from_this(), key, epoch](AVFrame* releasedFrame) {
-                                   state->recycle(AVFramePtr(releasedFrame), key, epoch);
+                               [state = shared_from_this(), key, epoch, retained](
+                                   AVFrame* releasedFrame) {
+                                   state->recycle(AVFramePtr(releasedFrame), key, epoch, retained);
                                });
     }
 
-    void recycle(AVFramePtr frame, const VideoPictureKey& key, std::uint64_t epoch)
+    void recycle(AVFramePtr frame,
+                 const VideoPictureKey& key,
+                 std::uint64_t epoch,
+                 bool retained)
     {
         if (!frame)
             return;
@@ -53,12 +60,19 @@ struct CpuVideoPicturePool::PoolState : std::enable_shared_from_this<PoolState> 
             std::lock_guard lock(mutex);
             if (stats.inFlightCount > 0)
                 --stats.inFlightCount;
+            if (!retained)
+                return;
+
             ++stats.recycleCount;
             retain = !closed && activeKey.has_value() && key == *activeKey && epoch == formatEpoch;
             if (retain)
                 freeFrames.push_back(std::move(frame));
-            else if (stats.retainedCount > 0)
-                --stats.retainedCount;
+            else {
+                if (!closed)
+                    ++stats.incompatibleReturnCount;
+                if (stats.retainedCount > 0)
+                    --stats.retainedCount;
+            }
         }
     }
 
@@ -91,6 +105,19 @@ AVFramePtr allocateFrame(const VideoPictureKey& key)
     return frame;
 }
 
+std::vector<AVFramePtr> allocateFrames(const VideoPictureKey& key, std::size_t count)
+{
+    std::vector<AVFramePtr> frames;
+    frames.reserve(count);
+    for (std::size_t i = 0; i < count; ++i) {
+        auto frame = allocateFrame(key);
+        if (!frame)
+            break;
+        frames.push_back(std::move(frame));
+    }
+    return frames;
+}
+
 } // namespace
 
 bool VideoPictureKey::isValid() const
@@ -115,18 +142,27 @@ VideoPictureRef CpuVideoPicturePool::acquire(const VideoPictureKey& key)
 
     const auto state = m_state;
     AVFramePtr frame;
+    std::vector<AVFramePtr> discardedFrames;
     std::uint64_t epoch = 0;
-    bool reservedAllocation = false;
+    std::size_t allocationReservation = 0;
+    bool transientAllocation = false;
     {
         std::lock_guard lock(state->mutex);
         if (state->closed)
             return {};
 
         ++state->stats.acquireCount;
-        if (!state->activeKey.has_value())
+        const bool keyChanged = !state->activeKey.has_value() || key != *state->activeKey;
+        if (keyChanged) {
+            const std::size_t discardedCount = state->freeFrames.size();
+            discardedFrames = std::move(state->freeFrames);
+            if (state->stats.retainedCount >= discardedCount)
+                state->stats.retainedCount -= discardedCount;
+            else
+                state->stats.retainedCount = 0;
             state->activeKey = key;
-        if (key != *state->activeKey)
-            return {};
+            ++state->formatEpoch;
+        }
 
         epoch = state->formatEpoch;
         const auto reusable = std::find_if(
@@ -140,10 +176,16 @@ VideoPictureRef CpuVideoPicturePool::acquire(const VideoPictureKey& key)
             state->freeFrames.erase(reusable);
             ++state->stats.reuseCount;
         } else if (state->stats.retainedCount + state->reservedAllocations < state->config.capacity) {
-            ++state->reservedAllocations;
-            reservedAllocation = true;
+            const std::size_t available = state->config.capacity
+                - state->stats.retainedCount
+                - state->reservedAllocations;
+            const std::size_t requested = keyChanged
+                ? std::max<std::size_t>(state->config.initialRetained, 1)
+                : 1;
+            allocationReservation = std::min(available, requested);
+            state->reservedAllocations += allocationReservation;
         } else {
-            return {};
+            transientAllocation = true;
         }
 
         if (frame) {
@@ -153,33 +195,62 @@ VideoPictureRef CpuVideoPicturePool::acquire(const VideoPictureKey& key)
         }
     }
 
+    discardedFrames.clear();
     if (frame)
-        return state->lease(std::move(frame), key, epoch);
+        return state->lease(std::move(frame), key, epoch, true);
 
-    frame = allocateFrame(key);
+    auto allocatedFrames = allocateFrames(key, transientAllocation ? 1 : allocationReservation);
     {
         std::lock_guard lock(state->mutex);
-        if (reservedAllocation && state->reservedAllocations > 0)
-            --state->reservedAllocations;
-        if (!frame || state->closed || !state->activeKey.has_value()
+        if (allocationReservation > 0) {
+            if (state->reservedAllocations >= allocationReservation)
+                state->reservedAllocations -= allocationReservation;
+            else
+                state->reservedAllocations = 0;
+        }
+        if (allocatedFrames.empty() || state->closed || !state->activeKey.has_value()
             || key != *state->activeKey || epoch != state->formatEpoch) {
             return {};
         }
 
-        ++state->stats.allocationCount;
-        ++state->stats.retainedCount;
+        frame = std::move(allocatedFrames.front());
+        allocatedFrames.erase(allocatedFrames.begin());
+        if (transientAllocation) {
+            ++state->stats.transientAllocationCount;
+        } else {
+            const std::size_t retainedAllocations = allocatedFrames.size() + 1;
+            state->stats.allocationCount += retainedAllocations;
+            state->stats.retainedCount += retainedAllocations;
+            for (auto& idleFrame : allocatedFrames)
+                state->freeFrames.push_back(std::move(idleFrame));
+            allocatedFrames.clear();
+        }
         ++state->stats.inFlightCount;
         state->stats.highWatermark = std::max(state->stats.highWatermark,
                                               state->stats.inFlightCount);
     }
-    return state->lease(std::move(frame), key, epoch);
+    return state->lease(std::move(frame), key, epoch, !transientAllocation);
 }
 
 void CpuVideoPicturePool::close()
 {
     const auto state = m_state;
-    std::lock_guard lock(state->mutex);
-    state->closed = true;
+    std::vector<AVFramePtr> idleFrames;
+    {
+        std::lock_guard lock(state->mutex);
+        if (state->closed)
+            return;
+
+        state->closed = true;
+        ++state->formatEpoch;
+        state->activeKey.reset();
+        const std::size_t idleCount = state->freeFrames.size();
+        idleFrames = std::move(state->freeFrames);
+        if (state->stats.retainedCount >= idleCount)
+            state->stats.retainedCount -= idleCount;
+        else
+            state->stats.retainedCount = 0;
+    }
 }
 
 VideoPicturePoolStats CpuVideoPicturePool::stats() const

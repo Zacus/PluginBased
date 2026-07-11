@@ -35,7 +35,7 @@ void closeIsIdempotentAndRejectsAcquire()
 
 void allocatesAndReusesFrameStorage()
 {
-    media_sdk::CpuVideoPicturePool pool;
+    media_sdk::CpuVideoPicturePool pool({ .capacity = 12, .initialRetained = 1 });
     auto first = pool.acquire(validKey());
     assert(first);
     assert(first->width == 64);
@@ -104,6 +104,86 @@ void resetsPerFrameMetadataOnRecycle()
     assert(reused->flags == 0);
 }
 
+void prewarmsInitialRetainedFrames()
+{
+    media_sdk::CpuVideoPicturePool pool({ .capacity = 4, .initialRetained = 3 });
+
+    auto frame = pool.acquire(validKey());
+
+    assert(frame);
+    const auto stats = pool.stats();
+    assert(stats.allocationCount == 3);
+    assert(stats.retainedCount == 3);
+    assert(stats.inFlightCount == 1);
+}
+
+void capacityExhaustionUsesTransientFrame()
+{
+    media_sdk::CpuVideoPicturePool pool({ .capacity = 1, .initialRetained = 1 });
+    auto retained = pool.acquire(validKey());
+    auto transient = pool.acquire(validKey());
+
+    assert(retained);
+    assert(transient);
+    assert(retained.get() != transient.get());
+    const auto stats = pool.stats();
+    assert(stats.retainedCount == 1);
+    assert(stats.transientAllocationCount == 1);
+    assert(stats.inFlightCount == 2);
+
+    transient.reset();
+    assert(pool.stats().retainedCount == 1);
+    assert(pool.stats().inFlightCount == 1);
+}
+
+void formatChangeRetiresOldEpochFrames()
+{
+    media_sdk::CpuVideoPicturePool pool({ .capacity = 2, .initialRetained = 1 });
+    auto oldFrame = pool.acquire(validKey());
+    auto newKey = validKey();
+    newKey.width = 128;
+    auto newFrame = pool.acquire(newKey);
+
+    assert(oldFrame);
+    assert(newFrame);
+    assert(newFrame->width == 128);
+    assert(pool.stats().retainedCount == 2);
+
+    oldFrame.reset();
+    const auto stats = pool.stats();
+    assert(stats.incompatibleReturnCount == 1);
+    assert(stats.retainedCount == 1);
+}
+
+void closeReleasesIdleAndDoesNotWaitForInFlightFrame()
+{
+    media_sdk::CpuVideoPicturePool pool({ .capacity = 2, .initialRetained = 2 });
+    auto inFlight = pool.acquire(validKey());
+    assert(inFlight);
+    assert(pool.stats().retainedCount == 2);
+
+    pool.close();
+
+    assert(pool.stats().retainedCount == 1);
+    assert(!pool.acquire(validKey()));
+    inFlight.reset();
+    assert(pool.stats().retainedCount == 0);
+    assert(pool.stats().inFlightCount == 0);
+}
+
+void inFlightFrameOutlivesPoolFacade()
+{
+    media_sdk::VideoPictureRef inFlight;
+    {
+        media_sdk::CpuVideoPicturePool pool;
+        inFlight = pool.acquire(validKey());
+        assert(inFlight);
+    }
+
+    assert(inFlight->data[0] != nullptr);
+    inFlight.reset();
+}
+
 } // namespace
 
 int main()
@@ -113,5 +193,10 @@ int main()
     allocatesAndReusesFrameStorage();
     sharedReferencesDelayRecycle();
     resetsPerFrameMetadataOnRecycle();
+    prewarmsInitialRetainedFrames();
+    capacityExhaustionUsesTransientFrame();
+    formatChangeRetiresOldEpochFrames();
+    closeReleasesIdleAndDoesNotWaitForInFlightFrame();
+    inFlightFrameOutlivesPoolFacade();
     return 0;
 }
