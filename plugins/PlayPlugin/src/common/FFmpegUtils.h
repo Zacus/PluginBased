@@ -72,13 +72,14 @@ struct SwrContextDeleter {
 using AVFormatContextPtr = std::unique_ptr<AVFormatContext, AVFormatContextDeleter>;
 using AVCodecContextPtr  = std::unique_ptr<AVCodecContext,  AVCodecContextDeleter>;
 using AVFramePtr         = std::unique_ptr<AVFrame,         AVFrameDeleter>;
+using AVFrameSharedPtr   = std::shared_ptr<AVFrame>;
 using AVPacketPtr        = std::unique_ptr<AVPacket,        AVPacketDeleter>;
 using AVBufferRefPtr     = std::unique_ptr<AVBufferRef,     AVBufferRefDeleter>;
 using SwsContextPtr      = std::unique_ptr<SwsContext,      SwsContextDeleter>;
 using SwrContextPtr      = std::unique_ptr<SwrContext,      SwrContextDeleter>;
 
 struct VideoFrameData {
-    AVFramePtr frame;
+    AVFrameSharedPtr frame;
     bool       fullRange = false;
     bool       bt709     = true;
     NativeVideoFrame native;
@@ -89,7 +90,7 @@ using VideoFrameDataPtr = std::shared_ptr<VideoFrameData>;
 // ── 工厂函数 ──────────────────────────────────────────────────────────────────
 inline AVFramePtr  make_frame()  { return AVFramePtr(av_frame_alloc()); }
 inline AVPacketPtr make_packet() { return AVPacketPtr(av_packet_alloc()); }
-inline VideoFrameDataPtr make_video_frame(AVFramePtr frame,
+inline VideoFrameDataPtr make_video_frame(AVFrameSharedPtr frame,
                                           bool fullRange,
                                           bool bt709,
                                           NativeVideoFrame native = {})

@@ -146,16 +146,12 @@ VideoFrameDataPtr QtRhiVideoPresenter::makeSurfaceFrame(const media_sdk::VideoFr
     if (!sourceFrame)
         return {};
 
-    AVFramePtr clonedFrame(av_frame_clone(sourceFrame.get()));
-    if (!clonedFrame)
-        return {};
-
-    const NativeVideoFrame native = nativeVideoFrameFrom(frame, clonedFrame.get());
+    const NativeVideoFrame native = nativeVideoFrameFrom(frame, sourceFrame.get());
     const bool fullRange = native.isValid()
         ? native.fullRange
         : frame.colorRange() == media_sdk::ColorRange::Full;
     const bool bt709 = native.isValid() ? native.bt709 : isBt709(frame);
-    return make_video_frame(std::move(clonedFrame), fullRange, bt709, native);
+    return make_video_frame(std::move(sourceFrame), fullRange, bt709, native);
 }
 
 void QtRhiVideoPresenter::clear()
