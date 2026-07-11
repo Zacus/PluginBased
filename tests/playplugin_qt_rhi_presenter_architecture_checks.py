@@ -6,6 +6,8 @@ PLAYPLUGIN = ROOT / "plugins" / "PlayPlugin"
 RUNTIME = ROOT / "sdk" / "media_playback_runtime"
 PRESENTER_H = PLAYPLUGIN / "src" / "playback" / "QtRhiVideoPresenter.h"
 PRESENTER_CPP = PLAYPLUGIN / "src" / "playback" / "QtRhiVideoPresenter.cpp"
+FRAME_BRIDGE_H = PLAYPLUGIN / "src" / "playback" / "SdkVideoFrameBridge.h"
+FRAME_BRIDGE_CPP = PLAYPLUGIN / "src" / "playback" / "SdkVideoFrameBridge.cpp"
 SURFACE_H = PLAYPLUGIN / "src" / "video" / "FFmpegSurface.h"
 SURFACE_CPP = PLAYPLUGIN / "src" / "video" / "FFmpegSurface.cpp"
 VIDEO_NODE_CPP = PLAYPLUGIN / "src" / "video" / "render" / "VideoNode.cpp"
@@ -80,6 +82,8 @@ def check_runtime_boundary() -> None:
 def check_presenter_contract() -> None:
     header = read(PRESENTER_H)
     source = read(PRESENTER_CPP)
+    frame_bridge_header = read(FRAME_BRIDGE_H)
+    frame_bridge_source = read(FRAME_BRIDGE_CPP)
     surface_header = read(SURFACE_H)
     surface_source = read(SURFACE_CPP)
     video_node_source = read(VIDEO_NODE_CPP)
@@ -87,6 +91,8 @@ def check_presenter_contract() -> None:
     combined = "\n".join((
         header,
         source,
+        frame_bridge_header,
+        frame_bridge_source,
         surface_header,
         surface_source,
         video_node_source,
@@ -102,8 +108,10 @@ def check_presenter_contract() -> None:
     assert_contains(combined, "UnsupportedNativeHandle", PRESENTER_CPP)
     assert_contains(combined, "QMetaObject::invokeMethod", PRESENTER_CPP)
     assert_contains(combined, "Qt::QueuedConnection", PRESENTER_CPP)
-    assert_contains(combined, "frame.storage()", PRESENTER_CPP)
-    assert_contains(combined, "av_frame_clone", PRESENTER_CPP)
+    assert_contains(source, "makeVideoFrameDataFromSdk", PRESENTER_CPP)
+    assert_contains(frame_bridge_source, "frame.storage()", FRAME_BRIDGE_CPP)
+    assert_contains(frame_bridge_source, "std::static_pointer_cast<AVFrame>", FRAME_BRIDGE_CPP)
+    assert_not_contains(combined, "av_frame_clone", PRESENTER_CPP)
     assert_contains(combined, "surface->onFrameReady", PRESENTER_CPP)
     assert_contains(combined, "surface->clear()", PRESENTER_CPP)
     assert_contains(source, "PresentStatus::Presented", PRESENTER_CPP)
@@ -149,6 +157,8 @@ def check_cmake_registration() -> None:
 
     assert_contains(playplugin_cmake, "src/playback/QtRhiVideoPresenter.h", PLAYPLUGIN_CMAKE)
     assert_contains(playplugin_cmake, "src/playback/QtRhiVideoPresenter.cpp", PLAYPLUGIN_CMAKE)
+    assert_contains(playplugin_cmake, "src/playback/SdkVideoFrameBridge.h", PLAYPLUGIN_CMAKE)
+    assert_contains(playplugin_cmake, "src/playback/SdkVideoFrameBridge.cpp", PLAYPLUGIN_CMAKE)
     assert_contains(playplugin_cmake, "src/playback/SdkPlaybackAdapter.h", PLAYPLUGIN_CMAKE)
     assert_contains(playplugin_cmake, "src/playback/SdkPlaybackAdapter.cpp", PLAYPLUGIN_CMAKE)
     assert_contains(playplugin_cmake, "media_sdk::playback_session", PLAYPLUGIN_CMAKE)
