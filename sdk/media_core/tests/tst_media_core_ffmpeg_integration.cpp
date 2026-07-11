@@ -150,6 +150,12 @@ void testDecodePerformanceCreatesThrottledReportWithoutQt()
     stats.transferTotalUs = 300;
     stats.transferMaxUs = 200;
     stats.normalizedVideoFrames = 3;
+    stats.videoPicturePoolAcquireCount = 8;
+    stats.videoPicturePoolReuseCount = 5;
+    stats.videoPicturePoolAllocationCount = 3;
+    stats.videoPicturePoolHighWatermark = 2;
+    stats.videoPicturePoolRetainedCount = 3;
+    stats.videoPicturePoolInFlightCount = 1;
     stats.normalizeTotalUs = 600;
     stats.normalizeMaxUs = 250;
     stats.framePushAccepted = 5;
@@ -174,10 +180,17 @@ void testDecodePerformanceCreatesThrottledReportWithoutQt()
     assert(report->stats.framePushMaxWaitUs == 60);
     assert(report->transferAverageUs == 150);
     assert(report->normalizeAverageUs == 200);
+    assert(report->stats.videoPicturePoolAcquireCount == 8);
+    assert(report->stats.videoPicturePoolReuseCount == 5);
+    assert(report->stats.videoPicturePoolAllocationCount == 3);
+    assert(report->stats.videoPicturePoolHighWatermark == 2);
+    assert(report->stats.videoPicturePoolRetainedCount == 3);
+    assert(report->stats.videoPicturePoolInFlightCount == 1);
     assert(report->sourcePixelFormatName == "yuv420p");
     assert(report->cpuPixelFormatName == "rgb24");
     assert(logger.stats().decodedVideoFrames == 0);
     assert(logger.stats().framePushAccepted == 0);
+    assert(logger.stats().videoPicturePoolAcquireCount == 0);
 }
 
 void testDecodePerformanceReportsFramePushOnlyActivity()

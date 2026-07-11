@@ -500,6 +500,22 @@ void SdkPlaybackAdapter::handleRuntimeDiagnostics(
              diagnostics.eofAccepted,
              diagnostics.eofPresented,
              diagnostics.queueAbortCount);
+
+    const bool hasPicturePoolActivity = diagnostics.videoPicturePoolAcquireCount > 0
+        || diagnostics.videoPicturePoolReuseCount > 0
+        || diagnostics.videoPicturePoolAllocationCount > 0
+        || diagnostics.videoPicturePoolTransientAllocationCount > 0;
+    if (hasPicturePoolActivity) {
+        LOG_INFO("PlayPerf: pool acquire={} reuse={} alloc={} transient={} "
+                 "high={} retained={} inflight={}",
+                 diagnostics.videoPicturePoolAcquireCount,
+                 diagnostics.videoPicturePoolReuseCount,
+                 diagnostics.videoPicturePoolAllocationCount,
+                 diagnostics.videoPicturePoolTransientAllocationCount,
+                 diagnostics.videoPicturePoolHighWatermark,
+                 diagnostics.videoPicturePoolRetainedCount,
+                 diagnostics.videoPicturePoolInFlightCount);
+    }
 }
 
 void SdkPlaybackAdapter::handleNativeRenderingFailed(std::uint64_t eventSerial)

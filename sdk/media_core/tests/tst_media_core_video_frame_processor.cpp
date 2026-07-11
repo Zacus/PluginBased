@@ -129,6 +129,13 @@ void testUnsupportedCpuFormatNormalizesToYuv420P()
     assert(stats.normalizedVideoFrames == 1);
     assert(stats.normalizedFrameHeaderAllocations == 3);
     assert(stats.normalizedPixelBufferAllocations == 3);
+    assert(stats.videoPicturePoolAcquireCount == 1);
+    assert(stats.videoPicturePoolReuseCount == 0);
+    assert(stats.videoPicturePoolAllocationCount == 3);
+    assert(stats.videoPicturePoolTransientAllocationCount == 0);
+    assert(stats.videoPicturePoolHighWatermark == 1);
+    assert(stats.videoPicturePoolRetainedCount == 3);
+    assert(stats.videoPicturePoolInFlightCount == 1);
     assert(stats.sourcePixelFormat == AV_PIX_FMT_RGB24);
     assert(stats.cpuPixelFormat == AV_PIX_FMT_YUV420P);
 }

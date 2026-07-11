@@ -83,6 +83,24 @@ ColorSpace mapColorSpace(AVColorSpace colorSpace)
     }
 }
 
+void recordPicturePoolStats(const VideoPicturePoolStats& before,
+                            const VideoPicturePoolStats& after,
+                            DecodePerformanceStats* stats)
+{
+    if (!stats)
+        return;
+
+    stats->videoPicturePoolAcquireCount += after.acquireCount - before.acquireCount;
+    stats->videoPicturePoolReuseCount += after.reuseCount - before.reuseCount;
+    stats->videoPicturePoolAllocationCount += after.allocationCount - before.allocationCount;
+    stats->videoPicturePoolTransientAllocationCount +=
+        after.transientAllocationCount - before.transientAllocationCount;
+    stats->videoPicturePoolHighWatermark = std::max(stats->videoPicturePoolHighWatermark,
+                                                   after.highWatermark);
+    stats->videoPicturePoolRetainedCount = after.retainedCount;
+    stats->videoPicturePoolInFlightCount = after.inFlightCount;
+}
+
 std::chrono::microseconds framePts(const AVFrame* frame)
 {
     if (!frame || frame->pts == AV_NOPTS_VALUE)
@@ -276,6 +294,7 @@ VideoPictureRef VideoFrameProcessor::normalizeVideoFrame(AVFramePtr frame,
         .alignment = 32,
     });
     const auto poolStatsAfter = m_cpuPicturePool->stats();
+    recordPicturePoolStats(poolStatsBefore, poolStatsAfter, stats);
     if (!converted)
         return {};
     if (stats) {

@@ -811,9 +811,19 @@ void DecodeWorker::emitError(MediaError error)
 
 DecodeFrameMetadata DecodeWorker::frameMetadata() const
 {
+    const auto poolStats = m_videoFrameProcessor.picturePoolStats();
     return {
         .sessionId = m_sessionId,
         .generation = m_generation,
+        .videoPicturePool = {
+            .acquireCount = poolStats.acquireCount,
+            .reuseCount = poolStats.reuseCount,
+            .allocationCount = poolStats.allocationCount,
+            .transientAllocationCount = poolStats.transientAllocationCount,
+            .highWatermark = poolStats.highWatermark,
+            .retainedCount = poolStats.retainedCount,
+            .inFlightCount = poolStats.inFlightCount,
+        },
     };
 }
 

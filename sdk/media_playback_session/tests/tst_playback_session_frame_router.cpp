@@ -52,11 +52,15 @@ media_sdk::EventMetadata coreTimeline(std::uint64_t sessionId, std::uint64_t gen
     };
 }
 
-media_sdk::DecodeFrameMetadata decodeMetadata(std::uint64_t sessionId, std::uint64_t generation)
+media_sdk::DecodeFrameMetadata decodeMetadata(
+    std::uint64_t sessionId,
+    std::uint64_t generation,
+    media_sdk::VideoPicturePoolSnapshot picturePool = {})
 {
     return {
         .sessionId = sessionId,
         .generation = generation,
+        .videoPicturePool = picturePool,
     };
 }
 
@@ -134,7 +138,15 @@ void matchingCoreTimelineVideoFrameCallsRuntimeEnqueueVideo()
     RecordingRuntimeSink runtime;
     media_sdk::session::BasicSessionFrameRouter<RecordingRuntimeSink> router(runtime, timeline);
 
-    const auto result = router.pushVideo(makeVideoFrame(), decodeMetadata(10, 3));
+    const auto result = router.pushVideo(makeVideoFrame(), decodeMetadata(10, 3, {
+        .acquireCount = 12,
+        .reuseCount = 9,
+        .allocationCount = 3,
+        .transientAllocationCount = 1,
+        .highWatermark = 4,
+        .retainedCount = 3,
+        .inFlightCount = 2,
+    }));
 
     assert(result.status == media_sdk::DecodeFramePushStatus::Accepted);
     assert(runtime.audioPushCount == 0);
@@ -146,6 +158,13 @@ void matchingCoreTimelineVideoFrameCallsRuntimeEnqueueVideo()
     assert(runtime.lastVideo.frame.pixelFormat() == media_sdk::PixelFormat::Nv12);
     assert(runtime.lastVideo.frame.pts() == 84ms);
     assert(runtime.lastVideo.frame.hasStorage());
+    assert(runtime.lastVideo.videoPicturePool.acquireCount == 12);
+    assert(runtime.lastVideo.videoPicturePool.reuseCount == 9);
+    assert(runtime.lastVideo.videoPicturePool.allocationCount == 3);
+    assert(runtime.lastVideo.videoPicturePool.transientAllocationCount == 1);
+    assert(runtime.lastVideo.videoPicturePool.highWatermark == 4);
+    assert(runtime.lastVideo.videoPicturePool.retainedCount == 3);
+    assert(runtime.lastVideo.videoPicturePool.inFlightCount == 2);
 }
 
 void staleCoreGenerationMapsToStaleGeneration()

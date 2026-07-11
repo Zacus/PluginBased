@@ -22,6 +22,13 @@ struct DecodePerformanceStats {
     std::int64_t normalizedVideoFrames = 0;
     std::int64_t normalizedFrameHeaderAllocations = 0;
     std::int64_t normalizedPixelBufferAllocations = 0;
+    std::uint64_t videoPicturePoolAcquireCount = 0;
+    std::uint64_t videoPicturePoolReuseCount = 0;
+    std::uint64_t videoPicturePoolAllocationCount = 0;
+    std::uint64_t videoPicturePoolTransientAllocationCount = 0;
+    std::uint64_t videoPicturePoolHighWatermark = 0;
+    std::uint64_t videoPicturePoolRetainedCount = 0;
+    std::uint64_t videoPicturePoolInFlightCount = 0;
     std::int64_t normalizeTotalUs = 0;
     std::int64_t normalizeMaxUs = 0;
     std::int64_t queuedVideoFrames = 0;

@@ -65,6 +65,7 @@ public:
             .frame = std::move(frame),
             .sessionId = runtimeTimeline->sessionId,
             .generation = runtimeTimeline->generation,
+            .videoPicturePool = metadata.videoPicturePool,
         };
         return mapRuntimeFramePushResult(m_runtime.enqueueVideo(std::move(runtimeFrame)));
     }

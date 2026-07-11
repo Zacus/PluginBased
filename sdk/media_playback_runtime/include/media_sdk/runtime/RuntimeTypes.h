@@ -1,5 +1,6 @@
 #pragma once
 
+#include "media_sdk/DecodeFrameSink.h"
 #include "media_sdk/Frame.h"
 
 #include <chrono>
@@ -33,6 +34,7 @@ struct RuntimeVideoFrame {
     SessionId sessionId = 0;
     Generation generation = 0;
     bool endOfStream = false;
+    VideoPicturePoolSnapshot videoPicturePool;
 };
 
 enum class RuntimeFramePushStatus {
@@ -72,6 +74,13 @@ struct RuntimeDiagnostics {
     std::uint64_t videoWaited = 0;
     std::uint64_t videoDroppedLate = 0;
     std::uint64_t videoPresented = 0;
+    std::uint64_t videoPicturePoolAcquireCount = 0;
+    std::uint64_t videoPicturePoolReuseCount = 0;
+    std::uint64_t videoPicturePoolAllocationCount = 0;
+    std::uint64_t videoPicturePoolTransientAllocationCount = 0;
+    std::uint64_t videoPicturePoolHighWatermark = 0;
+    std::uint64_t videoPicturePoolRetainedCount = 0;
+    std::uint64_t videoPicturePoolInFlightCount = 0;
     std::uint64_t eofAccepted = 0;
     std::uint64_t eofPresented = 0;
     std::uint64_t decodeFramePushWaitUs = 0;
