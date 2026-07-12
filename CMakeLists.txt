@@ -96,6 +96,7 @@ add_subdirectory(core)
 add_subdirectory(sdk/media_core)
 add_subdirectory(sdk/media_playback_runtime)
 add_subdirectory(sdk/media_playback_session)
+add_subdirectory(tools/video_benchmark)
 if(APPLE)
     add_subdirectory(sdk/media_platform_audio_macos)
 endif()
@@ -223,6 +224,10 @@ if(BUILD_TESTING)
     )
     add_test(NAME media_sdk_core_architecture_checks
         COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tests/media_sdk_core_architecture_checks.py"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+    )
+    add_test(NAME video_benchmark_tool_checks
+        COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tests/video_benchmark_tool_checks.py"
         WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
     )
     add_test(NAME media_sdk_playback_runtime_architecture_checks

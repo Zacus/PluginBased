@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "cases": [
+    {
+      "id": "h264_1080p24",
+      "codec": "h264",
+      "filename": "tearsofsteel-1080p24-h264.mp4",
+      "url": "https://test.playready.microsoft.com/media/profficialsite/tearsofsteel_1080p_60s_24fps.6000kbps.1920x1080.h264-8b.2ch.128kbps.aac.mp4",
+      "sha256": "5f54703c66a86a8d6de7e8021d53de1cf5c82216d5c6361d832bdb85084d5984",
+      "max_video_frames": 240,
+      "hold_video_frames": 3,
+      "report_interval_ms": 100,
+      "timeout_ms": 120000,
+      "minimum_runs": 5,
+      "f1_required": true
+    },
+    {
+      "id": "hevc_4k24",
+      "codec": "hevc",
+      "filename": "tearsofsteel-4k24-hevc.mp4",
+      "url": "https://test.playready.microsoft.com/media/profficialsite/tearsofsteel_4k_60s_24fps.12000kbps.3840x2160.h265-8b.2ch.128kbps.aac.mp4",
+      "sha256": "af69bb5d854a0f2106d59b57b6fe543faa1831a7ed83e3b9d6ecd8de52be962f",
+      "max_video_frames": 240,
+      "hold_video_frames": 3,
+      "report_interval_ms": 100,
+      "timeout_ms": 180000,
+      "minimum_runs": 5,
+      "f1_required": true
+    }
+  ]
+}

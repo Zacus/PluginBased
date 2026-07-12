@@ -8,6 +8,8 @@
 
 # Build
 build/
+benchmark_artifacts/
+benchmark_media/
 dist/
 .worktrees/
 *.o
