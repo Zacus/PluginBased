@@ -96,6 +96,15 @@ def benchmark_command(
     output_path: Path,
     label: str,
 ) -> list[str]:
+    if case.get("benchmark_kind") == "realtime_pipeline":
+        return [
+            str(runner),
+            "--input", str(media_path),
+            "--output", str(output_path),
+            "--label", label,
+            "--max-presented-frames", str(case.get("max_presented_frames", 600)),
+            "--timeout-ms", str(case.get("timeout_ms", 30_000)),
+        ]
     command = [
         str(runner),
         "--input", str(media_path),
@@ -112,9 +121,17 @@ def benchmark_command(
 
 def run_suite(args: argparse.Namespace) -> None:
     runner = args.runner.resolve()
-    if not runner.is_file() or not os.access(runner, os.X_OK):
-        fail(f"Benchmark runner is not executable: {runner}")
+    realtime_runner = args.realtime_runner.resolve() if args.realtime_runner else None
+    for candidate in (runner, realtime_runner):
+        if candidate is not None and (not candidate.is_file() or not os.access(candidate, os.X_OK)):
+            fail(f"Benchmark runner is not executable: {candidate}")
     cases = manifest_cases(args.manifest)
+    if args.case:
+        requested = set(args.case)
+        cases = [case for case in cases if case["id"] in requested]
+        missing = requested - {case["id"] for case in cases}
+        if missing:
+            fail(f"Unknown benchmark cases: {', '.join(sorted(missing))}")
     args.output_dir.mkdir(parents=True, exist_ok=True)
 
     metadata = {
@@ -122,6 +139,7 @@ def run_suite(args: argparse.Namespace) -> None:
         "label": args.label,
         "runner": str(runner),
         "runner_sha256": sha256(runner),
+        "realtime_runner_sha256": sha256(realtime_runner) if realtime_runner else None,
         "manifest": str(args.manifest.resolve()),
         "manifest_sha256": sha256(args.manifest),
         "runs": args.runs,
@@ -132,6 +150,9 @@ def run_suite(args: argparse.Namespace) -> None:
     write_json(args.output_dir / "suite.json", metadata)
 
     for case in cases:
+        case_runner = realtime_runner if case.get("benchmark_kind") == "realtime_pipeline" else runner
+        if case_runner is None:
+            fail(f"Case {case['id']} requires --realtime-runner")
         media_path = args.media_dir / case["filename"]
         if not media_path.is_file():
             fail(f"Missing media for {case['id']}: {media_path}; run the fetch command first")
@@ -146,7 +167,7 @@ def run_suite(args: argparse.Namespace) -> None:
             warmup = index < args.warmups
             run_index = index - args.warmups + 1
             output_path = case_dir / (f"warmup-{index + 1:02d}.json" if warmup else f"run-{run_index:02d}.json")
-            command = benchmark_command(runner, case, media_path, output_path, args.label)
+            command = benchmark_command(case_runner, case, media_path, output_path, args.label)
             print(f"[{case['id']}] {'warmup' if warmup else 'run'} {index + 1}/{args.warmups + args.runs}")
             completed = subprocess.run(command, text=True, capture_output=True)
             if completed.returncode != 0:
@@ -181,10 +202,23 @@ def summarize_case(results: list[dict[str, Any]]) -> dict[str, Any]:
         for result in completed
     ]
     rss = [float(result["timing"]["max_rss_bytes"]) for result in completed]
-    checksums = sorted({result["frames"]["checksum"] for result in completed})
-    frame_counts = sorted({result["frames"]["video"] for result in completed})
-    pool_acquire = [float(result["pool_before_release"]["acquire_count"]) for result in completed]
-    pool_inflight_after = [float(result["pool_after_release"]["in_flight_count"]) for result in completed]
+    realtime = bool(completed and completed[0].get("benchmark_kind") == "realtime_pipeline")
+    if realtime:
+        checksums = sorted({result["presenter"]["checksum"] for result in completed})
+        frame_counts = sorted({result["presenter"]["presented_frames"] for result in completed})
+        pool_acquire = [float(result["pool"]["acquire_count"]) for result in completed]
+        pool_inflight_after = [float(result["pool"]["in_flight_count"]) for result in completed]
+        dropped_late = [float(result["runtime"]["video_dropped_late"]) for result in completed]
+        queue_high = [float(result["runtime"]["video_queue_high_watermark"]) for result in completed]
+        lateness = [float(result["presenter"]["lateness_average_us"]) for result in completed]
+    else:
+        checksums = sorted({result["frames"]["checksum"] for result in completed})
+        frame_counts = sorted({result["frames"]["video"] for result in completed})
+        pool_acquire = [float(result["pool_before_release"]["acquire_count"]) for result in completed]
+        pool_inflight_after = [float(result["pool_after_release"]["in_flight_count"]) for result in completed]
+        dropped_late = []
+        queue_high = []
+        lateness = []
     pixel_formats = sorted({name for result in completed for name in result.get("pixel_formats", {})})
     return {
         "run_count": len(results),
@@ -198,6 +232,9 @@ def summarize_case(results: list[dict[str, Any]]) -> dict[str, Any]:
         "pool_acquire_median": statistics.median(pool_acquire) if pool_acquire else 0.0,
         "pool_inflight_after_max": max(pool_inflight_after, default=0.0),
         "pixel_formats": pixel_formats,
+        "video_dropped_late_median": statistics.median(dropped_late) if dropped_late else 0.0,
+        "video_queue_high_watermark_median": statistics.median(queue_high) if queue_high else 0.0,
+        "present_lateness_average_median_us": statistics.median(lateness) if lateness else 0.0,
     }
 
 
@@ -220,6 +257,7 @@ def suite_fingerprint(suite: dict[str, Any]) -> dict[str, Any]:
         "schema_version",
         "label",
         "runner_sha256",
+        "realtime_runner_sha256",
         "manifest_sha256",
         "runs",
         "warmups",
@@ -247,6 +285,7 @@ def compare_suites(args: argparse.Namespace) -> None:
         current = summarize_case(current_results.get(case_id, []))
         required_runs = int(case.get("minimum_runs", 5))
         if case.get("f1_required", False):
+            expected_frames = case.get("max_presented_frames", case.get("max_video_frames"))
             for label, summary in (("baseline", baseline), ("current", current)):
                 if summary["completed_count"] < required_runs:
                     coverage_errors.append(
@@ -254,6 +293,11 @@ def compare_suites(args: argparse.Namespace) -> None:
                     )
                 if len(summary["checksums"]) != 1 or len(summary["video_frame_counts"]) != 1:
                     coverage_errors.append(f"{case_id} {label} 的帧数或 checksum 在多轮间不稳定")
+                elif expected_frames is not None and summary["video_frame_counts"] != [int(expected_frames)]:
+                    coverage_errors.append(
+                        f"{case_id} {label} 实际帧数为 {summary['video_frame_counts'][0]}，"
+                        f"要求 {int(expected_frames)} 帧"
+                    )
             if current["pool_inflight_after_max"] != 0:
                 coverage_errors.append(f"{case_id} current 释放 held frames 后仍有 pool frame 在途")
 
@@ -317,8 +361,8 @@ def compare_suites(args: argparse.Namespace) -> None:
         "",
         "## 对比结果",
         "",
-        "| Case | Runs | Wall baseline/current | Delta | CPU baseline/current | Delta | RSS baseline/current | Delta | Pool acquire |",
-        "|---|---:|---:|---:|---:|---:|---:|---:|---:|",
+        "| Case | Runs | Wall baseline/current | Delta | CPU baseline/current | Delta | RSS baseline/current | Delta | Drop current | Lateness current | Pool acquire |",
+        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
     ])
     for case_id, summary in summaries.items():
         baseline = summary["baseline"]
@@ -331,19 +375,25 @@ def compare_suites(args: argparse.Namespace) -> None:
             f"{format_delta(summary['cpu_delta_percent'])} | "
             f"{baseline['rss_median_bytes'] / 1048576:.2f}/{current['rss_median_bytes'] / 1048576:.2f} MiB | "
             f"{format_delta(summary['rss_delta_percent'])} | "
+            f"{current['video_dropped_late_median']:.0f} | "
+            f"{current['present_lateness_average_median_us']:.0f} us | "
             f"{current['pool_acquire_median']:.0f} |"
         )
+    has_realtime = any(case.get("benchmark_kind") == "realtime_pipeline" for case in cases.values())
     lines.extend([
         "",
-        "两个必选 case 均为 renderer 可直接消费的 `yuv420p`，current 的 pool acquire 为 0。",
-        "因此这组结果专门观察 software decoder direct-output 路径；当前对象池按设计不应改变",
-        "该路径。wall/CPU/RSS 的中位数变化均不足以证明 decoder allocator 是瓶颈。",
+        "core throughput case 观察 software decoder direct-output 路径；实时 case 通过",
+        "`PlaybackSession + RuntimePlayer + audio clock + presenter` 验证 60 fps 调度、队列、",
+        "late drop 和呈现延迟。wall/CPU/RSS 的中位数变化本身仍不足以证明 decoder allocator",
+        "是瓶颈。" if has_realtime else
+        "所有 case 均观察 software decoder direct-output 路径；wall/CPU/RSS 的中位数变化本身"
+        "不足以证明 decoder allocator 是瓶颈。",
         "",
         "## 测量范围",
         "",
-        "runner 直接驱动 `media_sdk::Player`，使用真实 MP4 码流执行 software decode，并由",
-        "无 UI frame sink 保留 3 帧模拟下游持有。它测量 core decode、frame publication 和",
-        "进程资源使用，不包含 Qt Scene Graph、GPU present、音频设备或实时播放节流。",
+        "core runner 直接驱动 `media_sdk::Player` 并尽快解码；realtime runner 驱动",
+        "`PlaybackSession`，使用 mock audio device 的 PTS 时钟和同步 CPU presenter 实时调度。",
+        "两者均不包含 Qt Scene Graph 和真实 GPU texture upload。",
         "",
         "| Case | Codec | Source | SHA-256 |",
         "|---|---|---|---|",
@@ -364,8 +414,8 @@ def compare_suites(args: argparse.Namespace) -> None:
         f"- Platform: `{current_suite.get('platform', 'unknown')}`",
         "- Build type: `Release`",
         "- Decode mode: software",
-        "- Held video frames: `3`",
-        "- Measured video frames per run: `240`",
+        "- Core held video frames: `3`",
+        "- Core measured video frames per run: `240`",
         "",
         "## 可重复执行",
         "",
@@ -374,8 +424,9 @@ def compare_suites(args: argparse.Namespace) -> None:
         f"- Current results: `{args.current_dir}`",
         f"- Machine report: `{args.output_json}`",
         "",
-        "所有原始单次 JSON 均保留 wall/user/system CPU、max RSS、帧 checksum、像素格式和",
-        "pool release 前后状态。媒体二进制不进入 Git，由 manifest URL 与 SHA-256 固定。",
+        "所有原始单次 JSON 均保留 wall/user/system CPU、max RSS、帧 checksum 和对应 runner",
+        "可观测的队列、延迟及对象池状态。媒体二进制不进入 Git，由 manifest URL 与",
+        "SHA-256 固定。",
         "",
     ])
     args.output_markdown.parent.mkdir(parents=True, exist_ok=True)
@@ -397,12 +448,14 @@ def parser() -> argparse.ArgumentParser:
 
     run = subparsers.add_parser("run", help="run one labelled benchmark suite")
     run.add_argument("--runner", type=Path, required=True)
+    run.add_argument("--realtime-runner", type=Path)
     run.add_argument("--manifest", type=Path, default=DEFAULT_MANIFEST)
     run.add_argument("--media-dir", type=Path, required=True)
     run.add_argument("--output-dir", type=Path, required=True)
     run.add_argument("--label", required=True)
     run.add_argument("--runs", type=int, default=5)
     run.add_argument("--warmups", type=int, default=1)
+    run.add_argument("--case", action="append", help="run only the selected manifest case")
     run.set_defaults(handler=run_suite)
 
     compare = subparsers.add_parser("compare", help="summarize suites and evaluate the F1 gate")

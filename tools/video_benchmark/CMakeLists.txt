@@ -37,6 +37,10 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
     set(BUILD_TESTING OFF CACHE BOOL "" FORCE)
     add_subdirectory("${PLUGINBASED_SOURCE_DIR}/sdk/media_core"
                      "${CMAKE_BINARY_DIR}/media_core")
+    add_subdirectory("${PLUGINBASED_SOURCE_DIR}/sdk/media_playback_runtime"
+                     "${CMAKE_BINARY_DIR}/media_playback_runtime")
+    add_subdirectory("${PLUGINBASED_SOURCE_DIR}/sdk/media_playback_session"
+                     "${CMAKE_BINARY_DIR}/media_playback_session")
 else()
     set(PLUGINBASED_SOURCE_DIR "${CMAKE_SOURCE_DIR}")
 endif()
@@ -55,6 +59,22 @@ target_link_libraries(MediaSdkVideoBenchmark PRIVATE media_sdk_core)
 
 if(EXISTS "${PLUGINBASED_SOURCE_DIR}/sdk/media_core/include/media_sdk/Diagnostics.h")
     target_compile_definitions(MediaSdkVideoBenchmark PRIVATE
+        MEDIA_SDK_BENCHMARK_HAS_POOL_DIAGNOSTICS=1)
+endif()
+
+add_executable(MediaSdkRealtimeVideoBenchmark
+    MediaSdkRealtimeVideoBenchmark.cpp
+)
+target_compile_features(MediaSdkRealtimeVideoBenchmark PRIVATE cxx_std_20)
+set_target_properties(MediaSdkRealtimeVideoBenchmark PROPERTIES
+    CXX_EXTENSIONS OFF
+    AUTOMOC OFF
+    AUTOUIC OFF
+    AUTORCC OFF
+)
+target_link_libraries(MediaSdkRealtimeVideoBenchmark PRIVATE media_sdk_playback_session)
+if(EXISTS "${PLUGINBASED_SOURCE_DIR}/sdk/media_core/include/media_sdk/Diagnostics.h")
+    target_compile_definitions(MediaSdkRealtimeVideoBenchmark PRIVATE
         MEDIA_SDK_BENCHMARK_HAS_POOL_DIAGNOSTICS=1)
 endif()
 

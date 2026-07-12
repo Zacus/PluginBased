@@ -8,7 +8,8 @@
 ```bash
 cmake -S . -B build-release -DCMAKE_BUILD_TYPE=Release
 cmake --build build-release \
-  --target MediaSdkVideoBenchmark MediaSdkBenchmarkMediaGenerator --parallel
+  --target MediaSdkVideoBenchmark MediaSdkRealtimeVideoBenchmark \
+           MediaSdkBenchmarkMediaGenerator --parallel
 ```
 
 ## 构建指定 SDK revision
@@ -20,7 +21,8 @@ cmake -S tools/video_benchmark -B build-benchmark-baseline \
   -DCMAKE_BUILD_TYPE=Release \
   -DPLUGINBASED_SOURCE_DIR=/path/to/baseline/worktree \
   -DCMAKE_TOOLCHAIN_FILE=/path/to/vcpkg/scripts/buildsystems/vcpkg.cmake
-cmake --build build-benchmark-baseline --target MediaSdkVideoBenchmark --parallel
+cmake --build build-benchmark-baseline \
+  --target MediaSdkVideoBenchmark MediaSdkRealtimeVideoBenchmark --parallel
 ```
 
 runner 只使用对应 revision 可用的 SDK 接口；较旧 revision 没有 pool diagnostics 时，pool
@@ -40,12 +42,14 @@ python3 tools/video_benchmark.py fetch \
 ```bash
 python3 tools/video_benchmark.py run \
   --runner build-benchmark-baseline/MediaSdkVideoBenchmark \
+  --realtime-runner build-benchmark-baseline/MediaSdkRealtimeVideoBenchmark \
   --media-dir benchmark_media \
   --output-dir benchmark_artifacts/baseline \
   --label 410ce6b --runs 5 --warmups 1
 
 python3 tools/video_benchmark.py run \
   --runner build-release/tools/video_benchmark/MediaSdkVideoBenchmark \
+  --realtime-runner build-release/tools/video_benchmark/MediaSdkRealtimeVideoBenchmark \
   --media-dir benchmark_media \
   --output-dir benchmark_artifacts/current \
   --label current --runs 5 --warmups 1
