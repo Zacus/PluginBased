@@ -14,25 +14,28 @@ FFmpeg decoder allocator 是瓶颈。
 
 ## 对比结果
 
-| Case | Runs | Wall baseline/current | Delta | CPU baseline/current | Delta | RSS baseline/current | Delta | Pool acquire |
-|---|---:|---:|---:|---:|---:|---:|---:|---:|
-| h264_1080p24 | 5 | 251.78/255.57 ms | +1.50% | 1476.79/1477.88 ms | +0.07% | 103.50/103.55 MiB | +0.05% | 0 |
-| hevc_4k24 | 5 | 1007.79/1005.35 ms | -0.24% | 6878.34/6915.70 ms | +0.54% | 430.89/431.05 MiB | +0.04% | 0 |
+| Case | Runs | Wall baseline/current | Delta | CPU baseline/current | Delta | RSS baseline/current | Delta | Drop current | Lateness current | Pool acquire |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| h264_1080p24 | 5 | 251.78/255.57 ms | +1.50% | 1476.79/1477.88 ms | +0.07% | 103.50/103.55 MiB | +0.05% | 0 | 0 us | 0 |
+| hevc_4k24 | 5 | 1007.79/1005.35 ms | -0.24% | 6878.34/6915.70 ms | +0.54% | 430.89/431.05 MiB | +0.04% | 0 | 0 us | 0 |
+| hevc_4k60_realtime | 5 | 10670.07/10670.11 ms | +0.00% | 7418.00/7417.92 ms | -0.00% | 764.28/764.31 MiB | +0.00% | 0 | 1263 us | 0 |
 
-两个必选 case 均为 renderer 可直接消费的 `yuv420p`，current 的 pool acquire 为 0。
-因此这组结果专门观察 software decoder direct-output 路径；当前对象池按设计不应改变
-该路径。wall/CPU/RSS 的中位数变化均不足以证明 decoder allocator 是瓶颈。
+core throughput case 观察 software decoder direct-output 路径；实时 case 通过
+`PlaybackSession + RuntimePlayer + audio clock + presenter` 验证 60 fps 调度、队列、
+late drop 和呈现延迟。wall/CPU/RSS 的中位数变化本身仍不足以证明 decoder allocator
+是瓶颈。
 
 ## 测量范围
 
-runner 直接驱动 `media_sdk::Player`，使用真实 MP4 码流执行 software decode，并由
-无 UI frame sink 保留 3 帧模拟下游持有。它测量 core decode、frame publication 和
-进程资源使用，不包含 Qt Scene Graph、GPU present、音频设备或实时播放节流。
+core runner 直接驱动 `media_sdk::Player` 并尽快解码；realtime runner 驱动
+`PlaybackSession`，使用 mock audio device 的 PTS 时钟和同步 CPU presenter 实时调度。
+两者均不包含 Qt Scene Graph 和真实 GPU texture upload。
 
 | Case | Codec | Source | SHA-256 |
 |---|---|---|---|
 | h264_1080p24 | h264 | [official test media](https://test.playready.microsoft.com/media/profficialsite/tearsofsteel_1080p_60s_24fps.6000kbps.1920x1080.h264-8b.2ch.128kbps.aac.mp4) | `5f54703c66a86a8d6de7e8021d53de1cf5c82216d5c6361d832bdb85084d5984` |
 | hevc_4k24 | hevc | [official test media](https://test.playready.microsoft.com/media/profficialsite/tearsofsteel_4k_60s_24fps.12000kbps.3840x2160.h265-8b.2ch.128kbps.aac.mp4) | `af69bb5d854a0f2106d59b57b6fe543faa1831a7ed83e3b9d6ecd8de52be962f` |
+| hevc_4k60_realtime | hevc-main10 | [official test media](https://test.playready.microsoft.com/media/profficialsite/bbb-3840x2160-cfg02-frag-6mbps.mp4) | `456cdf865a5416a7661bdece55c47b67f85ebff0287595bf9af34211972e4b43` |
 
 ## 环境指纹
 
@@ -43,15 +46,16 @@ runner 直接驱动 `media_sdk::Player`，使用真实 MP4 码流执行 software
 - Platform: `macOS-15.6.1-arm64-arm-64bit`
 - Build type: `Release`
 - Decode mode: software
-- Held video frames: `3`
-- Measured video frames per run: `240`
+- Core held video frames: `3`
+- Core measured video frames per run: `240`
 
 ## 可重复执行
 
-- Manifest SHA-256: `4abe3232d339c551eade9bc6fec582ba24ce8af145eb20fa7fc9c74d0fb1771b`
+- Manifest SHA-256: `b40e6ca0bc242d443d863f2d798ed510db8cb40aa2918c1df4e7b424a21fe732`
 - Baseline results: `benchmark_artifacts/baseline`
 - Current results: `benchmark_artifacts/current`
 - Machine report: `docs/performance/video-picture-pool-benchmark-results.json`
 
-所有原始单次 JSON 均保留 wall/user/system CPU、max RSS、帧 checksum、像素格式和
-pool release 前后状态。媒体二进制不进入 Git，由 manifest URL 与 SHA-256 固定。
+所有原始单次 JSON 均保留 wall/user/system CPU、max RSS、帧 checksum 和对应 runner
+可观测的队列、延迟及对象池状态。媒体二进制不进入 Git，由 manifest URL 与
+SHA-256 固定。

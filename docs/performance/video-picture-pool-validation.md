@@ -69,8 +69,15 @@ macOS arm64 机器上对 `410ce6b` 与 `e01d7cf` 的 Release software decode 各
 
 - H.264 1080p24：wall `+1.50%`、CPU `+0.07%`、RSS `+0.05%`；
 - HEVC 4K24：wall `-0.24%`、CPU `+0.54%`、RSS `+0.04%`；
+- HEVC Main10 4K60 实时流水线：wall `+0.00%`、CPU `-0.00%`、RSS `+0.00%`；
 - 每轮测量 240 个视频帧，baseline/current 的帧数和 checksum 一致；
-- 两组均为 software decoder `yuv420p` 直出，pool acquire 为 0，符合零拷贝旁路设计。
+- 4K60 每轮按音频 PTS 时钟呈现 600 帧，5 轮 checksum 一致且 late drop 均为 0；
+- 当前版本 4K60 平均呈现延迟中位数为 `1.263 ms`，视频队列高水位为 8；
+- 三个 case 均走 software decoder direct-output，pool acquire 为 0，符合零拷贝旁路设计。
+
+4K60 case 驱动 `PlaybackSession + RuntimePlayer`，使用 mock audio device 提供实时 PTS
+时钟并由同步 CPU presenter 消费视频帧。它补充验证了调度、队列背压和 late drop，但
+仍不包含 Qt Scene Graph、GPU texture upload 或真实音频设备。
 
 完整环境指纹、媒体 SHA-256、统计 JSON 和复现命令见
 `docs/performance/video-picture-pool-benchmark-results.md`。
@@ -89,10 +96,10 @@ macOS arm64 机器上对 `410ce6b` 与 `e01d7cf` 的 Release software decode 各
 
 ## Decoder Direct Rendering 门禁
 
-真实媒体对比没有观察到可归因于 decoder allocator 的 wall/CPU/RSS 改善或退化，且当前
-没有 Instruments Allocations/Time Profiler 证据证明 decoder allocator 达到 CPU 5% 或
-allocation 15% 的启动门槛。因此不启动 `AVCodecContext::get_buffer2` 原型和正式实现，
-里程碑 F 保持关闭。
+真实媒体吞吐与 4K60 实时对比均未观察到可归因于 decoder allocator 的 wall/CPU/RSS、
+呈现延迟或丢帧改善，且当前没有 Instruments Allocations/Time Profiler 证据证明 decoder
+allocator 达到 CPU 5% 或 allocation 15% 的启动门槛。因此不启动
+`AVCodecContext::get_buffer2` 原型和正式实现，里程碑 F 保持关闭。
 
 只有在固定媒体基准显示 decoder allocator 对 latency、CPU 或内存抖动有可重复显著影响
 时，才重新开启 F1，并为 codec alignment、frame threading、硬件回调和 fallback 单独
