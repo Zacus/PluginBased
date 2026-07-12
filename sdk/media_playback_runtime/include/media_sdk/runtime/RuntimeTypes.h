@@ -1,6 +1,5 @@
 #pragma once
 
-#include "media_sdk/DecodeFrameSink.h"
 #include "media_sdk/Frame.h"
 
 #include <chrono>
@@ -34,7 +33,6 @@ struct RuntimeVideoFrame {
     SessionId sessionId = 0;
     Generation generation = 0;
     bool endOfStream = false;
-    VideoPicturePoolSnapshot videoPicturePool;
 };
 
 enum class RuntimeFramePushStatus {

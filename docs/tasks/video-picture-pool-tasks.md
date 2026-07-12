@@ -213,6 +213,8 @@ ctest --test-dir build -R 'play|present|video' --output-on-failure
 - `DecodePerformanceReport` 输出周期内计数和必要的累计高水位。
 - `SdkPlaybackAdapter` 日志增加 pool 指标，不基于指标改变策略。
 - 明确 report reset 时累计值和区间值的语义。
+- pool gauge 通过 core 按需诊断读取，不放入逐帧 `DecodeFrameMetadata`；session 查询时与
+  runtime 诊断合并。
 
 验收标准：
 

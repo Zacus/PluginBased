@@ -253,6 +253,32 @@ void CpuVideoPicturePool::close()
     }
 }
 
+void CpuVideoPicturePool::reset()
+{
+    const auto state = m_state;
+    std::vector<AVFramePtr> idleFrames;
+    {
+        std::lock_guard lock(state->mutex);
+        ++state->formatEpoch;
+        state->activeKey.reset();
+        const std::size_t idleCount = state->freeFrames.size();
+        idleFrames = std::move(state->freeFrames);
+        if (state->stats.retainedCount >= idleCount)
+            state->stats.retainedCount -= idleCount;
+        else
+            state->stats.retainedCount = 0;
+
+        const auto retainedInFlight = state->stats.retainedCount;
+        const auto totalInFlight = state->stats.inFlightCount;
+        state->stats = {
+            .retainedCount = retainedInFlight,
+            .inFlightCount = totalInFlight,
+        };
+        state->reservedAllocations = 0;
+        state->closed = false;
+    }
+}
+
 VideoPicturePoolStats CpuVideoPicturePool::stats() const
 {
     const auto state = m_state;

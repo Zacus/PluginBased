@@ -337,6 +337,7 @@ void testResetKeepsOldStorageAliveAndCreatesNewPoolState()
     processor.reset();
 
     assert(oldStorage->data[0] == oldData);
+    assert(processor.picturePoolStats().inFlightCount == 1);
     auto afterReset = processor.process(makeBufferedFrame(AV_PIX_FMT_RGB24,
                                                           12,
                                                           12,
@@ -344,7 +345,19 @@ void testResetKeepsOldStorageAliveAndCreatesNewPoolState()
                                                           AVCOL_RANGE_MPEG,
                                                           AVCOL_SPC_BT709));
     assert(afterReset.ok());
-    assert(processor.picturePoolStats().allocationCount == 3);
+    auto stats = processor.picturePoolStats();
+    assert(stats.allocationCount == 3);
+    assert(stats.retainedCount == 4);
+    assert(stats.inFlightCount == 2);
+
+    beforeReset.value() = {};
+    oldStorage.reset();
+    stats = processor.picturePoolStats();
+    assert(stats.retainedCount == 3);
+    assert(stats.inFlightCount == 1);
+
+    afterReset.value() = {};
+    assert(processor.picturePoolStats().inFlightCount == 0);
 }
 
 void testSeekTailValueKeepsPoolFrameInFlight()

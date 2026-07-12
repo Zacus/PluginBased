@@ -1,5 +1,6 @@
 #pragma once
 
+#include "media_sdk/Diagnostics.h"
 #include "media_sdk/Error.h"
 
 #include <chrono>
@@ -57,6 +58,18 @@ struct ErrorEvent {
 struct EndOfFileEvent {
 };
 
+struct DecodePerformanceEvent {
+    std::string decoderName;
+    std::int64_t decodedVideoFrames = 0;
+    std::int64_t transferAverageUs = 0;
+    std::int64_t transferMaxUs = 0;
+    std::int64_t normalizeAverageUs = 0;
+    std::int64_t normalizeMaxUs = 0;
+    std::int64_t framePushAverageWaitUs = 0;
+    std::int64_t framePushMaxWaitUs = 0;
+    VideoPicturePoolSnapshot videoPicturePool;
+};
+
 struct EventMetadata {
     std::uint64_t sessionId = 0;
     std::uint64_t generation = 0;
@@ -68,7 +81,8 @@ using PlayerEventPayload = std::variant<
     PositionChangedEvent,
     SeekCompletedEvent,
     ErrorEvent,
-    EndOfFileEvent>;
+    EndOfFileEvent,
+    DecodePerformanceEvent>;
 
 struct PlayerEvent {
     EventMetadata metadata;

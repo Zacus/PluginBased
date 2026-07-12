@@ -198,6 +198,7 @@ public:
     void stop() override;
     media_sdk::Result<void> seek(std::chrono::milliseconds position,
                                   media_sdk::SeekPlaybackMode mode) override;
+    media_sdk::PlayerDiagnostics diagnostics() const override;
 
     void emitMediaInfo(media_sdk::EventMetadata metadata)
     {
@@ -212,6 +213,17 @@ public:
     void emitEndOfFile(media_sdk::EventMetadata metadata)
     {
         m_events.onEvent(eofEvent(metadata));
+    }
+
+    void emitDecodePerformance(media_sdk::EventMetadata metadata)
+    {
+        m_events.onEvent({
+            .metadata = metadata,
+            .payload = media_sdk::DecodePerformanceEvent {
+                .decoderName = "test-decoder",
+                .decodedVideoFrames = 4,
+            },
+        });
     }
 
     void emitError(media_sdk::EventMetadata metadata, std::string message)
@@ -322,6 +334,7 @@ struct TestContext {
     std::shared_ptr<FakeRuntimePlayer> runtime;
     std::vector<media_sdk::runtime::RuntimePlayerConfig> runtimeConfigs;
     media_sdk::runtime::RuntimeDiagnostics diagnostics {};
+    media_sdk::PlayerDiagnostics coreDiagnostics {};
     std::mutex mutex;
     std::condition_variable cv;
     bool blockRuntimeOpen = false;
@@ -368,6 +381,11 @@ media_sdk::Result<void> FakeCorePlayer::seek(std::chrono::milliseconds position,
         return seekFailure();
     }
     return success();
+}
+
+media_sdk::PlayerDiagnostics FakeCorePlayer::diagnostics() const
+{
+    return m_context.coreDiagnostics;
 }
 
 media_sdk::Result<void> FakeRuntimePlayer::open()
@@ -1087,6 +1105,14 @@ void diagnosticsExposePerformanceGuardrailsAndForwardSnapshots()
     context.diagnostics.nativePresented = 5;
     context.diagnostics.cpuPresented = 6;
     context.diagnostics.videoPresented = 11;
+    context.coreDiagnostics.videoPicturePool = {
+        .acquireCount = 12,
+        .reuseCount = 9,
+        .allocationCount = 3,
+        .highWatermark = 2,
+        .retainedCount = 3,
+        .inFlightCount = 2,
+    };
     context.core->emitMediaInfo(coreTimeline(10, 3));
 
     assert(events.diagnosticsCount == 1);
@@ -1097,12 +1123,26 @@ void diagnosticsExposePerformanceGuardrailsAndForwardSnapshots()
     assert(events.lastDiagnostics.nativePresented == 5);
     assert(events.lastDiagnostics.cpuPresented == 6);
     assert(events.lastDiagnostics.videoPresented == 11);
+    assert(events.lastDiagnostics.videoPicturePoolAcquireCount == 12);
+    assert(events.lastDiagnostics.videoPicturePoolInFlightCount == 2);
+
+    context.core->emitDecodePerformance(coreTimeline(10, 3));
+    assert(std::holds_alternative<media_sdk::DecodePerformanceEvent>(
+        events.events.back().payload));
 
     const auto diagnostics = session->diagnostics();
     assert(diagnostics.nativeFallbacks == 2);
     assert(diagnostics.decodeFramePushWaitUs == 12'345);
     assert(diagnostics.nativePresented == 5);
     assert(diagnostics.cpuPresented == 6);
+    assert(diagnostics.videoPicturePoolReuseCount == 9);
+    assert(diagnostics.videoPicturePoolRetainedCount == 3);
+
+    context.coreDiagnostics.videoPicturePool.inFlightCount = 0;
+    context.coreDiagnostics.videoPicturePool.retainedCount = 2;
+    const auto recycledDiagnostics = session->diagnostics();
+    assert(recycledDiagnostics.videoPicturePoolInFlightCount == 0);
+    assert(recycledDiagnostics.videoPicturePoolRetainedCount == 2);
 
     context.diagnostics.eofPresented = 1;
     context.core->emitEndOfFile(coreTimeline(10, 3));

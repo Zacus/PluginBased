@@ -467,6 +467,32 @@ void SdkPlaybackAdapter::handleSessionEvent(
         return;
     }
 
+    if (const auto* payload = std::get_if<media_sdk::DecodePerformanceEvent>(&event.payload)) {
+        const auto& pool = payload->videoPicturePool;
+        LOG_INFO("PlayPerf: decoder={} decoded={} transfer_avg={}us transfer_max={}us "
+                 "normalize_avg={}us normalize_max={}us push_wait_avg={}us push_wait_max={}us",
+                 payload->decoderName,
+                 payload->decodedVideoFrames,
+                 payload->transferAverageUs,
+                 payload->transferMaxUs,
+                 payload->normalizeAverageUs,
+                 payload->normalizeMaxUs,
+                 payload->framePushAverageWaitUs,
+                 payload->framePushMaxWaitUs);
+        if (pool.acquireCount > 0) {
+            LOG_INFO("PlayPerf: pool acquire={} reuse={} alloc={} transient={} "
+                     "high={} retained={} inflight={}",
+                     pool.acquireCount,
+                     pool.reuseCount,
+                     pool.allocationCount,
+                     pool.transientAllocationCount,
+                     pool.highWatermark,
+                     pool.retainedCount,
+                     pool.inFlightCount);
+        }
+        return;
+    }
+
     if (std::holds_alternative<media_sdk::EndOfFileEvent>(event.payload)) {
         emit endOfFile();
         emit endOfAudio();

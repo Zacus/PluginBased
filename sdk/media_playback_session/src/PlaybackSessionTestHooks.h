@@ -24,6 +24,7 @@ public:
     virtual void stop() = 0;
     [[nodiscard("seek result determines whether core accepted the seek command")]]
     virtual Result<void> seek(std::chrono::milliseconds position, SeekPlaybackMode mode) = 0;
+    [[nodiscard]] virtual PlayerDiagnostics diagnostics() const { return {}; }
 };
 
 class IPlaybackSessionRuntimePlayer {

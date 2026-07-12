@@ -92,7 +92,9 @@ DecodeWorker::DecodeWorker(PlayerConfig config, IEventSink& events, IDecodeFrame
     : m_config(std::move(config))
     , m_events(events)
     , m_frames(frames)
+    , m_decodePerformance(m_config.decodePerformanceReportInterval)
 {
+    m_decodePerformance.reset();
     m_thread = std::make_unique<WorkerThread>([this](WorkerStopToken stopToken) {
         run(stopToken);
     });
@@ -121,6 +123,22 @@ Result<void> DecodeWorker::submitOpen(const std::filesystem::path& path)
 
     submit({ .type = CommandType::Open, .path = path });
     return Result<void>::success();
+}
+
+PlayerDiagnostics DecodeWorker::diagnostics() const
+{
+    const auto stats = m_videoFrameProcessor.picturePoolStats();
+    return {
+        .videoPicturePool = {
+            .acquireCount = stats.acquireCount,
+            .reuseCount = stats.reuseCount,
+            .allocationCount = stats.allocationCount,
+            .transientAllocationCount = stats.transientAllocationCount,
+            .highWatermark = stats.highWatermark,
+            .retainedCount = stats.retainedCount,
+            .inFlightCount = stats.inFlightCount,
+        },
+    };
 }
 
 void DecodeWorker::submitPlay()
@@ -264,6 +282,7 @@ void DecodeWorker::handleCommand(Command command, WorkerStopToken stopToken)
 void DecodeWorker::handleOpen(const std::filesystem::path& path)
 {
     closeMedia();
+    m_decodePerformance.reset();
     auto opened = m_demuxer.open(path, {
         .enableHardwareDecode = m_config.enableHardwareDecode,
     });
@@ -603,7 +622,7 @@ void DecodeWorker::closeMedia()
     m_media = {};
     m_hasMedia = false;
     m_playing = false;
-    m_decodeStats = {};
+    m_decodePerformance.reset();
     m_seekGate.reset();
     m_pendingSeekTarget.reset();
     m_seekTailVideoFrame.reset();
@@ -632,7 +651,7 @@ StreamDecoder::FrameHandlerStatus DecodeWorker::handleDecodedVideoFrame(
     DecodePrerollTarget prerollTarget,
     bool* prerollDelivered)
 {
-    ++m_decodeStats.decodedVideoFrames;
+    ++m_decodePerformance.stats().decodedVideoFrames;
     bool seekTargetVideoReady = false;
     std::chrono::microseconds seekTargetVideoPts { 0 };
     if (m_seekGate)
@@ -655,7 +674,7 @@ StreamDecoder::FrameHandlerStatus DecodeWorker::handleDecodedVideoFrame(
                     std::move(frame),
                     { .preferNativeVideoFrames = m_config.preferNativeVideoFrames },
                     m_media.hardwareDecoder.get(),
-                    &m_decodeStats);
+                    &m_decodePerformance.stats());
                 if (processed.ok())
                     m_seekTailVideoFrame = std::move(processed.value());
             }
@@ -686,7 +705,7 @@ StreamDecoder::FrameHandlerStatus DecodeWorker::handleDecodedVideoFrame(
         std::move(frame),
         { .preferNativeVideoFrames = m_config.preferNativeVideoFrames },
         m_media.hardwareDecoder.get(),
-        &m_decodeStats);
+        &m_decodePerformance.stats());
     if (!processed.ok())
     {
         emitError(processed.error());
@@ -809,27 +828,52 @@ void DecodeWorker::emitError(MediaError error)
     emitEvent(makeEvent(ErrorEvent { std::move(error) }));
 }
 
+void DecodeWorker::maybeEmitDecodePerformanceReport()
+{
+    std::string_view decoderName = "none";
+    if (m_media.videoCodecContext && m_media.videoCodecContext->codec
+        && m_media.videoCodecContext->codec->name) {
+        decoderName = m_media.videoCodecContext->codec->name;
+    }
+
+    auto report = m_decodePerformance.maybeCreateReport(decoderName);
+    if (!report.has_value())
+        return;
+
+    const auto pool = m_videoFrameProcessor.picturePoolStats();
+    emitEvent(makeEvent(DecodePerformanceEvent {
+        .decoderName = std::move(report->decoderName),
+        .decodedVideoFrames = report->stats.decodedVideoFrames,
+        .transferAverageUs = report->transferAverageUs,
+        .transferMaxUs = report->stats.transferMaxUs,
+        .normalizeAverageUs = report->normalizeAverageUs,
+        .normalizeMaxUs = report->stats.normalizeMaxUs,
+        .framePushAverageWaitUs = report->framePushAverageWaitUs,
+        .framePushMaxWaitUs = report->stats.framePushMaxWaitUs,
+        .videoPicturePool = {
+            .acquireCount = pool.acquireCount,
+            .reuseCount = pool.reuseCount,
+            .allocationCount = pool.allocationCount,
+            .transientAllocationCount = pool.transientAllocationCount,
+            .highWatermark = pool.highWatermark,
+            .retainedCount = pool.retainedCount,
+            .inFlightCount = pool.inFlightCount,
+        },
+    }));
+}
+
 DecodeFrameMetadata DecodeWorker::frameMetadata() const
 {
-    const auto poolStats = m_videoFrameProcessor.picturePoolStats();
     return {
         .sessionId = m_sessionId,
         .generation = m_generation,
-        .videoPicturePool = {
-            .acquireCount = poolStats.acquireCount,
-            .reuseCount = poolStats.reuseCount,
-            .allocationCount = poolStats.allocationCount,
-            .transientAllocationCount = poolStats.transientAllocationCount,
-            .highWatermark = poolStats.highWatermark,
-            .retainedCount = poolStats.retainedCount,
-            .inFlightCount = poolStats.inFlightCount,
-        },
     };
 }
 
 StreamDecoder::FrameHandlerStatus DecodeWorker::handleFramePushResult(DecodeFramePushResult result)
 {
     recordFramePushResult(result);
+    maybeEmitDecodePerformanceReport();
 
     switch (result.status)
     {
@@ -850,26 +894,28 @@ void DecodeWorker::recordFramePushResult(DecodeFramePushResult result)
 {
     const auto waitUs = result.waitTime.count();
     if (waitUs > 0)
-        ++m_decodeStats.framePushWaitCount;
-    m_decodeStats.framePushWaitUs += waitUs;
-    m_decodeStats.framePushMaxWaitUs = std::max(m_decodeStats.framePushMaxWaitUs, waitUs);
+        ++m_decodePerformance.stats().framePushWaitCount;
+    m_decodePerformance.stats().framePushWaitUs += waitUs;
+    m_decodePerformance.stats().framePushMaxWaitUs = std::max(
+        m_decodePerformance.stats().framePushMaxWaitUs,
+        waitUs);
 
     switch (result.status)
     {
     case DecodeFramePushStatus::Accepted:
-        ++m_decodeStats.framePushAccepted;
+        ++m_decodePerformance.stats().framePushAccepted;
         break;
     case DecodeFramePushStatus::Backpressured:
-        ++m_decodeStats.framePushBackpressured;
+        ++m_decodePerformance.stats().framePushBackpressured;
         break;
     case DecodeFramePushStatus::StaleGeneration:
-        ++m_decodeStats.framePushStale;
+        ++m_decodePerformance.stats().framePushStale;
         break;
     case DecodeFramePushStatus::Cancelled:
-        ++m_decodeStats.framePushCancelled;
+        ++m_decodePerformance.stats().framePushCancelled;
         break;
     case DecodeFramePushStatus::Closed:
-        ++m_decodeStats.framePushClosed;
+        ++m_decodePerformance.stats().framePushClosed;
         break;
     }
 }

@@ -40,7 +40,7 @@ ctest --test-dir build \
 - 同一槽位不会在仍有共享引用时再次借出；
 - pool 满时创建 transient frame，不等待 runtime/presenter；
 - 分辨率变化推进 format epoch，旧 epoch 在途帧归还后释放；
-- `VideoFrameProcessor::reset()` 关闭旧 PoolState 并建立新 state；
+- `VideoFrameProcessor::reset()` 推进稳定 PoolState 的 epoch，旧帧归还仍会更新当前 gauge；
 - seek tail、runtime queue、presenter 和模拟 Scene Graph 引用覆盖完整 storage 生命周期；
 - PlayPlugin 不再调用 `av_frame_clone()`，CPU/native frame 共用 SDK storage 控制块；
 - clear 丢弃 pending/current frame，stop 不等待在途 pool frame；
@@ -48,6 +48,8 @@ ctest --test-dir build \
 - EOF drain 完成后最后显示帧保持有效，stop/clear 后释放；
 - native-to-CPU fallback 能为转换输出初始化兼容的 CPU pool；
 - pool diagnostics 只观察，不参与播放策略，audio-only 不输出全零 pool 日志。
+- pool 统计不再随 `DecodeFrameMetadata` 逐帧传递；周期 report 和按需 session 查询分别
+  覆盖性能趋势与实时 `retained`/`in-flight` 状态。
 
 ## 分配结果
 

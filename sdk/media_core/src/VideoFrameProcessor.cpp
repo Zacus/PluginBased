@@ -205,8 +205,7 @@ VideoFrameProcessor::~VideoFrameProcessor() = default;
 void VideoFrameProcessor::reset()
 {
     m_videoSwsContext.reset();
-    m_cpuPicturePool->close();
-    m_cpuPicturePool = std::make_unique<CpuVideoPicturePool>();
+    m_cpuPicturePool->reset();
 }
 
 Result<VideoFrame> VideoFrameProcessor::process(AVFramePtr frame,

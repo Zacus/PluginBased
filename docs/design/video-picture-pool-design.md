@@ -261,6 +261,13 @@ struct VideoPicturePoolStats {
 ```
 
 这些数据并入现有 decode performance report，PlayPlugin 只记录，不据此改变播放策略。
+report 中的解码、转换和 push 计数按报告周期重置；pool 的累计计数和
+`retainedCount`/`inFlightCount` 在生成 report 时从 pool 重新采样。`DecodeFrameMetadata`
+不携带 pool 快照，避免音频帧和无需转换的视频帧在逐帧热路径上获取 pool 锁。
+
+`Player::diagnostics()` 按需读取当前 pool 状态，`PlaybackSession` 再将其与 runtime
+队列/呈现诊断合并。因此帧在 runtime 或 Qt Scene Graph 线程归还后，下一次查询可以直接
+观察到新的 gauge，不依赖后续视频帧入队。
 
 需要区分：
 

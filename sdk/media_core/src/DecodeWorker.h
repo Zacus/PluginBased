@@ -106,6 +106,7 @@ public:
     void submitStop();
     Result<void> submitSeek(std::chrono::milliseconds position);
     Result<void> submitSeek(std::chrono::milliseconds position, SeekPlaybackMode mode);
+    [[nodiscard]] PlayerDiagnostics diagnostics() const;
 
 private:
     enum class CommandType {
@@ -166,6 +167,7 @@ private:
     void emitEvent(PlayerEvent event);
     void emitState(PlayerState state);
     void emitError(MediaError error);
+    void maybeEmitDecodePerformanceReport();
     DecodeFrameMetadata frameMetadata() const;
     StreamDecoder::FrameHandlerStatus handleFramePushResult(DecodeFramePushResult result);
     void recordFramePushResult(DecodeFramePushResult result);
@@ -185,7 +187,7 @@ private:
     Demuxer m_demuxer;
     StreamDecoder m_streamDecoder;
     VideoFrameProcessor m_videoFrameProcessor;
-    DecodePerformanceStats m_decodeStats;
+    DecodePerformanceLogger m_decodePerformance;
     OpenedMedia m_media;
     std::optional<SeekPrerollGate> m_seekGate;
     std::optional<std::chrono::microseconds> m_pendingSeekTarget;

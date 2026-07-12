@@ -95,6 +95,11 @@ public:
         return m_player.seek(position, mode);
     }
 
+    PlayerDiagnostics diagnostics() const override
+    {
+        return m_player.diagnostics();
+    }
+
 private:
     Player m_player;
 };
@@ -436,8 +441,22 @@ struct PlaybackSession::Impl final
 
     runtime::RuntimeDiagnostics diagnostics() const
     {
-        const auto runtime = currentRuntimePlayer();
-        return runtime ? runtime->diagnostics() : runtime::RuntimeDiagnostics {};
+        const auto handles = currentHandles();
+        auto snapshot = handles.runtimePlayer
+            ? handles.runtimePlayer->diagnostics()
+            : runtime::RuntimeDiagnostics {};
+        if (!handles.corePlayer)
+            return snapshot;
+
+        const auto pool = handles.corePlayer->diagnostics().videoPicturePool;
+        snapshot.videoPicturePoolAcquireCount = pool.acquireCount;
+        snapshot.videoPicturePoolReuseCount = pool.reuseCount;
+        snapshot.videoPicturePoolAllocationCount = pool.allocationCount;
+        snapshot.videoPicturePoolTransientAllocationCount = pool.transientAllocationCount;
+        snapshot.videoPicturePoolHighWatermark = pool.highWatermark;
+        snapshot.videoPicturePoolRetainedCount = pool.retainedCount;
+        snapshot.videoPicturePoolInFlightCount = pool.inFlightCount;
+        return snapshot;
     }
 
     Result<runtime::RuntimeTimeline> openRuntimeForMedia(const MediaInfo& info)
@@ -735,12 +754,7 @@ private:
     {
         if (!dependencies.events)
             return;
-
-        const auto runtime = currentRuntimePlayer();
-        if (!runtime)
-            return;
-
-        dependencies.events->onRuntimeDiagnostics(runtime->diagnostics());
+        dependencies.events->onRuntimeDiagnostics(diagnostics());
     }
 
     void emitError(EventMetadata metadata, MediaError error)

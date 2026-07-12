@@ -25,6 +25,7 @@ public:
     void stop();
     Result<void> seek(std::chrono::milliseconds position);
     Result<void> seek(std::chrono::milliseconds position, SeekPlaybackMode mode);
+    [[nodiscard]] PlayerDiagnostics diagnostics() const;
 
 private:
     DecodeWorker m_worker;

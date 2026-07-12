@@ -1507,36 +1507,6 @@ void nativeDiagnosticsTrackZeroCopySuccessWithoutCpuCopy()
     assert(diagnostics.nativeFallbacks == 0);
 }
 
-void videoPicturePoolDiagnosticsTrackAcceptedSnapshots()
-{
-    MockAudioOutput audio;
-    audio.setClock(100ms, 1);
-    MockPresenter presenter;
-    auto player = makePlayer(audio, presenter);
-    assert(player.open().ok());
-
-    auto frame = runtimeVideo(1, 1, 100ms);
-    frame.videoPicturePool = {
-        .acquireCount = 12,
-        .reuseCount = 9,
-        .allocationCount = 3,
-        .transientAllocationCount = 1,
-        .highWatermark = 4,
-        .retainedCount = 3,
-        .inFlightCount = 2,
-    };
-    discardFramePushResult(player.enqueueVideo(std::move(frame)));
-
-    const auto diagnostics = player.diagnostics();
-    assert(diagnostics.videoPicturePoolAcquireCount == 12);
-    assert(diagnostics.videoPicturePoolReuseCount == 9);
-    assert(diagnostics.videoPicturePoolAllocationCount == 3);
-    assert(diagnostics.videoPicturePoolTransientAllocationCount == 1);
-    assert(diagnostics.videoPicturePoolHighWatermark == 4);
-    assert(diagnostics.videoPicturePoolRetainedCount == 3);
-    assert(diagnostics.videoPicturePoolInFlightCount == 2);
-}
-
 void seekKeepsOldFrameStorageUntilReplacementArrives()
 {
     MockAudioOutput audio;
@@ -1782,7 +1752,6 @@ int main()
     stopUnblocksPausedAudioWriteBeforeJoiningWorkers();
     nativePresenterFailureRunsFullFallbackTransition();
     nativeDiagnosticsTrackZeroCopySuccessWithoutCpuCopy();
-    videoPicturePoolDiagnosticsTrackAcceptedSnapshots();
     seekKeepsOldFrameStorageUntilReplacementArrives();
     eofDrainKeepsLastFrameUntilStopThenReleasesIt();
     currentGenerationDeviceLostPausesAudioFlushesQueuesClearsPresenterAndRequestsCpuOnlyDecode();

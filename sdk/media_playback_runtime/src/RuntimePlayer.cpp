@@ -353,7 +353,6 @@ struct RuntimePlayer::Impl {
             return { .status = gateStatus };
 
         const bool nativeFrame = frame.frame.pixelFormat() == PixelFormat::Native;
-        const auto picturePool = frame.videoPicturePool;
         const auto pushResult = videoQueue.push(std::move(frame));
         if (pushResult.status != RuntimeFramePushStatus::Accepted
             && pushResult.status != RuntimeFramePushStatus::Backpressured) {
@@ -373,23 +372,6 @@ struct RuntimePlayer::Impl {
                 highWatermark);
             if (nativeFrame)
                 ++diagnostics.nativeAccepted;
-            diagnostics.videoPicturePoolAcquireCount = std::max(
-                diagnostics.videoPicturePoolAcquireCount,
-                picturePool.acquireCount);
-            diagnostics.videoPicturePoolReuseCount = std::max(
-                diagnostics.videoPicturePoolReuseCount,
-                picturePool.reuseCount);
-            diagnostics.videoPicturePoolAllocationCount = std::max(
-                diagnostics.videoPicturePoolAllocationCount,
-                picturePool.allocationCount);
-            diagnostics.videoPicturePoolTransientAllocationCount = std::max(
-                diagnostics.videoPicturePoolTransientAllocationCount,
-                picturePool.transientAllocationCount);
-            diagnostics.videoPicturePoolHighWatermark = std::max(
-                diagnostics.videoPicturePoolHighWatermark,
-                picturePool.highWatermark);
-            diagnostics.videoPicturePoolRetainedCount = picturePool.retainedCount;
-            diagnostics.videoPicturePoolInFlightCount = picturePool.inFlightCount;
         }
         return pushResult;
     }

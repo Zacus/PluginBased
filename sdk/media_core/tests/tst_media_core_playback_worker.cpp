@@ -494,6 +494,11 @@ bool hasError(const media_sdk::PlayerEvent& event)
     return std::holds_alternative<media_sdk::ErrorEvent>(event.payload);
 }
 
+bool hasDecodePerformance(const media_sdk::PlayerEvent& event)
+{
+    return std::holds_alternative<media_sdk::DecodePerformanceEvent>(event.payload);
+}
+
 bool hasPositionAtOrAfter(const media_sdk::PlayerEvent& event,
                           std::chrono::milliseconds position)
 {
@@ -856,6 +861,32 @@ void testStopEmitsStoppedState()
     std::filesystem::remove(samplePath);
 }
 
+void testDecodeWorkerPublishesPerformanceReportsWithoutPerFramePoolMetadata()
+{
+    const auto samplePath = writeTinyWav();
+    RecordingSink sink;
+    RecordingFrameSink frames;
+    media_sdk::PlayerConfig config;
+    config.decodePerformanceReportInterval = 0ms;
+    media_sdk::Player player(config, sink, frames);
+
+    assert(player.open(samplePath).ok());
+    assert(sink.waitFor(hasMediaInfo));
+    player.play();
+    assert(sink.waitFor(hasDecodePerformance));
+
+    const auto events = sink.snapshot();
+    const auto* event = firstEventMatching(events, hasDecodePerformance);
+    assert(event);
+    const auto* report = std::get_if<media_sdk::DecodePerformanceEvent>(&event->payload);
+    assert(report);
+    assert(report->videoPicturePool.acquireCount == 0);
+    assert(report->videoPicturePool.inFlightCount == 0);
+
+    player.stop();
+    std::filesystem::remove(samplePath);
+}
+
 void testCancelledFramePushDuringStopDoesNotEmitDecodeError()
 {
     const auto samplePath = writeTinyWav();
@@ -898,6 +929,7 @@ int main()
     testPlayingSeekDiscardLimitKeepsFilteringUntilTargetAudio();
     testBurstSeekCoalescesQueuedRequestsBeforeDecodeResumes();
     testStopEmitsStoppedState();
+    testDecodeWorkerPublishesPerformanceReportsWithoutPerFramePoolMetadata();
     testCancelledFramePushDuringStopDoesNotEmitDecodeError();
     return 0;
 }

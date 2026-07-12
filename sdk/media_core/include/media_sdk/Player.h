@@ -1,6 +1,7 @@
 #pragma once
 
 #include "media_sdk/DecodeFrameSink.h"
+#include "media_sdk/Diagnostics.h"
 #include "media_sdk/MediaEvents.h"
 #include "media_sdk/PlayerConfig.h"
 #include "media_sdk/Result.h"
@@ -41,6 +42,7 @@ public:
     Result<void> seek(std::chrono::milliseconds position);
     [[nodiscard("inspect the seek result before assuming the seek was accepted")]]
     Result<void> seek(std::chrono::milliseconds position, SeekPlaybackMode mode);
+    [[nodiscard]] PlayerDiagnostics diagnostics() const;
 
 private:
     class Impl;

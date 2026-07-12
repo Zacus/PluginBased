@@ -65,6 +65,7 @@ def main() -> None:
         "Error.h",
         "Result.h",
         "Frame.h",
+        "Diagnostics.h",
         "MediaEvents.h",
         "Player.h",
     ]
@@ -99,6 +100,8 @@ def main() -> None:
     for token in ["class IDecodeFrameSink", "DecodeFramePushStatus", "DecodeFramePushResult"]:
         require(token in decode_frame_sink_text,
                 f"DecodeFrameSink.h should expose frame channel contract token: {token}")
+    require("videoPicturePool" not in decode_frame_sink_text,
+            "DecodeFrameMetadata must not carry pool diagnostics through the per-frame hot path")
 
     frame_header = read(PUBLIC_INCLUDE / "Frame.h")
     for token in ["PlaneView", "NativeHandle", "VideoFrame", "AudioFrame",
@@ -213,14 +216,16 @@ def main() -> None:
                 f"DecodeWorker should not emit decoded frames through IEventSink: {token}")
     for token in [
         "recordFramePushResult",
-        "m_decodeStats.framePushAccepted",
-        "m_decodeStats.framePushBackpressured",
+        "m_decodePerformance.stats().framePushAccepted",
+        "m_decodePerformance.stats().framePushBackpressured",
+        "maybeEmitDecodePerformanceReport",
+        "m_decodePerformance.maybeCreateReport",
         "DecodeFramePushStatus::Backpressured",
         "framePushWaitCount",
         "framePushMaxWaitUs",
     ]:
         require(token in decode_worker_header + decode_worker_cpp,
-                f"DecodeWorker should expose decoded frame push diagnostics through decode stats token: {token}")
+                f"DecodeWorker should publish decoded frame diagnostics through the production report path: {token}")
     require("DemuxerOptions" in demuxer_header and
             "enableHardwareDecode" in demuxer_header and
             "enableHardwareDecode" in demuxer_cpp,

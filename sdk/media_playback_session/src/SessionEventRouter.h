@@ -123,6 +123,11 @@ public:
             return;
         }
 
+        if (std::holds_alternative<DecodePerformanceEvent>(event.payload)) {
+            forwardIfAccepted(event);
+            return;
+        }
+
         if (std::holds_alternative<ErrorEvent>(event.payload)) {
             forwardErrorIfCurrentOrUnopened(event);
         }

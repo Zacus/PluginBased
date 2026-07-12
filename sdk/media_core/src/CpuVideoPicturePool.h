@@ -51,6 +51,7 @@ public:
 
     [[nodiscard("an empty reference means the key is invalid, allocation failed, or the pool is closed")]]
     VideoPictureRef acquire(const VideoPictureKey& key);
+    void reset();
     void close();
     [[nodiscard]] VideoPicturePoolStats stats() const;
 

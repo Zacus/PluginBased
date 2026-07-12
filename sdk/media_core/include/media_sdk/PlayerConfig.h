@@ -1,5 +1,7 @@
 #pragma once
 
+#include <chrono>
+
 namespace media_sdk {
 
 struct PlayerConfig {
@@ -9,6 +11,7 @@ struct PlayerConfig {
     int audioQueueCapacity = 64;
     int accurateSeekMaxDiscardedVideoFrames = 300;
     int accurateSeekMaxDiscardedAudioFrames = 1000;
+    std::chrono::milliseconds decodePerformanceReportInterval { 2000 };
 };
 
 } // namespace media_sdk
