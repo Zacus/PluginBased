@@ -1,0 +1,80 @@
+{
+  "decoder_allocator_allocation_percent": null,
+  "decoder_allocator_allocation_percent_semantics": "unavailable",
+  "decoder_allocator_cpu_percent": 4.044216770018873,
+  "decoder_allocator_cpu_percent_semantics": "conservative_upper_bound_max",
+  "evidence": {
+    "benchmark_result_sha256": {
+      "benchmark_artifacts/profiles/current-time-3run/time-profile-run-01-benchmark.json": "ae023b0644dd545f1a2facbfb79468bd7a20b8d94109789ae86f8540838c7cfd",
+      "benchmark_artifacts/profiles/current-time-3run/time-profile-run-02-benchmark.json": "de6b42a50c6e848197b1ecc37b40aa018d9359e7e6051bed3ab14177ab377c5e",
+      "benchmark_artifacts/profiles/current-time-3run/time-profile-run-03-benchmark.json": "d07acd649def10e64e0fb9e8469b0e01f34cf0b1cab16c83e46e3ce66a3ea328"
+    },
+    "benchmark_results": [
+      "benchmark_artifacts/profiles/current-time-3run/time-profile-run-01-benchmark.json",
+      "benchmark_artifacts/profiles/current-time-3run/time-profile-run-02-benchmark.json",
+      "benchmark_artifacts/profiles/current-time-3run/time-profile-run-03-benchmark.json"
+    ],
+    "media": "benchmark_media/bbb-4k60-hevc-main10.mp4",
+    "media_sha256": "456cdf865a5416a7661bdece55c47b67f85ebff0287595bf9af34211972e4b43",
+    "runner": "MediaSdkRealtimeVideoBenchmark",
+    "runner_sha256": "7fb4944412992de872e5af04659b67064ba3dc23d7a3403df216293667b001db",
+    "time_profile_traces": [
+      "benchmark_artifacts/profiles/current-time-3run/time-profile-run-01.trace",
+      "benchmark_artifacts/profiles/current-time-3run/time-profile-run-02.trace",
+      "benchmark_artifacts/profiles/current-time-3run/time-profile-run-03.trace"
+    ]
+  },
+  "schema_version": 1,
+  "time_profile": {
+    "conservative_upper_bound_cpu_percent_max": 4.044216770018873,
+    "conservative_upper_bound_includes": [
+      "all direct FFmpeg allocator/buffer symbols",
+      "all libsystem_malloc.dylib samples",
+      "all memset and bzero samples"
+    ],
+    "direct_allocator_cpu_percent_median": 0.05392289026691831,
+    "run_count": 3,
+    "runs": [
+      {
+        "conservative_upper_bound_cpu_percent": 4.044216770018873,
+        "conservative_upper_bound_sample_weight_ns": 300000000,
+        "direct_allocator_cpu_percent": 0.05392289026691831,
+        "direct_allocator_sample_weight_ns": 4000000,
+        "direct_symbols": {
+          "av_malloc": 2.0,
+          "av_mallocz": 1.0,
+          "buffer_replace": 1.0
+        },
+        "total_sample_weight_ns": 7418000000,
+        "xml": "benchmark_artifacts/profiles/current-time-3run/time-profile-run-01.xml",
+        "xml_sha256": "efa1f04130f21ce06b9861977cbab702dde052cf248c9953d2df4bf1295f8955"
+      },
+      {
+        "conservative_upper_bound_cpu_percent": 3.7471662888385118,
+        "conservative_upper_bound_sample_weight_ns": 281000000,
+        "direct_allocator_cpu_percent": 0.0,
+        "direct_allocator_sample_weight_ns": 0,
+        "direct_symbols": {},
+        "total_sample_weight_ns": 7499000000,
+        "xml": "benchmark_artifacts/profiles/current-time-3run/time-profile-run-02.xml",
+        "xml_sha256": "7bf2591c124ee60f06350b18cb6a135985de918face93a4cfce2b9ed90b5c584"
+      },
+      {
+        "conservative_upper_bound_cpu_percent": 4.0121822033898304,
+        "conservative_upper_bound_sample_weight_ns": 303000000,
+        "direct_allocator_cpu_percent": 0.13241525423728814,
+        "direct_allocator_sample_weight_ns": 10000000,
+        "direct_symbols": {
+          "av_buffer_unref": 1.0,
+          "av_malloc": 2.0,
+          "av_mallocz": 1.0,
+          "buffer_replace": 6.0
+        },
+        "total_sample_weight_ns": 7552000000,
+        "xml": "benchmark_artifacts/profiles/current-time-3run/time-profile-run-03.xml",
+        "xml_sha256": "a9763e50384cf83b3ba1a63544a086c89c7ddc29e8b82d8e8e4e2fb48db1d710"
+      }
+    ]
+  },
+  "tool": "Instruments Time Profiler"
+}

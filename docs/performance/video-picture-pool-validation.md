@@ -97,9 +97,14 @@ macOS arm64 机器上对 `410ce6b` 与 `e01d7cf` 的 Release software decode 各
 ## Decoder Direct Rendering 门禁
 
 真实媒体吞吐与 4K60 实时对比均未观察到可归因于 decoder allocator 的 wall/CPU/RSS、
-呈现延迟或丢帧改善，且当前没有 Instruments Allocations/Time Profiler 证据证明 decoder
-allocator 达到 CPU 5% 或 allocation 15% 的启动门槛。因此不启动
-`AVCodecContext::get_buffer2` 原型和正式实现，里程碑 F 保持关闭。
+呈现延迟或丢帧改善。当前版本另执行 3 轮 Instruments Time Profiler：直接 FFmpeg
+allocator/buffer 符号 CPU 占比中位数为 `0.054%`；把所有 `libsystem_malloc`、
+`memset` 和 `bzero` 也计入后，三轮保守上界最大值为 `4.044%`，仍低于 5% 门槛。
+
+Allocations 模板在当前环境无法附加目标进程，因此 allocation 占比明确记为不可用，
+而不是 0%。CPU 保守上界已不足以启动 F1；因此不启动 `AVCodecContext::get_buffer2`
+原型和正式实现，里程碑 F 保持关闭。归因明细和 trace/XML 指纹见
+`docs/performance/video-picture-pool-allocator-profile.json`。
 
 只有在固定媒体基准显示 decoder allocator 对 latency、CPU 或内存抖动有可重复显著影响
 时，才重新开启 F1，并为 codec alignment、frame threading、硬件回调和 fallback 单独

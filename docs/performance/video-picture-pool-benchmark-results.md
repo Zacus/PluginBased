@@ -6,7 +6,13 @@
 
 门禁原因：
 
-- 未提供 decoder allocator 的 Allocations/Time Profiler 归因报告
+- decoder allocator 归因低于配置门槛：CPU 4.044% / 5.0%，allocation 不可用 / 15.0%
+
+归因证据：
+
+- Tool: `Instruments Time Profiler`
+- Decoder allocator CPU: `4.044%`
+- Decoder allocator allocation: `n/a`
 
 门禁要求每个必选媒体至少完成清单指定的轮数、帧数和 checksum 稳定、释放后
 `inFlight=0`，并提供 allocator 归因数据。仅有 wall time/RSS 对比不能证明

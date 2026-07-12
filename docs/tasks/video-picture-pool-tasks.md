@@ -264,8 +264,9 @@ ctest --test-dir build --output-on-failure
 2026-07-12 的 H.264 1080p24、HEVC 4K24 吞吐 benchmark 和 HEVC Main10 4K60 实时
 benchmark 已完成数据门禁，结果为 `CLOSED`。4K60 baseline/current 各 5 轮、每轮 600
 帧均无 late drop，当前平均呈现延迟中位数为 `1.263 ms`；但 direct-output 路径 pool
-acquire 仍为 0，且缺少 allocator 归因。在达到 CPU 5% 或 allocation 15% 的门槛之前，
-不启动 F1。
+acquire 仍为 0。3 轮 Time Profiler 的直接 allocator/buffer 符号 CPU 中位数为
+`0.054%`，包含全部 malloc/memset/bzero 的保守上界最大值为 `4.044%`，低于 5%；
+Allocations 占比不可用。在 CPU 达到 5% 或 allocation 达到 15% 的门槛之前，不启动 F1。
 
 ### F1. 技术验证
 
