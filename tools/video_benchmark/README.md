@@ -57,10 +57,28 @@ python3 tools/video_benchmark.py run \
 
 ## 门禁
 
+先对当前 4K60 runner 执行 3 轮 Time Profiler。工具会验证每轮确实呈现 600 帧，导出
+采样 XML，并把 FFmpeg allocator 直接符号占比和保守 CPU 上界写入 profile JSON：
+
+```bash
+python3 tools/video_allocator_profile.py record-time \
+  --runner build-release/tools/video_benchmark/MediaSdkRealtimeVideoBenchmark \
+  --input benchmark_media/bbb-4k60-hevc-main10.mp4 \
+  --output-dir benchmark_artifacts/profiles/current-time-3run \
+  --output docs/performance/video-picture-pool-allocator-profile.json \
+  --label current-time-profile --runs 3
+```
+
+保守上界将所有 FFmpeg allocator/buffer 直接符号、所有 `libsystem_malloc.dylib` 样本以及
+所有 `memset`/`bzero` 样本都归入 decoder allocator，并采用多轮最大值。该分类口径
+有意高估，并通过三轮最大值降低采样偶然低估的风险；Allocations 数据不可用时必须写为
+`null`，不能伪装成 0%。
+
 ```bash
 python3 tools/video_benchmark.py compare \
   --baseline-dir benchmark_artifacts/baseline \
   --current-dir benchmark_artifacts/current \
+  --allocation-profile docs/performance/video-picture-pool-allocator-profile.json \
   --output-json benchmark_artifacts/f1-gate.json \
   --output-markdown docs/performance/video-picture-pool-benchmark-results.md
 ```
@@ -77,10 +95,11 @@ allocator profile JSON 示例：
 
 ```json
 {
-  "tool": "Instruments Allocations + Time Profiler",
-  "decoder_allocator_cpu_percent": 6.2,
-  "decoder_allocator_allocation_percent": 18.4,
-  "evidence": "artifact/path-or-run-id"
+  "tool": "Instruments Time Profiler",
+  "decoder_allocator_cpu_percent": 4.04,
+  "decoder_allocator_cpu_percent_semantics": "conservative_upper_bound_max",
+  "decoder_allocator_allocation_percent": null,
+  "decoder_allocator_allocation_percent_semantics": "unavailable"
 }
 ```
 

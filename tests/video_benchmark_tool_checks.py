@@ -9,6 +9,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 TOOL = ROOT / "tools" / "video_benchmark.py"
+PROFILE_TOOL = ROOT / "tools" / "video_allocator_profile.py"
 
 
 def write_json(path: Path, value: dict) -> None:
@@ -130,6 +131,15 @@ def main() -> None:
         assert opened["decision"] == "OPEN"
         assert opened["start_f1"]
 
+        write_json(profile, {
+            "tool": "test",
+            "decoder_allocator_cpu_percent": 4.0,
+            "decoder_allocator_allocation_percent": None,
+        })
+        below_threshold = run_compare(root, profile)
+        assert below_threshold["decision"] == "CLOSED"
+        assert any("allocation 不可用" in reason for reason in below_threshold["reasons"])
+
         for run in ("run-01.json", "run-02.json"):
             path = root / "current" / "realtime" / run
             truncated = json.loads(path.read_text(encoding="utf-8"))
@@ -138,6 +148,28 @@ def main() -> None:
         incomplete = run_compare(root, profile)
         assert incomplete["decision"] == "CLOSED"
         assert any("要求 600 帧" in reason for reason in incomplete["reasons"])
+
+        time_profile = root / "time-profile.xml"
+        time_profile.write_text("""<?xml version="1.0"?>
+<trace-query-result>
+  <row><weight>100</weight><backtrace><frame name="decode"/></backtrace></row>
+  <row><weight>10</weight><backtrace><frame name="av_malloc"/></backtrace></row>
+  <row><weight>5</weight><backtrace><frame name="malloc"><binary name="libsystem_malloc.dylib"/></frame></backtrace></row>
+  <row><weight>5</weight><backtrace><frame name="_platform_memset"/></backtrace></row>
+</trace-query-result>
+""", encoding="utf-8")
+        generated_profile = root / "generated-profile.json"
+        subprocess.run([
+            sys.executable,
+            str(PROFILE_TOOL),
+            "analyze-time",
+            "--time-profile-xml", str(time_profile),
+            "--output", str(generated_profile),
+        ], check=True, capture_output=True, text=True)
+        profile_result = json.loads(generated_profile.read_text(encoding="utf-8"))
+        assert abs(profile_result["decoder_allocator_cpu_percent"] - 20 / 120 * 100) < 1e-9
+        assert profile_result["decoder_allocator_allocation_percent"] is None
+        assert profile_result["time_profile"]["runs"][0]["direct_allocator_sample_weight_ns"] == 10
 
 
 if __name__ == "__main__":

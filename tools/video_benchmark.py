@@ -311,16 +311,26 @@ def compare_suites(args: argparse.Namespace) -> None:
         }
 
     allocation_profile = load_json(args.allocation_profile) if args.allocation_profile else None
-    profile_cpu = float(allocation_profile.get("decoder_allocator_cpu_percent", 0.0)) if allocation_profile else 0.0
-    profile_alloc = float(allocation_profile.get("decoder_allocator_allocation_percent", 0.0)) if allocation_profile else 0.0
-    profile_passes = profile_cpu >= args.minimum_allocator_cpu_percent or profile_alloc >= args.minimum_allocator_allocation_percent
+    profile_cpu_value = allocation_profile.get("decoder_allocator_cpu_percent") if allocation_profile else None
+    profile_alloc_value = allocation_profile.get("decoder_allocator_allocation_percent") if allocation_profile else None
+    profile_cpu = float(profile_cpu_value) if profile_cpu_value is not None else None
+    profile_alloc = float(profile_alloc_value) if profile_alloc_value is not None else None
+    profile_passes = (
+        profile_cpu is not None and profile_cpu >= args.minimum_allocator_cpu_percent
+    ) or (
+        profile_alloc is not None and profile_alloc >= args.minimum_allocator_allocation_percent
+    )
 
     reasons = list(coverage_errors)
     if allocation_profile is None:
         reasons.append("未提供 decoder allocator 的 Allocations/Time Profiler 归因报告")
     elif not profile_passes:
+        cpu_description = "不可用" if profile_cpu is None else f"{profile_cpu:.3f}%"
+        alloc_description = "不可用" if profile_alloc is None else f"{profile_alloc:.3f}%"
         reasons.append(
-            "decoder allocator 的 CPU/分配归因低于配置门槛"
+            "decoder allocator 归因低于配置门槛："
+            f"CPU {cpu_description} / {args.minimum_allocator_cpu_percent:.1f}%，"
+            f"allocation {alloc_description} / {args.minimum_allocator_allocation_percent:.1f}%"
         )
     start_f1 = not coverage_errors and allocation_profile is not None and profile_passes
     decision = "OPEN" if start_f1 else "CLOSED"
@@ -354,6 +364,17 @@ def compare_suites(args: argparse.Namespace) -> None:
         lines.append("")
         lines.extend(f"- {reason}" for reason in reasons)
         lines.append("")
+    if allocation_profile is not None:
+        cpu_description = "n/a" if profile_cpu is None else f"{profile_cpu:.3f}%"
+        alloc_description = "n/a" if profile_alloc is None else f"{profile_alloc:.3f}%"
+        lines.extend([
+            "归因证据：",
+            "",
+            f"- Tool: `{allocation_profile.get('tool', 'unknown')}`",
+            f"- Decoder allocator CPU: `{cpu_description}`",
+            f"- Decoder allocator allocation: `{alloc_description}`",
+            "",
+        ])
     lines.extend([
         "门禁要求每个必选媒体至少完成清单指定的轮数、帧数和 checksum 稳定、释放后",
         "`inFlight=0`，并提供 allocator 归因数据。仅有 wall time/RSS 对比不能证明",
