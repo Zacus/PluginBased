@@ -261,6 +261,9 @@ ctest --test-dir build --output-on-failure
 该里程碑不是基础对象池上线的必要条件。只有里程碑 E 的数据表明软件解码器像素分配
 仍是主要瓶颈时才启动。
 
+2026-07-12 的 H.264 1080p/HEVC 4K Release benchmark 已完成数据门禁，结果为
+`CLOSED`。在补充 allocator 归因并达到 CPU 5% 或 allocation 15% 之前，不启动 F1。
+
 ### F1. 技术验证
 
 工作项：

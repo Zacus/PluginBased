@@ -62,12 +62,22 @@ ctest --test-dir build \
 
 这些结果证明了分配行为变化，但不等同于端到端性能提升结论。
 
-## 未执行的手工验证
+## 真实媒体 benchmark
 
-当前执行环境没有固定的 1080p/4K 性能媒体、可交互窗口流程和可复现的 GPU/系统负载，
-因此未声明以下项目已验证：
+已增加 `tools/video_benchmark.py`、独立 C++ runner 和固定媒体 manifest，并在同一台
+macOS arm64 机器上对 `410ce6b` 与 `e01d7cf` 的 Release software decode 各执行 5 轮：
 
-- 真实 1080p/4K 长时间播放的 RSS、CPU、decode latency 和 drop count 对比；
+- H.264 1080p24：wall `+1.50%`、CPU `+0.07%`、RSS `+0.05%`；
+- HEVC 4K24：wall `-0.24%`、CPU `+0.54%`、RSS `+0.04%`；
+- 每轮测量 240 个视频帧，baseline/current 的帧数和 checksum 一致；
+- 两组均为 software decoder `yuv420p` 直出，pool acquire 为 0，符合零拷贝旁路设计。
+
+完整环境指纹、媒体 SHA-256、统计 JSON 和复现命令见
+`docs/performance/video-picture-pool-benchmark-results.md`。
+
+仍未执行以下 UI/GPU 手工验证：
+
+- 真实窗口播放的 GPU present latency、系统负载和 drop count 对比；
 - VideoToolbox 到真实 Metal texture 的人工画面检查；
 - 连续拖动 seek、切换 Space、窗口隐藏/恢复的视觉检查；
 - native presenter failure 后真实媒体 CPU fallback 的画面连续性。
@@ -79,9 +89,10 @@ ctest --test-dir build \
 
 ## Decoder Direct Rendering 门禁
 
-当前没有数据证明 software decoder 像素分配是剩余主要瓶颈。基础实现已经消除 SDK
-格式转换路径预热后的逐帧像素分配，同时保留 decoder 直出零拷贝。因此不启动
-`AVCodecContext::get_buffer2` 原型和正式实现，里程碑 F 保持关闭。
+真实媒体对比没有观察到可归因于 decoder allocator 的 wall/CPU/RSS 改善或退化，且当前
+没有 Instruments Allocations/Time Profiler 证据证明 decoder allocator 达到 CPU 5% 或
+allocation 15% 的启动门槛。因此不启动 `AVCodecContext::get_buffer2` 原型和正式实现，
+里程碑 F 保持关闭。
 
 只有在固定媒体基准显示 decoder allocator 对 latency、CPU 或内存抖动有可重复显著影响
 时，才重新开启 F1，并为 codec alignment、frame threading、硬件回调和 fallback 单独

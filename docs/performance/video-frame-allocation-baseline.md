@@ -45,6 +45,6 @@
 - `DecodePerformanceStats` 中 acquire/reuse/allocation/transient 是统计对象重置后的区间增量；
 - high-watermark 是当前 PoolState 生命周期内观察到的累计峰值；
 - retained/in-flight 是生成 snapshot 时的瞬时 gauge；
-- runtime diagnostics 接受 core 帧携带的累计 snapshot，计数与峰值取已接受帧中的最大值，
-  gauge 使用最近一个已接受视频帧的值；
+- `DecodeFrameMetadata` 不携带 pool snapshot；周期 report 在解码线程采样累计计数，
+  session 按需从 core 查询 retained/in-flight gauge 并与 runtime diagnostics 合并；
 - PlayPlugin 只有观察到 pool 活动后才输出 pool 日志，audio-only 不输出全零 pool 行。
