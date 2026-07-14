@@ -12,6 +12,7 @@
       "name": "ffmpeg",
       "features": [
         "avcodec",
+        "avfilter",
         "avformat",
         "swresample",
         "swscale"

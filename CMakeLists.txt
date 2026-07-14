@@ -23,6 +23,7 @@ find_package(PkgConfig REQUIRED)
 
 pkg_check_modules(AVFORMAT   REQUIRED IMPORTED_TARGET libavformat)
 pkg_check_modules(AVCODEC    REQUIRED IMPORTED_TARGET libavcodec)
+pkg_check_modules(AVFILTER   REQUIRED IMPORTED_TARGET libavfilter)
 pkg_check_modules(AVUTIL     REQUIRED IMPORTED_TARGET libavutil)
 pkg_check_modules(SWSCALE    REQUIRED IMPORTED_TARGET libswscale)
 pkg_check_modules(SWRESAMPLE REQUIRED IMPORTED_TARGET libswresample)
@@ -35,6 +36,7 @@ if(APPLE)
     foreach(_ffmpeg_target
             PkgConfig::AVFORMAT
             PkgConfig::AVCODEC
+            PkgConfig::AVFILTER
             PkgConfig::AVUTIL
             PkgConfig::SWSCALE
             PkgConfig::SWRESAMPLE)
@@ -51,6 +53,12 @@ target_link_libraries(FFmpeg::all INTERFACE
     PkgConfig::AVUTIL
     PkgConfig::SWSCALE
     PkgConfig::SWRESAMPLE
+)
+
+add_library(FFmpeg::avfilter INTERFACE IMPORTED)
+target_link_libraries(FFmpeg::avfilter INTERFACE
+    PkgConfig::AVFILTER
+    PkgConfig::AVUTIL
 )
 
 message(STATUS "FFmpeg avformat : ${AVFORMAT_VERSION}")
@@ -95,6 +103,7 @@ add_subdirectory(plugin)
 add_subdirectory(core)
 add_subdirectory(sdk/media_core)
 add_subdirectory(sdk/media_playback_runtime)
+add_subdirectory(sdk/media_audio_ffmpeg)
 add_subdirectory(sdk/media_playback_session)
 add_subdirectory(tools/video_benchmark)
 if(APPLE)

@@ -17,6 +17,8 @@ FORBIDDEN_RUNTIME_TOKENS = (
     "#include <QRhi",
     "#include <QAudio",
     "CoreAudioAudioOutput",
+    "libavfilter",
+    "AVFilter",
 )
 
 FORBIDDEN_PLATFORM_AUDIO_QUEUE_TOKENS = (
@@ -87,7 +89,7 @@ def main() -> None:
     assert_contains(runtime_cmake, "media_sdk::core", RUNTIME / "CMakeLists.txt")
 
     runtime_include = RUNTIME / "include" / "media_sdk" / "runtime"
-    for header_name in ("AudioOutput.h", "VideoPresenter.h", "RuntimeTypes.h"):
+    for header_name in ("AudioOutput.h", "AudioTempoProcessor.h", "VideoPresenter.h", "RuntimeTypes.h"):
         header = runtime_include / header_name
         if not header.exists():
             raise AssertionError(f"{header} must exist")
