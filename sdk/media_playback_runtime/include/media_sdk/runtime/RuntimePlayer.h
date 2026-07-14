@@ -2,6 +2,7 @@
 
 #include "media_sdk/Result.h"
 #include "media_sdk/runtime/AudioOutput.h"
+#include "media_sdk/runtime/AudioTempoProcessor.h"
 #include "media_sdk/runtime/PlaybackRate.h"
 #include "media_sdk/runtime/RuntimeTypes.h"
 #include "media_sdk/runtime/VideoPresenter.h"
@@ -42,6 +43,7 @@ struct RuntimePlayerDependencies {
     IAudioOutput* audioOutput = nullptr;
     IVideoPresenter* videoPresenter = nullptr;
     IRuntimePlayerEvents* events = nullptr;
+    IAudioTempoProcessor* audioTempoProcessor = nullptr;
 };
 
 class IRuntimePlayerEvents {

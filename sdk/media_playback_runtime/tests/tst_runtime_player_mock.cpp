@@ -44,6 +44,7 @@ public:
         lastWriteGeneration = buffer.generation;
         lastWritePlaybackRate = buffer.playbackRate;
         writePts.push_back(buffer.pts);
+        writeSizes.push_back(buffer.bytes.size());
         if (clockFromWrites) {
             if (firstWriteAfterFlush || !snapshot.valid || snapshot.generation != buffer.generation) {
                 snapshot.position = buffer.pts;
@@ -114,6 +115,12 @@ public:
         snapshot.valid = true;
     }
 
+    void setQueuedDuration(std::chrono::microseconds duration)
+    {
+        std::lock_guard lock(mutex);
+        snapshot.queuedDuration = duration;
+    }
+
     void blockAudioWrites()
     {
         std::lock_guard lock(mutex);
@@ -170,6 +177,7 @@ public:
     std::size_t writtenBytes = 0;
     std::vector<std::byte> lastWrittenBytes;
     std::vector<std::chrono::microseconds> writePts;
+    std::vector<std::size_t> writeSizes;
     double lastWritePlaybackRate = 1.0;
     std::chrono::microseconds lastWritePts { 0 };
     media_sdk::runtime::Generation lastWriteGeneration = 0;
@@ -180,6 +188,110 @@ public:
     bool clockFromWrites = false;
     bool resetClockToZeroOnFlush = false;
     bool firstWriteAfterFlush = false;
+};
+
+class MockAudioTempoProcessor final : public media_sdk::runtime::IAudioTempoProcessor {
+public:
+    enum class ProcessMode {
+        PassThrough,
+        NoOutput,
+        SplitOutput,
+        Fail
+    };
+
+    media_sdk::Result<void> configure(
+        const media_sdk::runtime::AudioFormat& format,
+        double playbackRate) override
+    {
+        ++configureCount;
+        configuredFormat = format;
+        configuredRate = playbackRate;
+        if (failConfigure)
+            return media_sdk::Result<void>::failure(error("tempo configure failed"));
+        configured = true;
+        return media_sdk::Result<void>::success();
+    }
+
+    media_sdk::Result<media_sdk::runtime::AudioTempoOutput> process(
+        media_sdk::runtime::AudioBufferView input) override
+    {
+        ++processCount;
+        lastInputGeneration = input.generation;
+        lastInputRate = input.playbackRate;
+        if (!configured || mode == ProcessMode::Fail) {
+            return media_sdk::Result<media_sdk::runtime::AudioTempoOutput>::failure(
+                error("tempo process failed"));
+        }
+        if (mode == ProcessMode::NoOutput) {
+            return media_sdk::Result<media_sdk::runtime::AudioTempoOutput>::success({});
+        }
+
+        media_sdk::runtime::AudioTempoOutput output;
+        if (mode == ProcessMode::SplitOutput) {
+            const auto split = input.bytes.size() / 2;
+            output.buffers.push_back({
+                .bytes = std::vector<std::byte>(input.bytes.begin(), input.bytes.begin() + split),
+                .pts = input.pts,
+            });
+            output.buffers.push_back({
+                .bytes = std::vector<std::byte>(input.bytes.begin() + split, input.bytes.end()),
+                .pts = input.pts + 1ms,
+            });
+        } else {
+            output.buffers.push_back({
+                .bytes = std::vector<std::byte>(input.bytes.begin(), input.bytes.end()),
+                .pts = input.pts,
+            });
+        }
+        return media_sdk::Result<media_sdk::runtime::AudioTempoOutput>::success(std::move(output));
+    }
+
+    media_sdk::Result<media_sdk::runtime::AudioTempoOutput> drain() override
+    {
+        ++drainCount;
+        if (failDrain) {
+            return media_sdk::Result<media_sdk::runtime::AudioTempoOutput>::failure(
+                error("tempo drain failed"));
+        }
+        media_sdk::runtime::AudioTempoOutput output;
+        if (!drainBytes.empty()) {
+            output.buffers.push_back({
+                .bytes = drainBytes,
+                .pts = drainPts,
+            });
+        }
+        return media_sdk::Result<media_sdk::runtime::AudioTempoOutput>::success(std::move(output));
+    }
+
+    void reset() noexcept override
+    {
+        ++resetCount;
+        configured = false;
+    }
+
+    static media_sdk::MediaError error(const char* message)
+    {
+        return {
+            .code = media_sdk::MediaErrorCode::DecodeFailed,
+            .message = message,
+            .detail = {},
+        };
+    }
+
+    ProcessMode mode = ProcessMode::PassThrough;
+    media_sdk::runtime::AudioFormat configuredFormat {};
+    std::vector<std::byte> drainBytes;
+    std::chrono::microseconds drainPts { 0 };
+    media_sdk::runtime::Generation lastInputGeneration = 0;
+    double configuredRate = 1.0;
+    double lastInputRate = 1.0;
+    std::atomic_int configureCount = 0;
+    std::atomic_int processCount = 0;
+    std::atomic_int drainCount = 0;
+    std::atomic_int resetCount = 0;
+    bool configured = false;
+    bool failConfigure = false;
+    bool failDrain = false;
 };
 
 class MockPresenter final : public media_sdk::runtime::IVideoPresenter {
@@ -548,6 +660,23 @@ media_sdk::runtime::RuntimePlayer makePlayer(
 media_sdk::runtime::RuntimePlayer makePlayer(
     MockAudioOutput& audio,
     MockPresenter& presenter,
+    MockAudioTempoProcessor& tempo,
+    media_sdk::runtime::RuntimePlayerConfig config,
+    MockRuntimeEvents* events = nullptr)
+{
+    return media_sdk::runtime::RuntimePlayer(
+        config,
+        {
+            .audioOutput = &audio,
+            .videoPresenter = &presenter,
+            .events = events,
+            .audioTempoProcessor = &tempo,
+        });
+}
+
+media_sdk::runtime::RuntimePlayer makePlayer(
+    MockAudioOutput& audio,
+    MockPresenter& presenter,
     MockRuntimeEvents& events)
 {
     return media_sdk::runtime::RuntimePlayer(
@@ -657,6 +786,32 @@ void openRejectsInvalidPlaybackRateBeforeOpeningOutputs()
     assert(result.error().code == media_sdk::MediaErrorCode::InvalidArgument);
     assert(audio.openCount == 0);
     assert(presenter.clearCount == 0);
+}
+
+void openRejectsNonOneAudioRateWithoutTempoProcessor()
+{
+    MockAudioOutput audio;
+    MockPresenter presenter;
+    media_sdk::runtime::RuntimePlayerConfig config;
+    config.playbackRate = 1.5;
+    auto player = makePlayer(audio, presenter, config);
+
+    const auto result = player.open();
+    assert(!result.ok());
+    assert(result.error().code == media_sdk::MediaErrorCode::UnsupportedFormat);
+    assert(audio.openCount == 0);
+}
+
+void videoOnlyRateDoesNotRequireTempoProcessor()
+{
+    MockAudioOutput audio;
+    MockPresenter presenter;
+    media_sdk::runtime::RuntimePlayerConfig config;
+    config.audioClockEnabled = false;
+    config.playbackRate = 2.0;
+    auto player = makePlayer(audio, presenter, config);
+
+    assert(player.open().ok());
 }
 
 void timelineTracksSeekGeneration()
@@ -841,14 +996,96 @@ void audioWritesCarryConfiguredPlaybackRate()
 {
     MockAudioOutput audio;
     MockPresenter presenter;
+    MockAudioTempoProcessor tempo;
     media_sdk::runtime::RuntimePlayerConfig config;
     config.playbackRate = 1.25;
-    auto player = makePlayer(audio, presenter, config);
+    auto player = makePlayer(audio, presenter, tempo, config);
     assert(player.open().ok());
 
     discardFramePushResult(player.enqueueAudio(runtimeAudio(1, 1, 42ms)));
     assert(waitUntil([&audio]() { return audio.writeCount == 1; }));
     assert(audio.lastWritePlaybackRate == 1.25);
+    assert(tempo.configureCount == 1);
+    assert(tempo.processCount == 1);
+    assert(player.diagnostics().playbackRate == 1.25);
+}
+
+void tempoProcessorSupportsZeroAndMultipleOutputBuffers()
+{
+    MockAudioOutput audio;
+    MockPresenter presenter;
+    MockAudioTempoProcessor tempo;
+    media_sdk::runtime::RuntimePlayerConfig config;
+    config.playbackRate = 1.5;
+    auto player = makePlayer(audio, presenter, tempo, config);
+    assert(player.open().ok());
+
+    tempo.mode = MockAudioTempoProcessor::ProcessMode::NoOutput;
+    discardFramePushResult(player.enqueueAudio(runtimeAudio(1, 1, 10ms)));
+    assert(waitUntil([&tempo]() { return tempo.processCount == 1; }));
+    assert(audio.writeCount == 0);
+
+    tempo.mode = MockAudioTempoProcessor::ProcessMode::SplitOutput;
+    discardFramePushResult(player.enqueueAudio(runtimeAudio(1, 1, 20ms)));
+    assert(waitUntil([&audio]() { return audio.writeCount == 2; }));
+    const auto diagnostics = player.diagnostics();
+    assert(diagnostics.audioTempoInputSamples == 32);
+    assert(diagnostics.audioTempoOutputSamples == 16);
+    assert(diagnostics.audioWritten == 2);
+}
+
+void tempoFailurePausesUntilSeekRebuildsGeneration()
+{
+    MockAudioOutput audio;
+    MockPresenter presenter;
+    MockAudioTempoProcessor tempo;
+    MockRuntimeEvents events;
+    media_sdk::runtime::RuntimePlayerConfig config;
+    config.playbackRate = 1.5;
+    auto player = makePlayer(audio, presenter, tempo, config, &events);
+    assert(player.open().ok());
+
+    tempo.mode = MockAudioTempoProcessor::ProcessMode::Fail;
+    discardFramePushResult(player.enqueueAudio(runtimeAudio(1, 1, 10ms)));
+    assert(waitUntil([&events]() { return events.errorCount == 1; }));
+    assert(audio.pauseCount == 1);
+    assert(player.diagnostics().audioTempoFailureCount == 1);
+
+    const auto resumeCount = audio.resumeCount.load();
+    player.resume();
+    assert(audio.resumeCount == resumeCount);
+
+    tempo.mode = MockAudioTempoProcessor::ProcessMode::PassThrough;
+    player.seek(100ms);
+    player.resume();
+    discardFramePushResult(player.enqueueAudio(runtimeAudio(1, 2, 100ms)));
+    assert(waitUntil([&audio]() { return audio.writeCount == 1; }));
+    assert(tempo.lastInputGeneration == 2);
+    assert(tempo.configureCount == 2);
+    assert(player.diagnostics().audioTempoResetCount == 1);
+}
+
+void seekGapSilenceUsesPlaybackDuration()
+{
+    MockAudioOutput audio;
+    audio.clockFromWrites = true;
+    audio.resetClockToZeroOnFlush = true;
+    MockPresenter presenter;
+    MockAudioTempoProcessor tempo;
+    media_sdk::runtime::RuntimePlayerConfig config;
+    config.playbackRate = 2.0;
+    auto player = makePlayer(audio, presenter, tempo, config);
+    assert(player.open().ok());
+
+    player.seek(100ms);
+    discardFramePushResult(player.enqueueAudio(runtimeAudio(1, 2, 120ms)));
+    assert(waitUntil([&audio]() { return audio.writeCount == 2; }));
+
+    std::lock_guard lock(audio.mutex);
+    assert(audio.writePts.size() == 2);
+    assert(audio.writePts.front() == 100ms);
+    assert(audio.writeSizes.front() == 480 * 2 * sizeof(float));
+    assert(audio.writePts.back() == 120ms);
 }
 
 void audioControlsApplyGainAndMuteBeforeAudioWrite()
@@ -1334,6 +1571,58 @@ void eofCompletesOnlyAfterAudioAndVideoDrain()
     }
 }
 
+void tempoEofDrainsFilterAndWaitsForAudioDeviceQueue()
+{
+    MockAudioOutput audio;
+    audio.setClock(10ms, 1);
+    MockPresenter presenter;
+    MockAudioTempoProcessor tempo;
+    MockRuntimeEvents events;
+    media_sdk::runtime::RuntimePlayerConfig config;
+    config.playbackRate = 1.5;
+    tempo.mode = MockAudioTempoProcessor::ProcessMode::NoOutput;
+    tempo.drainBytes = std::vector<std::byte>(128);
+    tempo.drainPts = 10ms;
+    auto player = makePlayer(audio, presenter, tempo, config, &events);
+    assert(player.open().ok());
+
+    discardFramePushResult(player.enqueueAudio(runtimeAudio(1, 1, 10ms)));
+    discardFramePushResult(player.enqueueVideo(runtimeVideo(1, 1, 10ms)));
+    assert(waitUntil([&tempo]() { return tempo.processCount == 1; }));
+    assert(waitUntil([&presenter]() { return presenter.presentCount == 1; }));
+
+    audio.setQueuedDuration(20ms);
+    player.enqueueEndOfStream(1, 1);
+    assert(waitUntil([&tempo]() { return tempo.drainCount == 1; }));
+    assert(waitUntil([&audio]() { return audio.writeCount == 1; }));
+    std::this_thread::sleep_for(10ms);
+    assert(events.eofPresentedCount == 0);
+
+    audio.setQueuedDuration(0ms);
+    assert(waitUntil([&events]() { return events.eofPresentedCount == 1; }));
+    const auto diagnostics = player.diagnostics();
+    assert(diagnostics.audioTempoDrainCount == 1);
+    assert(diagnostics.audioTempoOutputSamples == 16);
+}
+
+void tempoDrainFailureReportsErrorWithoutCompletingEof()
+{
+    MockAudioOutput audio;
+    MockPresenter presenter;
+    MockAudioTempoProcessor tempo;
+    MockRuntimeEvents events;
+    media_sdk::runtime::RuntimePlayerConfig config;
+    config.playbackRate = 1.5;
+    tempo.failDrain = true;
+    auto player = makePlayer(audio, presenter, tempo, config, &events);
+    assert(player.open().ok());
+
+    player.enqueueEndOfStream(1, 1);
+    assert(waitUntil([&events]() { return events.errorCount == 1; }));
+    assert(events.eofPresentedCount == 0);
+    assert(player.diagnostics().audioTempoFailureCount == 1);
+}
+
 void eofBackpressureIsReportedInDiagnostics()
 {
     MockAudioOutput audio;
@@ -1756,6 +2045,8 @@ int main()
     openStartsNewSessionAndResetsQueues();
     openFailsAndClosesAudioWhenResumeFails();
     openRejectsInvalidPlaybackRateBeforeOpeningOutputs();
+    openRejectsNonOneAudioRateWithoutTempoProcessor();
+    videoOnlyRateDoesNotRequireTempoProcessor();
     timelineTracksSeekGeneration();
     seekKeepsLastPresentedFrameUntilTargetFrameArrives();
     seekClockIsAnchoredBeforeFirstAudioArrives();
@@ -1765,6 +2056,9 @@ int main()
     failedResumeKeepsSeekGapClockPaused();
     audioFramesAreWrittenToInjectedAudioOutput();
     audioWritesCarryConfiguredPlaybackRate();
+    tempoProcessorSupportsZeroAndMultipleOutputBuffers();
+    tempoFailurePausesUntilSeekRebuildsGeneration();
+    seekGapSilenceUsesPlaybackDuration();
     audioControlsApplyGainAndMuteBeforeAudioWrite();
     audioControlsApplyGainForInt16Audio();
     audioControlsApplyGainForInt32Audio();
@@ -1783,6 +2077,8 @@ int main()
     earlyPresenterFailureBeforeTrackStillRequestsFallback();
     presenterBackpressureSeekCancelsWaitingOldGenerationFrame();
     eofCompletesOnlyAfterAudioAndVideoDrain();
+    tempoEofDrainsFilterAndWaitsForAudioDeviceQueue();
+    tempoDrainFailureReportsErrorWithoutCompletingEof();
     eofBackpressureIsReportedInDiagnostics();
     seekInvalidatesOldGenerationFramesAndCompletions();
     seekReportsAudioFlushFailure();

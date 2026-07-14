@@ -49,6 +49,7 @@ struct RuntimeFramePushResult {
 };
 
 struct RuntimeDiagnostics {
+    double playbackRate = 1.0;
     std::uint64_t nativeDecoded = 0;
     std::uint64_t nativeAccepted = 0;
     std::uint64_t nativePresented = 0;
@@ -66,6 +67,12 @@ struct RuntimeDiagnostics {
     std::uint64_t audioBackpressureCount = 0;
     std::uint64_t audioQueueHighWatermark = 0;
     std::uint64_t audioWritten = 0;
+    std::uint64_t audioTempoInputSamples = 0;
+    std::uint64_t audioTempoOutputSamples = 0;
+    std::uint64_t audioTempoConfigureCount = 0;
+    std::uint64_t audioTempoResetCount = 0;
+    std::uint64_t audioTempoDrainCount = 0;
+    std::uint64_t audioTempoFailureCount = 0;
     std::uint64_t videoQueued = 0;
     std::uint64_t videoBackpressureCount = 0;
     std::uint64_t videoQueueHighWatermark = 0;

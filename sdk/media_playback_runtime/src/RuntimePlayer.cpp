@@ -285,23 +285,51 @@ struct RuntimePlayer::Impl {
                 .detail = {},
             });
         }
+        if (tempoProcessingRequired() && !dependencies.audioTempoProcessor) {
+            return Result<void>::failure({
+                .code = MediaErrorCode::UnsupportedFormat,
+                .message = "RuntimePlayer requires an audio tempo processor for non-1x audio",
+                .detail = {},
+            });
+        }
 
         stop();
 
+        bool tempoConfigured = false;
+        if (dependencies.audioTempoProcessor) {
+            dependencies.audioTempoProcessor->reset();
+            if (tempoProcessingRequired()) {
+                auto tempoResult = dependencies.audioTempoProcessor->configure(
+                    config.audioFormat,
+                    config.playbackRate);
+                if (!tempoResult.ok())
+                    return tempoResult;
+                tempoConfigured = true;
+            }
+        }
+
         auto audioOpen = dependencies.audioOutput->open(config.audioFormat);
-        if (!audioOpen.ok())
+        if (!audioOpen.ok()) {
+            if (dependencies.audioTempoProcessor)
+                dependencies.audioTempoProcessor->reset();
             return audioOpen;
+        }
         auto audioResume = dependencies.audioOutput->resume();
         if (!audioResume.ok()) {
             dependencies.audioOutput->close();
+            if (dependencies.audioTempoProcessor)
+                dependencies.audioTempoProcessor->reset();
             return audioResume;
         }
 
         {
             std::lock_guard lock(m_mutex);
             diagnostics = {};
+            diagnostics.playbackRate = config.playbackRate;
+            diagnostics.audioTempoConfigureCount = tempoConfigured ? 1 : 0;
             sessionId = ++lastSessionId;
             generation = 1;
+            tempoGeneration = tempoConfigured ? generation : 0;
             running = true;
             paused = false;
             fallbackPending = false;
@@ -310,6 +338,7 @@ struct RuntimePlayer::Impl {
             audioEofSeen = false;
             videoEofSeen = false;
             eofNotificationSent = false;
+            audioProcessingFailedGeneration = 0;
             seekClockAnchor.clear();
 
             audioQueue.reset(sessionId, generation);
@@ -441,7 +470,8 @@ struct RuntimePlayer::Impl {
         bool shouldResume = false;
         {
             std::lock_guard lock(m_mutex);
-            if (!running || !paused || fallbackPending)
+            if (!running || !paused || fallbackPending
+                || audioProcessingFailedGeneration == generation)
                 return;
             shouldResume = true;
         }
@@ -530,6 +560,7 @@ struct RuntimePlayer::Impl {
             audioEofSeen = false;
             videoEofSeen = false;
             eofNotificationSent = false;
+            audioProcessingFailedGeneration = 0;
             diagnostics.queueAbortCount += 2;
             presentTracker.clear();
             presentTracker.reset(activeSession, nextGeneration);
@@ -569,6 +600,7 @@ struct RuntimePlayer::Impl {
             pausedSeekPrerollReserved = false;
             seekClockAnchor.clear();
             seekGapClock = {};
+            audioProcessingFailedGeneration = 0;
             generation = 0;
             diagnostics.queueAbortCount += 2;
             shouldStop = true;
@@ -586,6 +618,10 @@ struct RuntimePlayer::Impl {
         dependencies.audioOutput->pause();
         (void)dependencies.audioOutput->flush();
         joinWorkers();
+
+        if (dependencies.audioTempoProcessor)
+            dependencies.audioTempoProcessor->reset();
+        tempoGeneration = 0;
 
         dependencies.audioOutput->close();
         dependencies.videoPresenter->clear();
@@ -667,20 +703,13 @@ struct RuntimePlayer::Impl {
             if (pop == RuntimeFrameQueue<RuntimeAudioFrame>::PopResult::Closed)
                 return;
             if (pop == RuntimeFrameQueue<RuntimeAudioFrame>::PopResult::EndOfStream) {
-                markEof(true, queuedFrame.sessionId, queuedFrame.generation);
+                handleAudioEndOfStream(queuedFrame.sessionId, queuedFrame.generation);
                 continue;
             }
             if (!isCurrent(queuedFrame.sessionId, queuedFrame.generation))
                 continue;
 
             const auto samples = queuedFrame.frame.samples();
-            const auto controls = currentAudioControls();
-            std::vector<std::byte> controlledSamples;
-            std::span<const std::byte> outputSamples = samples;
-            if (controls.muted || controls.volume != 1.0f) {
-                controlledSamples = applyAudioControls(samples, controls, config.audioFormat.sampleFormat);
-                outputSamples = controlledSamples;
-            }
             const auto framePts = queuedFrame.frame.pts();
             const auto frameGeneration = queuedFrame.generation;
             const auto gapDecision = takeSeekAudioGapDecision(
@@ -694,24 +723,249 @@ struct RuntimePlayer::Impl {
                 continue;
             }
 
-            const auto writeResult = dependencies.audioOutput->write({
-                .bytes = outputSamples,
+            if (!tempoProcessingRequired()) {
+                (void)writeAudioSamples(
+                    samples,
+                    framePts,
+                    queuedFrame.sessionId,
+                    frameGeneration,
+                    false);
+                continue;
+            }
+
+            auto prepareResult = prepareTempoProcessor(frameGeneration);
+            if (!prepareResult.ok()) {
+                handleAudioProcessingFailure(
+                    queuedFrame.sessionId,
+                    frameGeneration,
+                    prepareResult.error());
+                continue;
+            }
+
+            {
+                std::lock_guard lock(m_mutex);
+                diagnostics.audioTempoInputSamples += audioSampleFrames(samples);
+            }
+            auto processResult = dependencies.audioTempoProcessor->process({
+                .bytes = samples,
                 .pts = framePts,
                 .generation = frameGeneration,
                 .playbackRate = config.playbackRate,
             });
-            if (writeResult.ok()) {
-                {
-                    std::lock_guard lock(m_mutex);
-                    if (seekGapClock.active
-                        && seekGapClock.sessionId == queuedFrame.sessionId
-                        && seekGapClock.generation == frameGeneration) {
-                        seekGapClock = {};
-                    }
-                    ++diagnostics.audioWritten;
-                }
+            if (!processResult.ok()) {
+                handleAudioProcessingFailure(
+                    queuedFrame.sessionId,
+                    frameGeneration,
+                    processResult.error());
+                continue;
+            }
+            (void)writeTempoOutput(
+                std::move(processResult.value()),
+                queuedFrame.sessionId,
+                frameGeneration);
+        }
+    }
+
+    bool tempoProcessingRequired() const
+    {
+        return config.audioClockEnabled
+            && !playbackRatesEqual(config.playbackRate, kDefaultPlaybackRate);
+    }
+
+    std::uint64_t audioSampleFrames(std::span<const std::byte> samples) const
+    {
+        const auto bytesPerFrame = bytesPerAudioSample(config.audioFormat.sampleFormat)
+            * static_cast<std::size_t>(std::max(config.audioFormat.channels, 0));
+        if (bytesPerFrame == 0)
+            return 0;
+        return static_cast<std::uint64_t>(samples.size() / bytesPerFrame);
+    }
+
+    Result<void> prepareTempoProcessor(Generation targetGeneration)
+    {
+        if (!tempoProcessingRequired())
+            return Result<void>::success();
+        if (!dependencies.audioTempoProcessor) {
+            return Result<void>::failure({
+                .code = MediaErrorCode::UnsupportedFormat,
+                .message = "Audio tempo processor is unavailable",
+                .detail = {},
+            });
+        }
+        if (tempoGeneration == targetGeneration)
+            return Result<void>::success();
+
+        dependencies.audioTempoProcessor->reset();
+        {
+            std::lock_guard lock(m_mutex);
+            ++diagnostics.audioTempoResetCount;
+        }
+        auto result = dependencies.audioTempoProcessor->configure(
+            config.audioFormat,
+            config.playbackRate);
+        if (result.ok()) {
+            tempoGeneration = targetGeneration;
+            std::lock_guard lock(m_mutex);
+            ++diagnostics.audioTempoConfigureCount;
+        }
+        return result;
+    }
+
+    bool writeTempoOutput(AudioTempoOutput output,
+                          SessionId checkedSessionId,
+                          Generation checkedGeneration)
+    {
+        for (const auto& buffer : output.buffers) {
+            if (!writeAudioSamples(
+                    buffer.bytes,
+                    buffer.pts,
+                    checkedSessionId,
+                    checkedGeneration,
+                    true)) {
+                return false;
             }
         }
+        return true;
+    }
+
+    bool writeAudioSamples(std::span<const std::byte> samples,
+                           std::chrono::microseconds pts,
+                           SessionId checkedSessionId,
+                           Generation checkedGeneration,
+                           bool tempoOutput)
+    {
+        if (!isCurrent(checkedSessionId, checkedGeneration))
+            return false;
+
+        const auto controls = currentAudioControls();
+        std::vector<std::byte> controlledSamples;
+        std::span<const std::byte> outputSamples = samples;
+        if (controls.muted || controls.volume != 1.0f) {
+            controlledSamples = applyAudioControls(
+                samples,
+                controls,
+                config.audioFormat.sampleFormat);
+            outputSamples = controlledSamples;
+        }
+
+        const auto writeResult = dependencies.audioOutput->write({
+            .bytes = outputSamples,
+            .pts = pts,
+            .generation = checkedGeneration,
+            .playbackRate = config.playbackRate,
+        });
+        if (!writeResult.ok()) {
+            if (isCurrent(checkedSessionId, checkedGeneration))
+                reportRuntimeError(writeResult.error());
+            return false;
+        }
+
+        std::lock_guard lock(m_mutex);
+        if (!isCurrentLocked(checkedSessionId, checkedGeneration))
+            return false;
+        if (seekGapClock.active
+            && seekGapClock.sessionId == checkedSessionId
+            && seekGapClock.generation == checkedGeneration) {
+            seekGapClock = {};
+        }
+        ++diagnostics.audioWritten;
+        if (tempoOutput)
+            diagnostics.audioTempoOutputSamples += audioSampleFrames(outputSamples);
+        return true;
+    }
+
+    void handleAudioEndOfStream(SessionId checkedSessionId, Generation checkedGeneration)
+    {
+        if (!isCurrent(checkedSessionId, checkedGeneration))
+            return;
+
+        if (tempoProcessingRequired()) {
+            auto prepareResult = prepareTempoProcessor(checkedGeneration);
+            if (!prepareResult.ok()) {
+                handleAudioProcessingFailure(
+                    checkedSessionId,
+                    checkedGeneration,
+                    prepareResult.error());
+                return;
+            }
+
+            auto drainResult = dependencies.audioTempoProcessor->drain();
+            {
+                std::lock_guard lock(m_mutex);
+                ++diagnostics.audioTempoDrainCount;
+            }
+            if (!drainResult.ok()) {
+                handleAudioProcessingFailure(
+                    checkedSessionId,
+                    checkedGeneration,
+                    drainResult.error());
+                return;
+            }
+            if (!writeTempoOutput(
+                    std::move(drainResult.value()),
+                    checkedSessionId,
+                    checkedGeneration)) {
+                return;
+            }
+        }
+
+        if (waitForAudioOutputDrain(checkedSessionId, checkedGeneration))
+            markEof(true, checkedSessionId, checkedGeneration);
+    }
+
+    bool waitForAudioOutputDrain(SessionId checkedSessionId, Generation checkedGeneration)
+    {
+        while (isCurrent(checkedSessionId, checkedGeneration)) {
+            const auto snapshot = dependencies.audioOutput->clock();
+            if (!snapshot.valid || snapshot.generation != checkedGeneration
+                || snapshot.queuedDuration <= std::chrono::microseconds::zero()) {
+                return true;
+            }
+
+            std::unique_lock lock(m_mutex);
+            if (!isCurrentLocked(checkedSessionId, checkedGeneration))
+                return false;
+            if (paused) {
+                m_controlChanged.wait(lock, [this, checkedSessionId, checkedGeneration]() {
+                    return !isCurrentLocked(checkedSessionId, checkedGeneration) || !paused;
+                });
+                continue;
+            }
+            m_controlChanged.wait_for(lock, std::chrono::milliseconds(2));
+        }
+        return false;
+    }
+
+    void handleAudioProcessingFailure(SessionId checkedSessionId,
+                                      Generation checkedGeneration,
+                                      MediaError error)
+    {
+        bool accepted = false;
+        {
+            std::lock_guard lock(m_mutex);
+            if (isCurrentLocked(checkedSessionId, checkedGeneration)) {
+                ++diagnostics.audioTempoFailureCount;
+                audioProcessingFailedGeneration = checkedGeneration;
+                paused = true;
+                pauseSeekGapClockLocked();
+                scheduler.pause();
+                accepted = true;
+            }
+        }
+        if (!accepted)
+            return;
+
+        dependencies.audioOutput->pause();
+        reportRuntimeError(std::move(error));
+        m_controlChanged.notify_all();
+        m_presentCapacityChanged.notify_all();
+
+        std::unique_lock lock(m_mutex);
+        m_controlChanged.wait(lock, [this, checkedSessionId, checkedGeneration]() {
+            return !running
+                || !isCurrentLocked(checkedSessionId, checkedGeneration)
+                || audioProcessingFailedGeneration != checkedGeneration;
+        });
     }
 
     SeekAudioGapDecision takeSeekAudioGapDecision(
@@ -769,7 +1023,9 @@ struct RuntimePlayer::Impl {
                 return true;
 
             const auto waitTime = std::min<std::chrono::microseconds>(
-                seekGapClock.targetAudioPts - position,
+                playbackDurationForMediaDuration(
+                    seekGapClock.targetAudioPts - position,
+                    config.playbackRate),
                 std::chrono::milliseconds(20));
             m_controlChanged.wait_for(lock, waitTime);
         }
@@ -777,18 +1033,24 @@ struct RuntimePlayer::Impl {
 
     bool writeSeekGapSilence(SessionId checkedSessionId, SeekAudioGapDecision decision)
     {
-        constexpr auto kSilenceChunkDuration = std::chrono::milliseconds(20);
+        constexpr auto kSilenceDeviceChunkDuration = std::chrono::milliseconds(20);
         auto remaining = decision.gap;
         auto chunkPts = decision.target;
+        const auto maxMediaChunkDuration = mediaDurationForPlaybackDuration(
+            kSilenceDeviceChunkDuration,
+            config.playbackRate);
 
         while (remaining > std::chrono::microseconds::zero()) {
             if (!waitUntilCanWriteSeekGapSilence(checkedSessionId, decision.generation))
                 return false;
 
-            const auto chunkDuration = std::min<std::chrono::microseconds>(
+            const auto mediaChunkDuration = std::min<std::chrono::microseconds>(
                 remaining,
-                kSilenceChunkDuration);
-            auto silence = makeSilenceBytes(config.audioFormat, chunkDuration);
+                maxMediaChunkDuration);
+            const auto deviceChunkDuration = playbackDurationForMediaDuration(
+                mediaChunkDuration,
+                config.playbackRate);
+            auto silence = makeSilenceBytes(config.audioFormat, deviceChunkDuration);
             if (!silence.ok()) {
                 reportRuntimeError(silence.error());
                 return true;
@@ -810,8 +1072,8 @@ struct RuntimePlayer::Impl {
                 return false;
             }
 
-            remaining -= chunkDuration;
-            chunkPts += chunkDuration;
+            remaining -= mediaChunkDuration;
+            chunkPts += mediaChunkDuration;
         }
         return true;
     }
@@ -908,7 +1170,10 @@ struct RuntimePlayer::Impl {
             return seekGapClock.basePosition;
         const auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(
             now - seekGapClock.baseTime);
-        return std::min(seekGapClock.targetAudioPts, seekGapClock.basePosition + elapsed);
+        return std::min(
+            seekGapClock.targetAudioPts,
+            seekGapClock.basePosition
+                + mediaDurationForPlaybackDuration(elapsed, config.playbackRate));
     }
 
     void pauseSeekGapClockLocked()
@@ -1178,6 +1443,7 @@ struct RuntimePlayer::Impl {
             audioEofSeen = false;
             videoEofSeen = false;
             eofNotificationSent = false;
+            audioProcessingFailedGeneration = 0;
             seekClockAnchor.clear();
             seekGapClock = {};
             presentTracker.clear();
@@ -1344,6 +1610,8 @@ struct RuntimePlayer::Impl {
     SessionId lastSessionId = 0;
     SessionId sessionId = 0;
     Generation generation = 0;
+    Generation tempoGeneration = 0;
+    Generation audioProcessingFailedGeneration = 0;
     bool running = false;
     bool paused = false;
     bool fallbackPending = false;
