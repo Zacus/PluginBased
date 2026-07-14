@@ -100,6 +100,10 @@
         <translation>下一个</translation>
     </message>
     <message>
+        <source>Playback speed</source>
+        <translation>播放速度</translation>
+    </message>
+    <message>
         <source>Unmute</source>
         <translation>取消静音</translation>
     </message>
@@ -114,6 +118,13 @@
     <message>
         <source>Show playlist</source>
         <translation>显示播放列表</translation>
+    </message>
+</context>
+<context>
+    <name>PlayerEngine</name>
+    <message>
+        <source>Playback rate must be between 0.5x and 2.0x</source>
+        <translation>播放速度必须在 0.5x 到 2.0x 之间</translation>
     </message>
 </context>
 </TS>

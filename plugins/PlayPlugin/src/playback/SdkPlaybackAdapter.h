@@ -25,6 +25,9 @@ public:
     [[nodiscard("seek result determines whether adapter should keep pending seek state")]]
     virtual media_sdk::Result<void> seek(std::chrono::milliseconds position,
                                          media_sdk::SeekPlaybackMode mode) = 0;
+    [[nodiscard("rate result determines whether adapter should await confirmation")]]
+    virtual media_sdk::Result<void> setPlaybackRate(double playbackRate) = 0;
+    [[nodiscard]] virtual double playbackRate() const = 0;
     virtual void setAudioControls(media_sdk::runtime::RuntimeAudioControls controls) = 0;
     virtual void notifyNativeRenderingFailed() = 0;
     [[nodiscard("timeline maps SDK generation back to Qt seek serials")]]
@@ -42,9 +45,11 @@ class SdkPlaybackAdapter final : public QObject
 public:
     SdkPlaybackAdapter(media_sdk::runtime::IAudioOutput* audioOutput,
                        media_sdk::runtime::IVideoPresenter* videoPresenter,
+                       media_sdk::runtime::IAudioTempoProcessor* audioTempoProcessor,
                        QObject* parent = nullptr);
     SdkPlaybackAdapter(media_sdk::runtime::IAudioOutput* audioOutput,
                        media_sdk::runtime::IVideoPresenter* videoPresenter,
+                       media_sdk::runtime::IAudioTempoProcessor* audioTempoProcessor,
                        SdkPlaybackSessionFactory sessionFactory,
                        QObject* parent = nullptr);
     ~SdkPlaybackAdapter() override;
@@ -57,6 +62,8 @@ public:
     void notifyNativeRenderingFailed();
     void setVolume(float volume);
     void setMuted(bool muted);
+    void setPlaybackRate(double playbackRate);
+    [[nodiscard]] double playbackRate() const;
 
 signals:
     void mediaInfoReady(qint64 durationMs, int width, int height,
@@ -71,6 +78,7 @@ signals:
     void endOfAudio();
     void endOfVideo();
     void nativeRenderingFailed();
+    void playbackRateChanged(double playbackRate);
 
 private:
     class SessionEventBridge;
@@ -89,6 +97,7 @@ private:
     mutable std::mutex m_mutex;
     media_sdk::runtime::IAudioOutput* m_audioOutput = nullptr;
     media_sdk::runtime::IVideoPresenter* m_videoPresenter = nullptr;
+    media_sdk::runtime::IAudioTempoProcessor* m_audioTempoProcessor = nullptr;
     SdkPlaybackSessionFactory m_sessionFactory;
     std::unique_ptr<ISdkPlaybackSession> m_session;
     std::unique_ptr<SessionEventBridge> m_sessionEventBridge;
@@ -98,4 +107,7 @@ private:
     bool m_paused = false;
     float m_volume = 1.0f;
     bool m_muted = false;
+    double m_confirmedPlaybackRate = media_sdk::runtime::kDefaultPlaybackRate;
+    double m_configuredPlaybackRate = media_sdk::runtime::kDefaultPlaybackRate;
+    bool m_rateChangePending = false;
 };

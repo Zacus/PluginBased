@@ -494,15 +494,31 @@ struct PlaybackSession::Impl final
                 .runtimePlayer = runtimePlayer,
             };
             state = commandState;
-            if (state == PlaybackCommandState::Completed
-                || state == PlaybackCommandState::Error) {
+            if (state == PlaybackCommandState::Completed) {
+                config.runtime.playbackRate = playbackRate;
+            } else if (state == PlaybackCommandState::Error
+                       || !handles.corePlayer
+                       || !handles.runtimePlayer) {
                 config.runtime.playbackRate = playbackRate;
                 return Result<void>::success();
             }
-            if (!handles.corePlayer || !handles.runtimePlayer) {
-                config.runtime.playbackRate = playbackRate;
-                return Result<void>::success();
+        }
+
+        if (state == PlaybackCommandState::Completed) {
+            const auto completedTimeline = handles.runtimePlayer->timeline();
+            const auto coreMetadata = timelineState.coreForRuntimeTimeline(completedTimeline);
+            const auto clock = handles.runtimePlayer->clock();
+            if (dependencies.events && coreMetadata.has_value()) {
+                dependencies.events->onEvent({
+                    .metadata = *coreMetadata,
+                    .payload = PlaybackRateChangedEvent {
+                        .playbackRate = playbackRate,
+                        .position = std::chrono::duration_cast<std::chrono::milliseconds>(
+                            std::max(clock.position, std::chrono::microseconds { 0 })),
+                    },
+                });
             }
+            return Result<void>::success();
         }
 
         const auto clock = handles.runtimePlayer->clock();

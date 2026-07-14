@@ -7,6 +7,8 @@
 #if defined(Q_OS_APPLE)
 #include "media_sdk/platform/macos/CoreAudioAudioOutput.h"
 #endif
+#include "media_sdk/audio/ffmpeg/FfmpegAudioTempoProcessor.h"
+#include "media_sdk/runtime/PlaybackRate.h"
 #include "playback/QtRhiVideoPresenter.h"
 #include "video/FFmpegSurface.h"
 #include "Logger.h"
@@ -80,6 +82,17 @@ void PlaybackPipeline::setMuted(bool muted)
         m_sdkAdapter->setMuted(muted);
 }
 
+void PlaybackPipeline::setPlaybackRate(double playbackRate)
+{
+    createSdkRuntimeChain();
+    if (m_sdkAdapter) {
+        m_sdkAdapter->setPlaybackRate(playbackRate);
+    } else if (media_sdk::runtime::isPlaybackRateSupported(playbackRate)) {
+        m_playbackRate = playbackRate;
+        emit playbackRateChanged(playbackRate);
+    }
+}
+
 void PlaybackPipeline::stopComponents()
 {
     if (m_sdkAdapter)
@@ -107,6 +120,12 @@ void PlaybackPipeline::onSdkNativeRenderingFailed()
     disableNativeVideoRenderingAfterFailure(false);
 }
 
+void PlaybackPipeline::onSdkPlaybackRateChanged(double playbackRate)
+{
+    m_playbackRate = playbackRate;
+    emit playbackRateChanged(playbackRate);
+}
+
 void PlaybackPipeline::disableNativeVideoRenderingAfterFailure(bool notifySdkSession)
 {
     if (!m_nativeVideoRenderingEnabled)
@@ -128,11 +147,14 @@ void PlaybackPipeline::createSdkRuntimeChain()
         return;
 
 #if defined(Q_OS_APPLE)
+    m_audioTempoProcessor =
+        std::make_unique<media_sdk::audio::ffmpeg::FfmpegAudioTempoProcessor>();
     m_sdkAudioOutput = std::make_unique<media_sdk::platform::macos::CoreAudioAudioOutput>();
     m_sdkVideoPresenter = std::make_unique<QtRhiVideoPresenter>(m_surface.data());
     m_sdkAdapter = std::make_unique<SdkPlaybackAdapter>(
         m_sdkAudioOutput.get(),
         m_sdkVideoPresenter.get(),
+        m_audioTempoProcessor.get(),
         this);
     connect(m_sdkAdapter.get(), &SdkPlaybackAdapter::mediaInfoReady,
             this, &PlaybackPipeline::mediaInfoReady);
@@ -150,6 +172,9 @@ void PlaybackPipeline::createSdkRuntimeChain()
             this, &PlaybackPipeline::endOfVideo);
     connect(m_sdkAdapter.get(), &SdkPlaybackAdapter::nativeRenderingFailed,
             this, &PlaybackPipeline::onSdkNativeRenderingFailed);
+    connect(m_sdkAdapter.get(), &SdkPlaybackAdapter::playbackRateChanged,
+            this, &PlaybackPipeline::onSdkPlaybackRateChanged);
+    m_sdkAdapter->setPlaybackRate(m_playbackRate);
     connect(m_surface.data(), &FFmpegSurface::nativeRenderingFailed,
             this, &PlaybackPipeline::onSurfaceNativeRenderingFailed,
             Qt::UniqueConnection);
@@ -167,6 +192,7 @@ void PlaybackPipeline::destroySdkRuntimeChain()
 #if defined(Q_OS_APPLE)
     m_sdkAudioOutput.reset();
 #endif
+    m_audioTempoProcessor.reset();
 }
 
 void PlaybackPipeline::updateNativeVideoRenderingEnabled()

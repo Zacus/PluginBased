@@ -17,6 +17,10 @@ namespace media_sdk::runtime {
 class IAudioOutput;
 }
 
+namespace media_sdk::audio::ffmpeg {
+class FfmpegAudioTempoProcessor;
+}
+
 namespace media_sdk::platform::macos {
 class CoreAudioAudioOutput;
 }
@@ -42,6 +46,7 @@ public:
     void setPaused(bool paused);
     void setVolume(float volume);
     void setMuted(bool muted);
+    void setPlaybackRate(double playbackRate);
     void stopComponents();
     void seek(qint64 positionMs, int generation, bool resumeAfterSeek = false);
 
@@ -60,11 +65,13 @@ signals:
     void endOfVideo();
     void seekCompleted(int generation, int serial);
     void nativeRenderingFailed();
+    void playbackRateChanged(double playbackRate);
 
 private slots:
     void onDecoderSeekCompleted(int generation, int serial);
     void onSurfaceNativeRenderingFailed();
     void onSdkNativeRenderingFailed();
+    void onSdkPlaybackRateChanged(double playbackRate);
 
 private:
     void createSdkRuntimeChain();
@@ -72,12 +79,14 @@ private:
     void updateNativeVideoRenderingEnabled();
     void disableNativeVideoRenderingAfterFailure(bool notifySdkSession);
 
-    std::unique_ptr<SdkPlaybackAdapter> m_sdkAdapter;
-    std::unique_ptr<QtRhiVideoPresenter> m_sdkVideoPresenter;
+    std::unique_ptr<media_sdk::audio::ffmpeg::FfmpegAudioTempoProcessor> m_audioTempoProcessor;
 #if defined(Q_OS_APPLE)
     std::unique_ptr<media_sdk::platform::macos::CoreAudioAudioOutput> m_sdkAudioOutput;
 #endif
+    std::unique_ptr<QtRhiVideoPresenter> m_sdkVideoPresenter;
+    std::unique_ptr<SdkPlaybackAdapter> m_sdkAdapter;
 
     QPointer<FFmpegSurface> m_surface;
     bool m_nativeVideoRenderingEnabled = false;
+    double m_playbackRate = 1.0;
 };

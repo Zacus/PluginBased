@@ -1,6 +1,7 @@
 #include "playback/SdkPlaybackAdapter.h"
 
 #include "Logger.h"
+#include "media_sdk/runtime/PlaybackRate.h"
 
 #include <QMetaObject>
 #include <QThread>
@@ -103,6 +104,16 @@ public:
         return m_session.seek(position, mode);
     }
 
+    media_sdk::Result<void> setPlaybackRate(double playbackRate) override
+    {
+        return m_session.setPlaybackRate(playbackRate);
+    }
+
+    double playbackRate() const override
+    {
+        return m_session.playbackRate();
+    }
+
     void setAudioControls(media_sdk::runtime::RuntimeAudioControls controls) override
     {
         m_session.setAudioControls(controls);
@@ -135,19 +146,27 @@ SdkPlaybackSessionFactory defaultSessionFactory()
 SdkPlaybackAdapter::SdkPlaybackAdapter(
     media_sdk::runtime::IAudioOutput* audioOutput,
     media_sdk::runtime::IVideoPresenter* videoPresenter,
+    media_sdk::runtime::IAudioTempoProcessor* audioTempoProcessor,
     QObject* parent)
-    : SdkPlaybackAdapter(audioOutput, videoPresenter, defaultSessionFactory(), parent)
+    : SdkPlaybackAdapter(
+          audioOutput,
+          videoPresenter,
+          audioTempoProcessor,
+          defaultSessionFactory(),
+          parent)
 {
 }
 
 SdkPlaybackAdapter::SdkPlaybackAdapter(
     media_sdk::runtime::IAudioOutput* audioOutput,
     media_sdk::runtime::IVideoPresenter* videoPresenter,
+    media_sdk::runtime::IAudioTempoProcessor* audioTempoProcessor,
     SdkPlaybackSessionFactory sessionFactory,
     QObject* parent)
     : QObject(parent)
     , m_audioOutput(audioOutput)
     , m_videoPresenter(videoPresenter)
+    , m_audioTempoProcessor(audioTempoProcessor)
     , m_sessionFactory(std::move(sessionFactory))
 {
 }
@@ -183,6 +202,7 @@ void SdkPlaybackAdapter::openFile(const QUrl& url)
         .audioOutput = m_audioOutput,
         .videoPresenter = m_videoPresenter,
         .events = eventBridge.get(),
+        .audioTempoProcessor = m_audioTempoProcessor,
     };
     auto session = m_sessionFactory
         ? m_sessionFactory(sessionConfig(), dependencies)
@@ -290,6 +310,8 @@ void SdkPlaybackAdapter::stopDecoding()
         std::lock_guard lock(m_mutex);
         ++m_eventSerial;
         m_pendingSeekRequests.clear();
+        m_rateChangePending = false;
+        m_configuredPlaybackRate = m_confirmedPlaybackRate;
         session = std::move(m_session);
         eventBridge = std::move(m_sessionEventBridge);
     }
@@ -390,6 +412,64 @@ void SdkPlaybackAdapter::setMuted(bool muted)
         session->setAudioControls(controls);
 }
 
+void SdkPlaybackAdapter::setPlaybackRate(double playbackRate)
+{
+    if (!isObjectThread(*this)) {
+        QMetaObject::invokeMethod(this,
+                                  [this, playbackRate]() {
+                                      setPlaybackRate(playbackRate);
+                                  },
+                                  Qt::QueuedConnection);
+        return;
+    }
+
+    if (!media_sdk::runtime::isPlaybackRateSupported(playbackRate)) {
+        emit playbackRateChanged(this->playbackRate());
+        emit errorOccurred(QStringLiteral("Playback rate must be between 0.5x and 2.0x"));
+        return;
+    }
+
+    ISdkPlaybackSession* session = nullptr;
+    {
+        std::lock_guard lock(m_mutex);
+        if (m_rateChangePending)
+            return;
+        if (media_sdk::runtime::playbackRatesEqual(
+                playbackRate,
+                m_confirmedPlaybackRate)) {
+            return;
+        }
+        session = m_session.get();
+        if (!session) {
+            m_confirmedPlaybackRate = playbackRate;
+            m_configuredPlaybackRate = playbackRate;
+        }
+    }
+
+    if (!session) {
+        emit playbackRateChanged(playbackRate);
+        return;
+    }
+
+    const auto result = session->setPlaybackRate(playbackRate);
+    if (!result.ok()) {
+        const auto confirmedRate = this->playbackRate();
+        emit playbackRateChanged(confirmedRate);
+        emit errorOccurred(QString::fromStdString(result.error().message));
+        return;
+    }
+
+    std::lock_guard lock(m_mutex);
+    m_configuredPlaybackRate = playbackRate;
+    m_rateChangePending = true;
+}
+
+double SdkPlaybackAdapter::playbackRate() const
+{
+    std::lock_guard lock(m_mutex);
+    return m_confirmedPlaybackRate;
+}
+
 void SdkPlaybackAdapter::postSessionEvent(const media_sdk::PlayerEvent& event,
                                           std::uint64_t eventSerial)
 {
@@ -442,7 +522,40 @@ void SdkPlaybackAdapter::handleSessionEvent(
     }
 
     if (const auto* payload = std::get_if<media_sdk::ErrorEvent>(&event.payload)) {
+        double confirmedRate = media_sdk::runtime::kDefaultPlaybackRate;
+        bool rollbackRate = false;
+        {
+            std::lock_guard lock(m_mutex);
+            rollbackRate = m_rateChangePending;
+            m_rateChangePending = false;
+            m_configuredPlaybackRate = m_confirmedPlaybackRate;
+            confirmedRate = m_confirmedPlaybackRate;
+        }
+        if (rollbackRate)
+            emit playbackRateChanged(confirmedRate);
         emit errorOccurred(QString::fromStdString(payload->error.message));
+        return;
+    }
+
+    if (const auto* payload = std::get_if<media_sdk::PlaybackRateChangedEvent>(&event.payload)) {
+        if (!media_sdk::runtime::isPlaybackRateSupported(payload->playbackRate)) {
+            const auto confirmedRate = playbackRate();
+            {
+                std::lock_guard lock(m_mutex);
+                m_rateChangePending = false;
+                m_configuredPlaybackRate = m_confirmedPlaybackRate;
+            }
+            emit playbackRateChanged(confirmedRate);
+            emit errorOccurred(QStringLiteral("SDK returned an invalid playback rate"));
+            return;
+        }
+        {
+            std::lock_guard lock(m_mutex);
+            m_confirmedPlaybackRate = payload->playbackRate;
+            m_configuredPlaybackRate = payload->playbackRate;
+            m_rateChangePending = false;
+        }
+        emit playbackRateChanged(payload->playbackRate);
         return;
     }
 
@@ -583,6 +696,7 @@ media_sdk::session::PlaybackSessionConfig SdkPlaybackAdapter::sessionConfig() co
         .volume = m_volume,
         .muted = m_muted,
     };
+    config.runtime.playbackRate = m_configuredPlaybackRate;
     return config;
 }
 

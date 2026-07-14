@@ -129,6 +129,7 @@ target_link_libraries(PlayPlugin PRIVATE
     Qt6::Quick
     Qt6::Multimedia
     media_sdk_core
+    media_sdk::audio_ffmpeg
     media_sdk::playback_session
     media_sdk::playback_runtime
     PluginBasedPlugin                   # IAppPlugin 接口（INTERFACE）

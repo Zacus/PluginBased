@@ -37,6 +37,8 @@ def main() -> None:
 
     require("std::unique_ptr<SdkPlaybackAdapter>" in pipeline_h,
             "PlaybackPipeline should use SDK playback adapter")
+    require("FfmpegAudioTempoProcessor" in pipeline_h + pipeline_cpp,
+            "PlaybackPipeline should own the FFmpeg tempo processor")
     require("CoreAudioAudioOutput" in pipeline_cpp,
             "PlaybackPipeline should inject SDK platform audio output")
     require("QtRhiVideoPresenter" in pipeline_cpp,
@@ -51,6 +53,14 @@ def main() -> None:
             "SdkPlaybackAdapter should reject stale queued Qt callbacks")
     require("PlayPerf: sdk" in sdk_adapter_cpp,
             "SDK diagnostics should remain observable in PlayPlugin logs")
+    require("PlaybackRateChangedEvent" in sdk_adapter_cpp
+            and "m_rateChangePending" in sdk_adapter_h,
+            "SdkPlaybackAdapter should confirm or roll back asynchronous rate changes")
+
+    require("Q_PROPERTY(double     playbackRate" in engine_h
+            and "playbackRateChangePending" in engine_h
+            and "onPlaybackRateChanged" in engine_cpp,
+            "PlayerEngine should expose confirmed playback rate and pending state")
 
     for token in (
         "QtPlaybackAdapter",
@@ -77,9 +87,19 @@ def main() -> None:
     require("onPressedChanged:" in control_bar_qml
             and "root.seekRequested(value * root.duration)" in control_bar_qml,
             "Seek bar should submit one seek when the drag is released")
+    require("ComboBox" in control_bar_qml
+            and "playbackRateRequested" in control_bar_qml
+            and all(rate in control_bar_qml
+                    for rate in ("0.5x", "0.75x", "1.0x", "1.25x", "1.5x", "2.0x")),
+            "ControlBar should expose all supported playback-rate presets")
+    require("playbackRate:  engine.playbackRate" in read("plugins/PlayPlugin/qml/PlayerView.qml")
+            and "engine.playbackRate = rate" in read("plugins/PlayPlugin/qml/PlayerView.qml"),
+            "PlayerView should bind the confirmed rate and submit rate selections")
 
     require("media_sdk::playback_session" in cmake,
             "PlayPlugin should link playback session")
+    require("media_sdk::audio_ffmpeg" in cmake,
+            "PlayPlugin should link the FFmpeg tempo processor")
     require("media_sdk::platform_audio_macos" in cmake,
             "PlayPlugin should link macOS SDK audio platform implementation on Apple")
 

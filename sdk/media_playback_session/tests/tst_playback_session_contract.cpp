@@ -777,19 +777,25 @@ void playbackRateChangeAfterCompletionOnlyUpdatesConfiguration()
     TestContext context;
     DummyAudioOutput audio;
     DummyVideoPresenter presenter;
-    auto session = makeSession(context, &audio, &presenter);
+    RecordingSessionEvents events;
+    auto session = makeSession(context, &audio, &presenter, &events);
     assert(session->open("sample.mov").ok());
     context.core->emitMediaInfo(coreTimeline(10, 3));
     session->play();
     context.core->emitEndOfFile(coreTimeline(10, 3));
     context.runtime->triggerEndOfStreamPresented();
     context.operations.clear();
+    events.events.clear();
 
     assert(session->setPlaybackRate(1.5).ok());
     assert(session->playbackRate() == 1.5);
     assert(context.runtime->rateChangeCount == 0);
     assert(context.core->seekCount == 0);
     assert(context.operations.empty());
+    assert(events.events.size() == 1);
+    const auto* configuredRate = std::get_if<media_sdk::PlaybackRateChangedEvent>(
+        &events.events.back().payload);
+    assert(configuredRate && configuredRate->playbackRate == 1.5);
 
     assert(session->seek(0ms, media_sdk::SeekPlaybackMode::ResumePlayback).ok());
     assert(context.runtime->rateChangeCount == 1);

@@ -14,6 +14,8 @@ Rectangle {
     property real duration: 0
     property real volume: 1.0
     property bool muted: false
+    property real playbackRate: 1.0
+    property bool playbackRateChangePending: false
     property bool playlistOpen: false
     readonly property bool showPlaylistButton: true
 
@@ -25,6 +27,7 @@ Rectangle {
     signal openRequested()
     signal previousRequested()
     signal nextRequested()
+    signal playbackRateRequested(real playbackRate)
     signal playlistRequested()
 
     Rectangle {
@@ -125,6 +128,56 @@ Rectangle {
             IconButton { iconText: "⏹"; tooltip: qsTr("Stop"); fontSize: 15; onClicked: root.stopRequested() }
             IconButton { iconText: "⏭"; tooltip: qsTr("Next"); fontSize: 15; onClicked: root.nextRequested() }
 
+            ComboBox {
+                id: rateSelector
+                Layout.preferredWidth: 76
+                Layout.preferredHeight: 28
+                model: [
+                    { text: "0.5x", value: 0.5 },
+                    { text: "0.75x", value: 0.75 },
+                    { text: "1.0x", value: 1.0 },
+                    { text: "1.25x", value: 1.25 },
+                    { text: "1.5x", value: 1.5 },
+                    { text: "2.0x", value: 2.0 }
+                ]
+                textRole: "text"
+                valueRole: "value"
+                enabled: root.playbackState !== 0 && !root.playbackRateChangePending
+                opacity: enabled ? 1.0 : 0.55
+                onActivated: root.playbackRateRequested(currentValue)
+                Component.onCompleted: currentIndex = root.playbackRateIndex(root.playbackRate)
+
+                contentItem: Text {
+                    leftPadding: 10
+                    rightPadding: 22
+                    text: rateSelector.displayText
+                    color: ComponentTheme.textPrimary
+                    font.pixelSize: 12
+                    verticalAlignment: Text.AlignVCenter
+                }
+
+                indicator: Text {
+                    x: rateSelector.width - width - 8
+                    y: (rateSelector.height - height) / 2
+                    text: "▾"
+                    color: ComponentTheme.textSecondary
+                    font.pixelSize: 11
+                }
+
+                background: Rectangle {
+                    radius: 4
+                    color: rateSelector.hovered
+                           ? ComponentTheme.surfaceHover
+                           : ComponentTheme.surface
+                    border.color: rateSelector.activeFocus
+                                  ? ComponentTheme.accent
+                                  : ComponentTheme.separator
+                }
+
+                ToolTip.visible: hovered
+                ToolTip.text: qsTr("Playback speed")
+            }
+
             Item { Layout.fillWidth: true }
 
             IconButton {
@@ -178,6 +231,16 @@ Rectangle {
                 onClicked: root.playlistRequested()
             }
         }
+    }
+
+    onPlaybackRateChanged: rateSelector.currentIndex = playbackRateIndex(playbackRate)
+
+    function playbackRateIndex(rate) {
+        for (let i = 0; i < rateSelector.model.length; ++i) {
+            if (Math.abs(rateSelector.model[i].value - rate) < 0.0001)
+                return i
+        }
+        return 2
     }
 
     function formatTime(ms) {

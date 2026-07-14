@@ -125,10 +125,13 @@ Item {
         duration:      engine.duration
         volume:        engine.volume
         muted:         engine.muted
+        playbackRate:  engine.playbackRate
+        playbackRateChangePending: engine.playbackRateChangePending
         playlistOpen:  root.playlistOpen
         onPlayPauseRequested: engine.togglePlayPause()
         onStopRequested:      engine.stop()
         onSeekRequested:      (ms) => engine.seek(ms)
+        onPlaybackRateRequested: (rate) => engine.playbackRate = rate
         onVolumeRequested:    (v)  => engine.volume = v
         onMuteRequested:      engine.muted = !engine.muted
         onOpenRequested:      fileDlg.open()

@@ -2,6 +2,7 @@
 #include "Logger.h"
 #include "playback/PlaybackContext.h"
 #include "playback/PlaybackPipeline.h"
+#include "media_sdk/runtime/PlaybackRate.h"
 
 #include <QFileInfo>
 // ─────────────────────────────────────────────────────────────────────────────
@@ -21,6 +22,8 @@ PlayerEngine::PlayerEngine(QObject* parent) : QObject(parent)
             this, &PlayerEngine::onDecoderPosition);
     connect(m_pipeline.get(), &PlaybackPipeline::seekCompleted,
             this, &PlayerEngine::onDecoderSeekCompleted);
+    connect(m_pipeline.get(), &PlaybackPipeline::playbackRateChanged,
+            this, &PlayerEngine::onPlaybackRateChanged);
     connect(m_pipeline.get(), &PlaybackPipeline::audioPositionChanged,
             this, &PlayerEngine::onAudioPosition);
     connect(m_pipeline.get(), &PlaybackPipeline::endOfAudio,
@@ -71,6 +74,24 @@ void PlayerEngine::setMuted(bool m)
     emit mutedChanged(m_muted);
 }
 
+void PlayerEngine::setPlaybackRate(double playbackRate)
+{
+    if (!media_sdk::runtime::isPlaybackRateSupported(playbackRate)) {
+        emit playbackRateChanged(m_playbackRate);
+        setError(tr("Playback rate must be between 0.5x and 2.0x"));
+        return;
+    }
+    if (m_playbackRateChangePending) {
+        emit playbackRateChanged(m_playbackRate);
+        return;
+    }
+    if (media_sdk::runtime::playbackRatesEqual(m_playbackRate, playbackRate))
+        return;
+
+    setPlaybackRateChangePending(true);
+    m_pipeline->setPlaybackRate(playbackRate);
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // 播放控制
 // ─────────────────────────────────────────────────────────────────────────────
@@ -84,6 +105,7 @@ void PlayerEngine::open(const QUrl& url)
     m_currentUrl = url;
     m_completion.resetForOpen();
     m_seekGeneration = 0;
+    setPlaybackRateChangePending(false);
 
     // 通知解码器打开文件（异步，解码器线程内执行）
     m_pipeline->openFile(url);
@@ -118,6 +140,7 @@ void PlayerEngine::stop()
     m_position = 0;
     m_duration = 0;
     m_completion.resetForStop();
+    setPlaybackRateChangePending(false);
     delete m_mediaInfo;
     m_mediaInfo = nullptr;
 
@@ -205,6 +228,7 @@ void PlayerEngine::onDecoderError(const QString& msg)
     m_position = 0;
     m_duration = 0;
     m_completion.resetForStop();
+    setPlaybackRateChangePending(false);
     emit positionChanged(m_position);
     emit durationChanged(m_duration);
 }
@@ -227,6 +251,16 @@ void PlayerEngine::onDecoderSeekCompleted(int generation, int serial)
 {
     Q_UNUSED(generation);
     Q_UNUSED(serial);
+}
+
+void PlayerEngine::onPlaybackRateChanged(double playbackRate)
+{
+    if (!media_sdk::runtime::isPlaybackRateSupported(playbackRate))
+        return;
+
+    m_playbackRate = playbackRate;
+    emit playbackRateChanged(m_playbackRate);
+    setPlaybackRateChangePending(false);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -273,6 +307,14 @@ void PlayerEngine::setState(PlaybackState s)
         return;
     m_state = s;
     emit playbackStateChanged(static_cast<int>(m_state));
+}
+
+void PlayerEngine::setPlaybackRateChangePending(bool pending)
+{
+    if (m_playbackRateChangePending == pending)
+        return;
+    m_playbackRateChangePending = pending;
+    emit playbackRateChangePendingChanged(pending);
 }
 
 void PlayerEngine::setError(const QString& msg)
