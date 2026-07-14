@@ -1,0 +1,694 @@
+{
+  "cases": {
+    "continuous-change_audio_1_5": {
+      "av_drift_limit_us": 40000.0,
+      "av_drift_worst_us": 0.0,
+      "case": {
+        "id": "continuous-change_audio_1_5",
+        "legacy": false,
+        "media_kind": "audio",
+        "rate": 1.5,
+        "scenario": "continuous-change"
+      },
+      "completed_count": 3,
+      "confirmed_rate_changes_min": 3,
+      "cpu_median_ms": 49.326,
+      "late_drop_worst": 0,
+      "late_write_worst": 0,
+      "media": {
+        "duration_ms": 10000,
+        "format": "WAV / WAVE (Waveform Audio)",
+        "fps": 0.0,
+        "height": 0,
+        "width": 0
+      },
+      "pitch_error_worst_percent": 0.10136363636364236,
+      "rss_growth_worst_bytes": 1245184,
+      "rss_median_bytes": 16351232.0,
+      "run_count": 3,
+      "seek_completions_min": 0,
+      "startup_median_ms": 0.032,
+      "tempo_failure_worst": 0,
+      "underflow_worst": 0,
+      "wall_error_worst_percent": 0.0,
+      "wall_median_ms": 3761.375
+    },
+    "legacy_audio_1_0": {
+      "av_drift_limit_us": 40000.0,
+      "av_drift_worst_us": 0.0,
+      "case": {
+        "id": "legacy_audio_1_0",
+        "legacy": true,
+        "media_kind": "audio",
+        "rate": 1.0,
+        "scenario": "steady"
+      },
+      "completed_count": 3,
+      "confirmed_rate_changes_min": 0,
+      "cpu_median_ms": 29.72,
+      "late_drop_worst": 0,
+      "late_write_worst": 0,
+      "media": {
+        "duration_ms": 10000,
+        "format": "WAV / WAVE (Waveform Audio)",
+        "fps": 0.0,
+        "height": 0,
+        "width": 0
+      },
+      "pitch_error_worst_percent": 0.044999999999995245,
+      "rss_growth_worst_bytes": 1638400,
+      "rss_median_bytes": 12779520.0,
+      "run_count": 3,
+      "seek_completions_min": 0,
+      "startup_median_ms": 0.037,
+      "tempo_failure_worst": 0,
+      "underflow_worst": 0,
+      "wall_error_worst_percent": 0.14890000000000328,
+      "wall_median_ms": 4001.675
+    },
+    "legacy_av_1_0": {
+      "av_drift_limit_us": 41666.666666666664,
+      "av_drift_worst_us": 3071.0,
+      "case": {
+        "id": "legacy_av_1_0",
+        "legacy": true,
+        "media_kind": "av",
+        "rate": 1.0,
+        "scenario": "steady"
+      },
+      "completed_count": 3,
+      "confirmed_rate_changes_min": 0,
+      "cpu_median_ms": 2162.7780000000002,
+      "late_drop_worst": 0,
+      "late_write_worst": 188,
+      "media": {
+        "duration_ms": 60083,
+        "format": "QuickTime / MOV",
+        "fps": 24.0,
+        "height": 1080,
+        "width": 1920
+      },
+      "pitch_error_worst_percent": 0.0,
+      "rss_growth_worst_bytes": 2097152,
+      "rss_median_bytes": 127549440.0,
+      "run_count": 3,
+      "seek_completions_min": 0,
+      "startup_median_ms": 15.022,
+      "tempo_failure_worst": 0,
+      "underflow_worst": 0,
+      "wall_error_worst_percent": 2.42182499999999,
+      "wall_median_ms": 8192.455
+    },
+    "legacy_video_1_0": {
+      "av_drift_limit_us": 40000.0,
+      "av_drift_worst_us": 0.0,
+      "case": {
+        "id": "legacy_video_1_0",
+        "legacy": true,
+        "media_kind": "video",
+        "rate": 1.0,
+        "scenario": "steady"
+      },
+      "completed_count": 3,
+      "confirmed_rate_changes_min": 0,
+      "cpu_median_ms": 103.144,
+      "late_drop_worst": 0,
+      "late_write_worst": 0,
+      "media": {
+        "duration_ms": 9966,
+        "format": "QuickTime / MOV",
+        "fps": 30.1,
+        "height": 360,
+        "width": 640
+      },
+      "pitch_error_worst_percent": 0.0,
+      "rss_growth_worst_bytes": -98304,
+      "rss_median_bytes": 22429696.0,
+      "run_count": 3,
+      "seek_completions_min": 0,
+      "startup_median_ms": 1.533,
+      "tempo_failure_worst": 0,
+      "underflow_worst": 0,
+      "wall_error_worst_percent": 1.858375000000001,
+      "wall_median_ms": 3926.881
+    },
+    "paused-change_audio_1_5": {
+      "av_drift_limit_us": 40000.0,
+      "av_drift_worst_us": 0.0,
+      "case": {
+        "id": "paused-change_audio_1_5",
+        "legacy": false,
+        "media_kind": "audio",
+        "rate": 1.5,
+        "scenario": "paused-change"
+      },
+      "completed_count": 3,
+      "confirmed_rate_changes_min": 1,
+      "cpu_median_ms": 38.14,
+      "late_drop_worst": 0,
+      "late_write_worst": 0,
+      "media": {
+        "duration_ms": 10000,
+        "format": "WAV / WAVE (Waveform Audio)",
+        "fps": 0.0,
+        "height": 0,
+        "width": 0
+      },
+      "pitch_error_worst_percent": 0.0847727272727251,
+      "rss_growth_worst_bytes": 2965504,
+      "rss_median_bytes": 14925824.0,
+      "run_count": 3,
+      "seek_completions_min": 0,
+      "startup_median_ms": 0.037,
+      "tempo_failure_worst": 0,
+      "underflow_worst": 0,
+      "wall_error_worst_percent": 0.0,
+      "wall_median_ms": 3117.488
+    },
+    "playing-change_audio_1_5": {
+      "av_drift_limit_us": 40000.0,
+      "av_drift_worst_us": 0.0,
+      "case": {
+        "id": "playing-change_audio_1_5",
+        "legacy": false,
+        "media_kind": "audio",
+        "rate": 1.5,
+        "scenario": "playing-change"
+      },
+      "completed_count": 3,
+      "confirmed_rate_changes_min": 1,
+      "cpu_median_ms": 39.641000000000005,
+      "late_drop_worst": 0,
+      "late_write_worst": 0,
+      "media": {
+        "duration_ms": 10000,
+        "format": "WAV / WAVE (Waveform Audio)",
+        "fps": 0.0,
+        "height": 0,
+        "width": 0
+      },
+      "pitch_error_worst_percent": 0.00886363636363347,
+      "rss_growth_worst_bytes": 4734976,
+      "rss_median_bytes": 15695872.0,
+      "run_count": 3,
+      "seek_completions_min": 0,
+      "startup_median_ms": 0.039,
+      "tempo_failure_worst": 0,
+      "underflow_worst": 0,
+      "wall_error_worst_percent": 0.0,
+      "wall_median_ms": 3103.182
+    },
+    "seek-change_audio_1_5": {
+      "av_drift_limit_us": 40000.0,
+      "av_drift_worst_us": 0.0,
+      "case": {
+        "id": "seek-change_audio_1_5",
+        "legacy": false,
+        "media_kind": "audio",
+        "rate": 1.5,
+        "scenario": "seek-change"
+      },
+      "completed_count": 3,
+      "confirmed_rate_changes_min": 1,
+      "cpu_median_ms": 28.877000000000002,
+      "late_drop_worst": 0,
+      "late_write_worst": 0,
+      "media": {
+        "duration_ms": 10000,
+        "format": "WAV / WAVE (Waveform Audio)",
+        "fps": 0.0,
+        "height": 0,
+        "width": 0
+      },
+      "pitch_error_worst_percent": 0.04727272727273337,
+      "rss_growth_worst_bytes": 3751936,
+      "rss_median_bytes": 14843904.0,
+      "run_count": 3,
+      "seek_completions_min": 1,
+      "startup_median_ms": 0.04,
+      "tempo_failure_worst": 0,
+      "underflow_worst": 0,
+      "wall_error_worst_percent": 0.0,
+      "wall_median_ms": 2452.184
+    },
+    "steady_audio_0_5": {
+      "av_drift_limit_us": 40000.0,
+      "av_drift_worst_us": 0.0,
+      "case": {
+        "id": "steady_audio_0_5",
+        "legacy": false,
+        "media_kind": "audio",
+        "rate": 0.5,
+        "scenario": "steady"
+      },
+      "completed_count": 3,
+      "confirmed_rate_changes_min": 0,
+      "cpu_median_ms": 95.023,
+      "late_drop_worst": 0,
+      "late_write_worst": 0,
+      "media": {
+        "duration_ms": 10000,
+        "format": "WAV / WAVE (Waveform Audio)",
+        "fps": 0.0,
+        "height": 0,
+        "width": 0
+      },
+      "pitch_error_worst_percent": 0.014772727272726755,
+      "rss_growth_worst_bytes": 2179072,
+      "rss_median_bytes": 16482304.0,
+      "run_count": 3,
+      "seek_completions_min": 0,
+      "startup_median_ms": 0.44,
+      "tempo_failure_worst": 0,
+      "underflow_worst": 0,
+      "wall_error_worst_percent": 0.077374999999995,
+      "wall_median_ms": 8006.178
+    },
+    "steady_audio_1_0": {
+      "av_drift_limit_us": 40000.0,
+      "av_drift_worst_us": 0.0,
+      "case": {
+        "id": "steady_audio_1_0",
+        "legacy": false,
+        "media_kind": "audio",
+        "rate": 1.0,
+        "scenario": "steady"
+      },
+      "completed_count": 3,
+      "confirmed_rate_changes_min": 0,
+      "cpu_median_ms": 29.811,
+      "late_drop_worst": 0,
+      "late_write_worst": 0,
+      "media": {
+        "duration_ms": 10000,
+        "format": "WAV / WAVE (Waveform Audio)",
+        "fps": 0.0,
+        "height": 0,
+        "width": 0
+      },
+      "pitch_error_worst_percent": 0.044999999999995245,
+      "rss_growth_worst_bytes": 1441792,
+      "rss_median_bytes": 13385728.0,
+      "run_count": 3,
+      "seek_completions_min": 0,
+      "startup_median_ms": 0.037,
+      "tempo_failure_worst": 0,
+      "underflow_worst": 0,
+      "wall_error_worst_percent": 0.175649999999996,
+      "wall_median_ms": 4004.023
+    },
+    "steady_audio_1_5": {
+      "av_drift_limit_us": 40000.0,
+      "av_drift_worst_us": 0.0,
+      "case": {
+        "id": "steady_audio_1_5",
+        "legacy": false,
+        "media_kind": "audio",
+        "rate": 1.5,
+        "scenario": "steady"
+      },
+      "completed_count": 3,
+      "confirmed_rate_changes_min": 0,
+      "cpu_median_ms": 38.598,
+      "late_drop_worst": 0,
+      "late_write_worst": 0,
+      "media": {
+        "duration_ms": 10000,
+        "format": "WAV / WAVE (Waveform Audio)",
+        "fps": 0.0,
+        "height": 0,
+        "width": 0
+      },
+      "pitch_error_worst_percent": 0.03295454545454132,
+      "rss_growth_worst_bytes": 1540096,
+      "rss_median_bytes": 14450688.0,
+      "run_count": 3,
+      "seek_completions_min": 0,
+      "startup_median_ms": 0.173,
+      "tempo_failure_worst": 0,
+      "underflow_worst": 0,
+      "wall_error_worst_percent": 0.27839996520000354,
+      "wall_median_ms": 2672.098
+    },
+    "steady_audio_2_0": {
+      "av_drift_limit_us": 40000.0,
+      "av_drift_worst_us": 0.0,
+      "case": {
+        "id": "steady_audio_2_0",
+        "legacy": false,
+        "media_kind": "audio",
+        "rate": 2.0,
+        "scenario": "steady"
+      },
+      "completed_count": 3,
+      "confirmed_rate_changes_min": 0,
+      "cpu_median_ms": 31.636000000000003,
+      "late_drop_worst": 0,
+      "late_write_worst": 0,
+      "media": {
+        "duration_ms": 10000,
+        "format": "WAV / WAVE (Waveform Audio)",
+        "fps": 0.0,
+        "height": 0,
+        "width": 0
+      },
+      "pitch_error_worst_percent": 0.015227272727274381,
+      "rss_growth_worst_bytes": 917504,
+      "rss_median_bytes": 13991936.0,
+      "run_count": 3,
+      "seek_completions_min": 0,
+      "startup_median_ms": 0.143,
+      "tempo_failure_worst": 0,
+      "underflow_worst": 0,
+      "wall_error_worst_percent": 0.2664499999999975,
+      "wall_median_ms": 2004.978
+    },
+    "steady_av_0_5": {
+      "av_drift_limit_us": 41666.666666666664,
+      "av_drift_worst_us": 1552.0,
+      "case": {
+        "id": "steady_av_0_5",
+        "legacy": false,
+        "media_kind": "av",
+        "rate": 0.5,
+        "scenario": "steady"
+      },
+      "completed_count": 3,
+      "confirmed_rate_changes_min": 0,
+      "cpu_median_ms": 2906.4730000000004,
+      "late_drop_worst": 0,
+      "late_write_worst": 206,
+      "media": {
+        "duration_ms": 60083,
+        "format": "QuickTime / MOV",
+        "fps": 24.0,
+        "height": 1080,
+        "width": 1920
+      },
+      "pitch_error_worst_percent": 0.0,
+      "rss_growth_worst_bytes": 3309568,
+      "rss_median_bytes": 133152768.0,
+      "run_count": 3,
+      "seek_completions_min": 0,
+      "startup_median_ms": 15.116,
+      "tempo_failure_worst": 0,
+      "underflow_worst": 0,
+      "wall_error_worst_percent": 2.9912062500000047,
+      "wall_median_ms": 16475.88
+    },
+    "steady_av_1_0": {
+      "av_drift_limit_us": 41666.666666666664,
+      "av_drift_worst_us": 34073.0,
+      "case": {
+        "id": "steady_av_1_0",
+        "legacy": false,
+        "media_kind": "av",
+        "rate": 1.0,
+        "scenario": "steady"
+      },
+      "completed_count": 3,
+      "confirmed_rate_changes_min": 0,
+      "cpu_median_ms": 2183.931,
+      "late_drop_worst": 0,
+      "late_write_worst": 188,
+      "media": {
+        "duration_ms": 60083,
+        "format": "QuickTime / MOV",
+        "fps": 24.0,
+        "height": 1080,
+        "width": 1920
+      },
+      "pitch_error_worst_percent": 0.0,
+      "rss_growth_worst_bytes": 2244608,
+      "rss_median_bytes": 128286720.0,
+      "run_count": 3,
+      "seek_completions_min": 0,
+      "startup_median_ms": 14.826,
+      "tempo_failure_worst": 0,
+      "underflow_worst": 0,
+      "wall_error_worst_percent": 2.4731874999999945,
+      "wall_median_ms": 8193.363
+    },
+    "steady_av_1_5": {
+      "av_drift_limit_us": 41666.666666666664,
+      "av_drift_worst_us": 4532.0,
+      "case": {
+        "id": "steady_av_1_5",
+        "legacy": false,
+        "media_kind": "av",
+        "rate": 1.5,
+        "scenario": "steady"
+      },
+      "completed_count": 3,
+      "confirmed_rate_changes_min": 0,
+      "cpu_median_ms": 1754.985,
+      "late_drop_worst": 0,
+      "late_write_worst": 202,
+      "media": {
+        "duration_ms": 60083,
+        "format": "QuickTime / MOV",
+        "fps": 24.0,
+        "height": 1080,
+        "width": 1920
+      },
+      "pitch_error_worst_percent": 0.0,
+      "rss_growth_worst_bytes": 1146880,
+      "rss_median_bytes": 126500864.0,
+      "run_count": 3,
+      "seek_completions_min": 0,
+      "startup_median_ms": 15.086,
+      "tempo_failure_worst": 0,
+      "underflow_worst": 0,
+      "wall_error_worst_percent": 3.3922689620168156,
+      "wall_median_ms": 5507.234
+    },
+    "steady_av_2_0": {
+      "av_drift_limit_us": 41666.666666666664,
+      "av_drift_worst_us": 6031.0,
+      "case": {
+        "id": "steady_av_2_0",
+        "legacy": false,
+        "media_kind": "av",
+        "rate": 2.0,
+        "scenario": "steady"
+      },
+      "completed_count": 3,
+      "confirmed_rate_changes_min": 0,
+      "cpu_median_ms": 1526.837,
+      "late_drop_worst": 0,
+      "late_write_worst": 201,
+      "media": {
+        "duration_ms": 60083,
+        "format": "QuickTime / MOV",
+        "fps": 24.0,
+        "height": 1080,
+        "width": 1920
+      },
+      "pitch_error_worst_percent": 0.0,
+      "rss_growth_worst_bytes": 999424,
+      "rss_median_bytes": 126451712.0,
+      "run_count": 3,
+      "seek_completions_min": 0,
+      "startup_median_ms": 14.292,
+      "tempo_failure_worst": 0,
+      "underflow_worst": 0,
+      "wall_error_worst_percent": 3.457899999999995,
+      "wall_median_ms": 4131.916
+    },
+    "steady_video_0_5": {
+      "av_drift_limit_us": 40000.0,
+      "av_drift_worst_us": 0.0,
+      "case": {
+        "id": "steady_video_0_5",
+        "legacy": false,
+        "media_kind": "video",
+        "rate": 0.5,
+        "scenario": "steady"
+      },
+      "completed_count": 3,
+      "confirmed_rate_changes_min": 0,
+      "cpu_median_ms": 110.221,
+      "late_drop_worst": 0,
+      "late_write_worst": 0,
+      "media": {
+        "duration_ms": 9966,
+        "format": "QuickTime / MOV",
+        "fps": 30.1,
+        "height": 360,
+        "width": 640
+      },
+      "pitch_error_worst_percent": 0.0,
+      "rss_growth_worst_bytes": -81920,
+      "rss_median_bytes": 22446080.0,
+      "run_count": 3,
+      "seek_completions_min": 0,
+      "startup_median_ms": 1.508,
+      "tempo_failure_worst": 0,
+      "underflow_worst": 0,
+      "wall_error_worst_percent": 1.9775999999999954,
+      "wall_median_ms": 7842.095
+    },
+    "steady_video_1_0": {
+      "av_drift_limit_us": 40000.0,
+      "av_drift_worst_us": 0.0,
+      "case": {
+        "id": "steady_video_1_0",
+        "legacy": false,
+        "media_kind": "video",
+        "rate": 1.0,
+        "scenario": "steady"
+      },
+      "completed_count": 3,
+      "confirmed_rate_changes_min": 0,
+      "cpu_median_ms": 104.334,
+      "late_drop_worst": 0,
+      "late_write_worst": 0,
+      "media": {
+        "duration_ms": 9966,
+        "format": "QuickTime / MOV",
+        "fps": 30.1,
+        "height": 360,
+        "width": 640
+      },
+      "pitch_error_worst_percent": 0.0,
+      "rss_growth_worst_bytes": -131072,
+      "rss_median_bytes": 22396928.0,
+      "run_count": 3,
+      "seek_completions_min": 0,
+      "startup_median_ms": 1.525,
+      "tempo_failure_worst": 0,
+      "underflow_worst": 0,
+      "wall_error_worst_percent": 1.8286249999999995,
+      "wall_median_ms": 3926.863
+    },
+    "steady_video_1_5": {
+      "av_drift_limit_us": 40000.0,
+      "av_drift_worst_us": 0.0,
+      "case": {
+        "id": "steady_video_1_5",
+        "legacy": false,
+        "media_kind": "video",
+        "rate": 1.5,
+        "scenario": "steady"
+      },
+      "completed_count": 3,
+      "confirmed_rate_changes_min": 0,
+      "cpu_median_ms": 98.62700000000001,
+      "late_drop_worst": 0,
+      "late_write_worst": 0,
+      "media": {
+        "duration_ms": 9966,
+        "format": "QuickTime / MOV",
+        "fps": 30.1,
+        "height": 360,
+        "width": 640
+      },
+      "pitch_error_worst_percent": 0.0,
+      "rss_growth_worst_bytes": -131072,
+      "rss_median_bytes": 22462464.0,
+      "run_count": 3,
+      "seek_completions_min": 0,
+      "startup_median_ms": 1.482,
+      "tempo_failure_worst": 0,
+      "underflow_worst": 0,
+      "wall_error_worst_percent": 1.7979747752531499,
+      "wall_median_ms": 2619.039
+    },
+    "steady_video_2_0": {
+      "av_drift_limit_us": 40000.0,
+      "av_drift_worst_us": 0.0,
+      "case": {
+        "id": "steady_video_2_0",
+        "legacy": false,
+        "media_kind": "video",
+        "rate": 2.0,
+        "scenario": "steady"
+      },
+      "completed_count": 3,
+      "confirmed_rate_changes_min": 0,
+      "cpu_median_ms": 96.79199999999999,
+      "late_drop_worst": 0,
+      "late_write_worst": 0,
+      "media": {
+        "duration_ms": 9966,
+        "format": "QuickTime / MOV",
+        "fps": 30.1,
+        "height": 360,
+        "width": 640
+      },
+      "pitch_error_worst_percent": 0.0,
+      "rss_growth_worst_bytes": -98304,
+      "rss_median_bytes": 22429696.0,
+      "run_count": 3,
+      "seek_completions_min": 0,
+      "startup_median_ms": 1.487,
+      "tempo_failure_worst": 0,
+      "underflow_worst": 0,
+      "wall_error_worst_percent": 1.8124500000000012,
+      "wall_median_ms": 1965.078
+    }
+  },
+  "decision": "PASS",
+  "failures": [],
+  "performance_1x": {
+    "audio": {
+      "cpu_percent": 0.3061911170928704,
+      "rss_percent": 4.743589743589744,
+      "startup_percent": 0.0
+    },
+    "av": {
+      "cpu_percent": 0.9780476775702264,
+      "rss_percent": 0.5780346820809249,
+      "startup_percent": -1.3047530288909581
+    },
+    "video": {
+      "cpu_percent": 1.1537268285115931,
+      "rss_percent": -0.14609203798392986,
+      "startup_percent": -0.5218525766470977
+    }
+  },
+  "schema_version": 1,
+  "suite": {
+    "build_type": "Release",
+    "label": "feature-r6-release",
+    "machine": {
+      "machine": "arm64",
+      "memory_bytes": 17179869184,
+      "model": "MacBook Air Mac15,12",
+      "processor": "Apple M3"
+    },
+    "media": {
+      "audio": {
+        "fixture": "PCM s16le 48000 Hz stereo 440 Hz",
+        "path": "/Users/zs/Downloads/PluginBased/benchmark_media/playback-rate-440hz.wav",
+        "sha256": "3cfb12394a1e7e570a2b4d16a16be61e059ef40be76f7ebdc511978d259d7b5e"
+      },
+      "av": {
+        "fixture": "H.264 1920x1080 24 fps + AAC stereo",
+        "path": "/Users/zs/Downloads/PluginBased/benchmark_media/tearsofsteel-1080p24-h264.mp4",
+        "sha256": "5f54703c66a86a8d6de7e8021d53de1cf5c82216d5c6361d832bdb85084d5984"
+      },
+      "video": {
+        "fixture": "MPEG-4 640x360 30 fps",
+        "path": "/Users/zs/Downloads/PluginBased/benchmark_media/playback-rate-video-only.mp4",
+        "sha256": "975b0b361d2d663f43749bc63d2d45fca115fd65e62b9a011481e791afc4b818"
+      }
+    },
+    "output_dir": "/Users/zs/Downloads/PluginBased/benchmark_artifacts/playback-rate-r6",
+    "platform": "macOS-15.6.1-arm64-arm-64bit",
+    "python": "3.9.6",
+    "runner": "/Users/zs/Downloads/PluginBased/build-release/tools/video_benchmark/MediaSdkRealtimeVideoBenchmark",
+    "runner_sha256": "a11531e80bc7118c7750a56ecb0c5a82772432d0b1e19cbf88a39c42acb4a0fe",
+    "runs": 3,
+    "schema_version": 1,
+    "window_ms": 8000
+  },
+  "thresholds": {
+    "av_drift_ms": 40.0,
+    "minimum_runs": 3,
+    "performance_regression_percent": 10.0,
+    "pitch_error_percent": 1.0,
+    "rss_growth_bytes": 16777216,
+    "wall_error_percent": 5.0
+  }
+}

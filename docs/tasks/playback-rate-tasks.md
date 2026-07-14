@@ -17,7 +17,7 @@
 | R3 | 接入 runtime 音频与视频倍速链路 | R1、R2 | 已完成 |
 | R4 | 实现 session 动态切速时间线 | R3 | 已完成 |
 | R5 | 贯通 PlayPlugin 控制与 QML UI | R4 | 已完成 |
-| R6 | 完成真实媒体 benchmark 与数据验收 | R5 | 待开始 |
+| R6 | 完成真实媒体 benchmark 与数据验收 | R5 | 已完成 |
 
 ## 3. R1：建立播放速率与媒体时钟契约
 

@@ -72,7 +72,10 @@ set_target_properties(MediaSdkRealtimeVideoBenchmark PROPERTIES
     AUTOUIC OFF
     AUTORCC OFF
 )
-target_link_libraries(MediaSdkRealtimeVideoBenchmark PRIVATE media_sdk_playback_session)
+target_link_libraries(MediaSdkRealtimeVideoBenchmark PRIVATE
+    media_sdk_playback_session
+    media_sdk::audio_ffmpeg
+)
 if(EXISTS "${PLUGINBASED_SOURCE_DIR}/sdk/media_core/include/media_sdk/Diagnostics.h")
     target_compile_definitions(MediaSdkRealtimeVideoBenchmark PRIVATE
         MEDIA_SDK_BENCHMARK_HAS_POOL_DIAGNOSTICS=1)

@@ -12,6 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 TOOL = ROOT / "tools" / "video_benchmark.py"
 PROFILE_TOOL = ROOT / "tools" / "video_allocator_profile.py"
 GET_BUFFER2_F1_TOOL = ROOT / "tools" / "get_buffer2_f1_benchmark.py"
+PLAYBACK_RATE_TOOL = ROOT / "tools" / "playback_rate_benchmark.py"
 
 
 def write_json(path: Path, value: dict) -> None:
@@ -289,6 +290,86 @@ Path(a.output).write_text(json.dumps(result), encoding='utf-8')
             text=True,
         )
         assert json.loads((f1_root / "decision.json").read_text(encoding="utf-8"))["decision"] == "GO"
+
+        rate_root = root / "playback-rate"
+        write_json(rate_root / "suite.json", {
+            "schema_version": 1,
+            "label": "test",
+            "runs": 3,
+            "window_ms": 4000,
+            "runner_sha256": "test",
+            "platform": "test",
+            "media": {
+                kind: {"path": f"{kind}.media", "sha256": kind}
+                for kind in ("av", "audio", "video")
+            },
+        })
+
+        def write_rate_case(case_id: str, media_kind: str, rate: float = 1.0,
+                            legacy: bool = False) -> None:
+            case_dir = rate_root / case_id
+            write_json(case_dir / "case.json", {
+                "id": case_id,
+                "media_kind": media_kind,
+                "scenario": "steady",
+                "rate": rate,
+                "legacy": legacy,
+            })
+            for index in range(1, 4):
+                expected_wall = 4000 / rate
+                write_json(case_dir / f"run-{index:02d}.json", {
+                    "completed": True,
+                    "scenario": {"confirmed_rate_changes": 0, "seek_completions": 0},
+                    "presenter": {
+                        "startup_ms": 20,
+                        "av_drift_abs_max_us": 10_000 if media_kind == "av" else 0,
+                    },
+                    "audio": {
+                        "startup_ms": 15 if media_kind != "video" else 0,
+                        "expected_tone_hz": 440 if media_kind == "audio" else 0,
+                        "estimated_tone_hz": 440 if media_kind == "audio" else 0,
+                        "underflow_count": 0,
+                    },
+                    "timing": {
+                        "wall_ms": expected_wall,
+                        "expected_wall_ms": 0 if legacy else expected_wall,
+                        "user_cpu_ms": 100,
+                        "system_cpu_ms": 10,
+                        "max_rss_bytes": 100 * 1024 * 1024,
+                        "rss_growth_bytes": 1024,
+                    },
+                    "runtime": {
+                        "video_dropped_late": 0,
+                        "audio_tempo_failure_count": 0,
+                    },
+                })
+
+        for media_kind in ("av", "audio", "video"):
+            write_rate_case(f"legacy_{media_kind}_1_0", media_kind, legacy=True)
+            write_rate_case(f"steady_{media_kind}_1_0", media_kind)
+        write_rate_case("steady_audio_1_5", "audio", rate=1.5)
+
+        rate_json = rate_root / "gate.json"
+        rate_markdown = rate_root / "gate.md"
+        rate_command = [
+            sys.executable,
+            str(PLAYBACK_RATE_TOOL),
+            "report",
+            "--input-dir", str(rate_root),
+            "--output-json", str(rate_json),
+            "--output-markdown", str(rate_markdown),
+        ]
+        subprocess.run(rate_command, check=True, capture_output=True, text=True)
+        assert json.loads(rate_json.read_text(encoding="utf-8"))["decision"] == "PASS"
+
+        failed_run = rate_root / "steady_audio_1_5" / "run-03.json"
+        failed_result = json.loads(failed_run.read_text(encoding="utf-8"))
+        failed_result["timing"]["wall_ms"] *= 1.2
+        write_json(failed_run, failed_result)
+        subprocess.run(rate_command, check=True, capture_output=True, text=True)
+        failed_gate = json.loads(rate_json.read_text(encoding="utf-8"))
+        assert failed_gate["decision"] == "FAIL"
+        assert any("wall error" in reason for reason in failed_gate["failures"])
 
 
 if __name__ == "__main__":

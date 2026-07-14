@@ -140,6 +140,29 @@ python3 tools/get_buffer2_f1_benchmark.py \
   --label current --runs 5 --warmups 1
 ```
 
+## 倍速播放数据门禁
+
+先生成固定的 440 Hz 纯音频和 640x360 纯视频夹具；A/V case 复用 manifest 中校验过
+SHA-256 的 1080p24 媒体：
+
+```bash
+python3 tools/playback_rate_benchmark.py prepare \
+  --media-generator build/tools/video_benchmark/MediaSdkBenchmarkMediaGenerator
+
+python3 tools/playback_rate_benchmark.py run \
+  --runner build/tools/video_benchmark/MediaSdkRealtimeVideoBenchmark \
+  --output-dir benchmark_artifacts/playback-rate-r6 \
+  --output-json docs/performance/playback-rate-benchmark-results.json \
+  --output-markdown docs/performance/playback-rate-benchmark-results.md \
+  --label current --build-type Release --runs 3
+```
+
+工具覆盖 A/V、audio-only、video-only 的 0.5x/1.0x/1.5x/2.0x，以及播放中、暂停、
+seek 后和连续切速。1.0x 默认路径与显式路径逐轮交替执行，降低热状态和执行顺序偏差。
+实时 sink 输出 wall/CPU/RSS、音调、A/V drift、late drop、underflow 和 late write。
+其中 `underflow_count` 只表示输出层明确报告的 underrun；无设备 mock 的调度迟到记录为
+`late_write_count`，不能替代 CoreAudio 环形缓冲的硬件 underrun 测试。
+
 ## get_buffer2 F2 生产路径验证
 
 正式 SDK benchmark 可显式启用或关闭 decoder buffer pool，并输出
