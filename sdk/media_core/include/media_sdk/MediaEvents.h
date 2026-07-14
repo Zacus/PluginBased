@@ -42,6 +42,8 @@ struct PositionChangedEvent {
     std::chrono::milliseconds position { 0 };
 };
 
+using SeekRequestId = std::uint64_t;
+
 struct SeekCompletedEvent {
     std::chrono::milliseconds position { 0 };
     std::chrono::milliseconds requestedPosition { position };
@@ -49,6 +51,12 @@ struct SeekCompletedEvent {
     std::optional<std::chrono::milliseconds> firstVideoPts;
     bool exact = true;
     bool audioGap = false;
+    SeekRequestId requestId = 0;
+};
+
+struct PlaybackRateChangedEvent {
+    double playbackRate = 1.0;
+    std::chrono::milliseconds position { 0 };
 };
 
 struct ErrorEvent {
@@ -81,6 +89,7 @@ using PlayerEventPayload = std::variant<
     StateChangedEvent,
     PositionChangedEvent,
     SeekCompletedEvent,
+    PlaybackRateChangedEvent,
     ErrorEvent,
     EndOfFileEvent,
     DecodePerformanceEvent>;

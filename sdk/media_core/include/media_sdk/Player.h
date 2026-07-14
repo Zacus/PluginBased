@@ -42,6 +42,10 @@ public:
     Result<void> seek(std::chrono::milliseconds position);
     [[nodiscard("inspect the seek result before assuming the seek was accepted")]]
     Result<void> seek(std::chrono::milliseconds position, SeekPlaybackMode mode);
+    [[nodiscard("inspect the seek result before assuming the seek was accepted")]]
+    Result<void> seek(std::chrono::milliseconds position,
+                      SeekPlaybackMode mode,
+                      SeekRequestId requestId);
     [[nodiscard]] PlayerDiagnostics diagnostics() const;
 
 private:

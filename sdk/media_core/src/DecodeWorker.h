@@ -106,6 +106,9 @@ public:
     void submitStop();
     Result<void> submitSeek(std::chrono::milliseconds position);
     Result<void> submitSeek(std::chrono::milliseconds position, SeekPlaybackMode mode);
+    Result<void> submitSeek(std::chrono::milliseconds position,
+                            SeekPlaybackMode mode,
+                            SeekRequestId requestId);
     [[nodiscard]] PlayerDiagnostics diagnostics() const;
 
 private:
@@ -128,6 +131,7 @@ private:
         std::filesystem::path path;
         std::chrono::milliseconds position { 0 };
         SeekPlaybackMode seekPlaybackMode = SeekPlaybackMode::PreservePlaybackState;
+        SeekRequestId seekRequestId = 0;
     };
 
     void run(WorkerStopToken stopToken);
@@ -139,9 +143,13 @@ private:
     void handleOpen(const std::filesystem::path& path);
     void decodeUntilBlocked(WorkerStopToken stopToken);
     void decodeSeekPreroll(WorkerStopToken stopToken);
-    bool handleSeek(std::chrono::milliseconds position, bool wasPlaying);
+    bool handleSeek(std::chrono::milliseconds position,
+                    bool wasPlaying,
+                    SeekRequestId requestId);
     int seekDemuxer(std::chrono::milliseconds position);
-    void beginAccurateSeek(std::chrono::milliseconds position, bool preferAudioCompletion);
+    void beginAccurateSeek(std::chrono::milliseconds position,
+                           bool preferAudioCompletion,
+                           SeekRequestId requestId);
     void emitSeekCompletedIfReady();
     void emitSeekFallbackCompletion();
     void emitPendingSeekFallbackCompletion();
@@ -192,6 +200,7 @@ private:
     std::shared_ptr<DecoderBufferPool> m_decoderBufferPoolDiagnostics;
     std::optional<SeekPrerollGate> m_seekGate;
     std::optional<std::chrono::microseconds> m_pendingSeekTarget;
+    SeekRequestId m_pendingSeekRequestId = 0;
     std::optional<VideoFrame> m_seekTailVideoFrame;
     std::uint64_t m_sessionId = 0;
     std::uint64_t m_generation = 0;

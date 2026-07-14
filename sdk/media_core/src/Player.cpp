@@ -56,6 +56,13 @@ Result<void> Player::seek(std::chrono::milliseconds position, SeekPlaybackMode m
     return m_impl->controller.seek(position, mode);
 }
 
+Result<void> Player::seek(std::chrono::milliseconds position,
+                          SeekPlaybackMode mode,
+                          SeekRequestId requestId)
+{
+    return m_impl->controller.seek(position, mode, requestId);
+}
+
 PlayerDiagnostics Player::diagnostics() const
 {
     return m_impl->controller.diagnostics();

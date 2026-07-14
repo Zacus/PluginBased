@@ -18,6 +18,7 @@
 #include <limits>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <thread>
 #include <utility>
 #include <vector>
@@ -294,6 +295,7 @@ struct RuntimePlayer::Impl {
         }
 
         stop();
+        activePlaybackRate.store(config.playbackRate, std::memory_order_release);
 
         bool tempoConfigured = false;
         if (dependencies.audioTempoProcessor) {
@@ -301,7 +303,7 @@ struct RuntimePlayer::Impl {
             if (tempoProcessingRequired()) {
                 auto tempoResult = dependencies.audioTempoProcessor->configure(
                     config.audioFormat,
-                    config.playbackRate);
+                    currentPlaybackRate());
                 if (!tempoResult.ok())
                     return tempoResult;
                 tempoConfigured = true;
@@ -325,7 +327,7 @@ struct RuntimePlayer::Impl {
         {
             std::lock_guard lock(m_mutex);
             diagnostics = {};
-            diagnostics.playbackRate = config.playbackRate;
+            diagnostics.playbackRate = currentPlaybackRate();
             diagnostics.audioTempoConfigureCount = tempoConfigured ? 1 : 0;
             sessionId = ++lastSessionId;
             generation = 1;
@@ -343,7 +345,7 @@ struct RuntimePlayer::Impl {
 
             audioQueue.reset(sessionId, generation);
             videoQueue.reset(sessionId, generation);
-            scheduler.reset(generation, config.playbackRate);
+            scheduler.reset(generation, currentPlaybackRate());
             presentTracker.reset(sessionId, generation);
             presentTracker.setMaxPending(dependencies.videoPresenter->capabilities().maxPendingFrames);
             fallbackController.reset(sessionId, generation, config.outputPolicy);
@@ -519,7 +521,7 @@ struct RuntimePlayer::Impl {
             fallbackPending = false;
             pausedSeekPrerollPending = false;
             pausedSeekPrerollReserved = false;
-            scheduler.reset(completedGeneration, config.playbackRate);
+            scheduler.reset(completedGeneration, currentPlaybackRate());
             shouldResume = true;
         }
 
@@ -545,12 +547,66 @@ struct RuntimePlayer::Impl {
 
     void seek(std::chrono::microseconds position)
     {
-        SessionId activeSession = 0;
-        Generation nextGeneration = 0;
+        const auto result = beginTimelineDiscontinuity(position, std::nullopt);
+        if (!result.ok())
+            reportRuntimeError(result.error());
+    }
+
+    Result<void> setPlaybackRate(double playbackRate, std::chrono::microseconds position)
+    {
+        if (position < std::chrono::microseconds::zero()) {
+            return Result<void>::failure({
+                .code = MediaErrorCode::InvalidArgument,
+                .message = "RuntimePlayer requires a non-negative rate-change position",
+                .detail = {},
+            });
+        }
+        if (!isPlaybackRateSupported(playbackRate)) {
+            return Result<void>::failure({
+                .code = MediaErrorCode::InvalidArgument,
+                .message = "RuntimePlayer requires a playback rate between 0.5 and 2.0",
+                .detail = {},
+            });
+        }
+        if (config.audioClockEnabled
+            && !playbackRatesEqual(playbackRate, kDefaultPlaybackRate)
+            && !dependencies.audioTempoProcessor) {
+            return Result<void>::failure({
+                .code = MediaErrorCode::UnsupportedFormat,
+                .message = "RuntimePlayer requires an audio tempo processor for non-1x audio",
+                .detail = {},
+            });
+        }
+        if (playbackRatesEqual(playbackRate, currentPlaybackRate()))
+            return Result<void>::success();
+
         {
             std::lock_guard lock(m_mutex);
-            if (!running)
-                return;
+            if (!running) {
+                config.playbackRate = playbackRate;
+                activePlaybackRate.store(playbackRate, std::memory_order_release);
+                return Result<void>::success();
+            }
+        }
+        return beginTimelineDiscontinuity(position, playbackRate);
+    }
+
+    Result<void> beginTimelineDiscontinuity(
+        std::chrono::microseconds position,
+        std::optional<double> newPlaybackRate)
+    {
+        SessionId activeSession = 0;
+        Generation nextGeneration = 0;
+        const auto targetPlaybackRate = newPlaybackRate.value_or(currentPlaybackRate());
+        {
+            std::lock_guard lock(m_mutex);
+            if (!running) {
+                return Result<void>::failure({
+                    .code = MediaErrorCode::InternalStateError,
+                    .message = "RuntimePlayer is not open",
+                    .detail = {},
+                });
+            }
 
             activeSession = sessionId;
             nextGeneration = ++generation;
@@ -565,12 +621,17 @@ struct RuntimePlayer::Impl {
             presentTracker.clear();
             presentTracker.reset(activeSession, nextGeneration);
             presentTracker.setMaxPending(dependencies.videoPresenter->capabilities().maxPendingFrames);
-            scheduler.reset(nextGeneration, config.playbackRate);
+            scheduler.reset(nextGeneration, targetPlaybackRate);
             if (paused)
                 scheduler.pause();
             fallbackController.reset(activeSession, nextGeneration, config.outputPolicy);
             seekClockAnchor.begin(nextGeneration, position, config.maxSeekAudioGapFill);
             seekGapClock = {};
+            if (newPlaybackRate.has_value()) {
+                config.playbackRate = targetPlaybackRate;
+                diagnostics.playbackRate = targetPlaybackRate;
+                ++diagnostics.playbackRateChangeCount;
+            }
         }
 
         audioQueue.abort();
@@ -579,10 +640,11 @@ struct RuntimePlayer::Impl {
         videoQueue.reset(activeSession, nextGeneration);
         // seek 期间保留上一帧，等目标侧新帧提交后自然替换，避免精确预滚或异常 EOF 阶段黑屏。
         const auto flushResult = dependencies.audioOutput->flush();
-        if (!flushResult.ok())
-            reportRuntimeError(flushResult.error());
+        if (newPlaybackRate.has_value())
+            activePlaybackRate.store(targetPlaybackRate, std::memory_order_release);
         m_controlChanged.notify_all();
         m_presentCapacityChanged.notify_all();
+        return flushResult;
     }
 
     void stop()
@@ -750,7 +812,7 @@ struct RuntimePlayer::Impl {
                 .bytes = samples,
                 .pts = framePts,
                 .generation = frameGeneration,
-                .playbackRate = config.playbackRate,
+                .playbackRate = currentPlaybackRate(),
             });
             if (!processResult.ok()) {
                 handleAudioProcessingFailure(
@@ -769,7 +831,12 @@ struct RuntimePlayer::Impl {
     bool tempoProcessingRequired() const
     {
         return config.audioClockEnabled
-            && !playbackRatesEqual(config.playbackRate, kDefaultPlaybackRate);
+            && !playbackRatesEqual(currentPlaybackRate(), kDefaultPlaybackRate);
+    }
+
+    double currentPlaybackRate() const
+    {
+        return activePlaybackRate.load(std::memory_order_acquire);
     }
 
     std::uint64_t audioSampleFrames(std::span<const std::byte> samples) const
@@ -802,7 +869,7 @@ struct RuntimePlayer::Impl {
         }
         auto result = dependencies.audioTempoProcessor->configure(
             config.audioFormat,
-            config.playbackRate);
+            currentPlaybackRate());
         if (result.ok()) {
             tempoGeneration = targetGeneration;
             std::lock_guard lock(m_mutex);
@@ -852,7 +919,7 @@ struct RuntimePlayer::Impl {
             .bytes = outputSamples,
             .pts = pts,
             .generation = checkedGeneration,
-            .playbackRate = config.playbackRate,
+            .playbackRate = currentPlaybackRate(),
         });
         if (!writeResult.ok()) {
             if (isCurrent(checkedSessionId, checkedGeneration))
@@ -997,6 +1064,7 @@ struct RuntimePlayer::Impl {
                 .basePosition = decision.target,
                 .targetAudioPts = decision.firstAudioPts,
                 .baseTime = SteadyClock::now(),
+                .playbackRate = currentPlaybackRate(),
             };
         }
         m_controlChanged.notify_all();
@@ -1025,7 +1093,7 @@ struct RuntimePlayer::Impl {
             const auto waitTime = std::min<std::chrono::microseconds>(
                 playbackDurationForMediaDuration(
                     seekGapClock.targetAudioPts - position,
-                    config.playbackRate),
+                    seekGapClock.playbackRate),
                 std::chrono::milliseconds(20));
             m_controlChanged.wait_for(lock, waitTime);
         }
@@ -1034,11 +1102,12 @@ struct RuntimePlayer::Impl {
     bool writeSeekGapSilence(SessionId checkedSessionId, SeekAudioGapDecision decision)
     {
         constexpr auto kSilenceDeviceChunkDuration = std::chrono::milliseconds(20);
+        const auto playbackRate = currentPlaybackRate();
         auto remaining = decision.gap;
         auto chunkPts = decision.target;
         const auto maxMediaChunkDuration = mediaDurationForPlaybackDuration(
             kSilenceDeviceChunkDuration,
-            config.playbackRate);
+            playbackRate);
 
         while (remaining > std::chrono::microseconds::zero()) {
             if (!waitUntilCanWriteSeekGapSilence(checkedSessionId, decision.generation))
@@ -1049,7 +1118,7 @@ struct RuntimePlayer::Impl {
                 maxMediaChunkDuration);
             const auto deviceChunkDuration = playbackDurationForMediaDuration(
                 mediaChunkDuration,
-                config.playbackRate);
+                playbackRate);
             auto silence = makeSilenceBytes(config.audioFormat, deviceChunkDuration);
             if (!silence.ok()) {
                 reportRuntimeError(silence.error());
@@ -1064,7 +1133,7 @@ struct RuntimePlayer::Impl {
                 .bytes = silence.value(),
                 .pts = chunkPts,
                 .generation = decision.generation,
-                .playbackRate = config.playbackRate,
+                .playbackRate = playbackRate,
             });
             if (!writeResult.ok()) {
                 if (isCurrent(checkedSessionId, decision.generation))
@@ -1157,6 +1226,8 @@ struct RuntimePlayer::Impl {
                 result = seekAnchorPlaybackClockLocked(activeGeneration, snapshot);
             else
                 result = snapshot;
+            if (running)
+                result.paused = paused;
         }
         return result;
     }
@@ -1173,7 +1244,7 @@ struct RuntimePlayer::Impl {
         return std::min(
             seekGapClock.targetAudioPts,
             seekGapClock.basePosition
-                + mediaDurationForPlaybackDuration(elapsed, config.playbackRate));
+                + mediaDurationForPlaybackDuration(elapsed, seekGapClock.playbackRate));
     }
 
     void pauseSeekGapClockLocked()
@@ -1449,7 +1520,7 @@ struct RuntimePlayer::Impl {
             presentTracker.clear();
             presentTracker.reset(activeSession, generation);
             presentTracker.setMaxPending(dependencies.videoPresenter->capabilities().maxPendingFrames);
-            scheduler.reset(generation, config.playbackRate);
+            scheduler.reset(generation, currentPlaybackRate());
             scheduler.pause();
             if (transition.abortQueues)
                 diagnostics.queueAbortCount += 2;
@@ -1597,10 +1668,12 @@ struct RuntimePlayer::Impl {
         std::chrono::microseconds basePosition { 0 };
         std::chrono::microseconds targetAudioPts { 0 };
         SteadyClock::time_point baseTime {};
+        double playbackRate = kDefaultPlaybackRate;
     };
     SeekGapClock seekGapClock;
     std::atomic<float> audioVolume { sanitizeAudioControls(config.audioControls).volume };
     std::atomic_bool audioMuted { sanitizeAudioControls(config.audioControls).muted };
+    std::atomic<double> activePlaybackRate { config.playbackRate };
     mutable std::mutex m_mutex;
     std::condition_variable m_controlChanged;
     std::condition_variable m_presentCapacityChanged;
@@ -1667,6 +1740,18 @@ void RuntimePlayer::setAudioControls(RuntimeAudioControls controls)
 void RuntimePlayer::seek(std::chrono::microseconds position)
 {
     m_impl->seek(position);
+}
+
+Result<void> RuntimePlayer::setPlaybackRate(
+    double playbackRate,
+    std::chrono::microseconds position)
+{
+    return m_impl->setPlaybackRate(playbackRate, position);
+}
+
+double RuntimePlayer::playbackRate() const
+{
+    return m_impl->currentPlaybackRate();
 }
 
 void RuntimePlayer::completeSeek(SessionId sessionId, Generation generation)

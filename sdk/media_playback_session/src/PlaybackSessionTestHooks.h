@@ -23,7 +23,9 @@ public:
     virtual void pause() = 0;
     virtual void stop() = 0;
     [[nodiscard("seek result determines whether core accepted the seek command")]]
-    virtual Result<void> seek(std::chrono::milliseconds position, SeekPlaybackMode mode) = 0;
+    virtual Result<void> seek(std::chrono::milliseconds position,
+                              SeekPlaybackMode mode,
+                              SeekRequestId requestId) = 0;
     [[nodiscard]] virtual PlayerDiagnostics diagnostics() const { return {}; }
 };
 
@@ -42,6 +44,10 @@ public:
     virtual void resume() = 0;
     virtual void setAudioControls(runtime::RuntimeAudioControls controls) = 0;
     virtual void seek(std::chrono::microseconds position) = 0;
+    [[nodiscard("rate changes can fail validation or timeline reconstruction")]]
+    virtual Result<void> setPlaybackRate(double playbackRate,
+                                         std::chrono::microseconds position) = 0;
+    [[nodiscard]] virtual double playbackRate() const = 0;
     virtual void completeSeek(runtime::SessionId sessionId, runtime::Generation generation) = 0;
     virtual void notifyPresenterFailure(runtime::PresentStatus reason) = 0;
     virtual void stop() = 0;

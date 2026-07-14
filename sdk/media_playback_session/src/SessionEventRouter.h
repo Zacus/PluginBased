@@ -47,6 +47,9 @@ public:
             ++m_acceptanceEpoch;
             m_pendingSeekTimeline.reset();
             m_pendingSeekTargetPosition.reset();
+            m_pendingPlaybackRate.reset();
+            m_pendingSeekRequestId = 0;
+            m_pendingSeekKind = PendingSeekKind::Seek;
             m_positionGateTarget.reset();
             m_lastForwardedPosition.reset();
             m_runtimeEofForwarded = false;
@@ -59,24 +62,52 @@ public:
 
     void beginSeek(runtime::RuntimeTimeline runtimeTimeline)
     {
-        beginSeekInternal(runtimeTimeline, std::nullopt, false);
+        beginSeekInternal(runtimeTimeline, std::nullopt, false, PendingSeekKind::Seek, std::nullopt);
     }
 
     void beginSeek(runtime::RuntimeTimeline runtimeTimeline,
-                   std::chrono::milliseconds targetPosition)
+                   std::chrono::milliseconds targetPosition,
+                   SeekRequestId requestId = 0)
     {
-        beginSeekInternal(runtimeTimeline, targetPosition, false);
+        beginSeekInternal(
+            runtimeTimeline,
+            targetPosition,
+            false,
+            PendingSeekKind::Seek,
+            std::nullopt,
+            requestId);
+    }
+
+    void beginRateChange(runtime::RuntimeTimeline runtimeTimeline,
+                         std::chrono::milliseconds targetPosition,
+                         double playbackRate,
+                         SeekRequestId requestId = 0)
+    {
+        beginSeekInternal(
+            runtimeTimeline,
+            targetPosition,
+            false,
+            PendingSeekKind::RateChange,
+            playbackRate,
+            requestId);
     }
 
     void beginFallbackSeek(runtime::RuntimeTimeline runtimeTimeline)
     {
-        beginSeekInternal(runtimeTimeline, std::nullopt, true);
+        beginSeekInternal(runtimeTimeline, std::nullopt, true, PendingSeekKind::Seek, std::nullopt);
     }
 
     void beginFallbackSeek(runtime::RuntimeTimeline runtimeTimeline,
-                           std::chrono::milliseconds targetPosition)
+                           std::chrono::milliseconds targetPosition,
+                           SeekRequestId requestId = 0)
     {
-        beginSeekInternal(runtimeTimeline, targetPosition, true);
+        beginSeekInternal(
+            runtimeTimeline,
+            targetPosition,
+            true,
+            PendingSeekKind::Seek,
+            std::nullopt,
+            requestId);
     }
 
     void cancelFrameAcceptance()
@@ -86,6 +117,9 @@ public:
             ++m_acceptanceEpoch;
             m_pendingSeekTimeline.reset();
             m_pendingSeekTargetPosition.reset();
+            m_pendingPlaybackRate.reset();
+            m_pendingSeekRequestId = 0;
+            m_pendingSeekKind = PendingSeekKind::Seek;
             m_positionGateTarget.reset();
             m_lastForwardedPosition.reset();
             m_runtimeEofForwarded = false;
@@ -133,6 +167,15 @@ public:
         }
     }
 
+    bool acceptsError(EventMetadata metadata) const
+    {
+        if (m_timeline.acceptsCoreEvent(metadata))
+            return true;
+
+        std::lock_guard lock(m_mutex);
+        return m_acceptsUnopenedErrors && !m_timeline.hasAcceptedTimeline();
+    }
+
     void onEndOfStreamPresented(runtime::RuntimeTimeline runtimeTimeline)
     {
         const auto coreTimeline = m_timeline.coreForRuntimeTimeline(runtimeTimeline);
@@ -166,15 +209,26 @@ public:
     }
 
 private:
+    enum class PendingSeekKind {
+        Seek,
+        RateChange
+    };
+
     void beginSeekInternal(runtime::RuntimeTimeline runtimeTimeline,
                            std::optional<std::chrono::milliseconds> targetPosition,
-                           bool suppressMediaInfoUntilSeek)
+                           bool suppressMediaInfoUntilSeek,
+                           PendingSeekKind kind,
+                           std::optional<double> playbackRate,
+                           SeekRequestId requestId = 0)
     {
         {
             std::lock_guard lock(m_mutex);
             ++m_acceptanceEpoch;
             m_pendingSeekTimeline = runtimeTimeline;
             m_pendingSeekTargetPosition = targetPosition;
+            m_pendingSeekKind = kind;
+            m_pendingPlaybackRate = playbackRate;
+            m_pendingSeekRequestId = requestId;
             m_positionGateTarget.reset();
             m_lastForwardedPosition.reset();
             m_runtimeEofForwarded = false;
@@ -195,6 +249,9 @@ private:
             mediaInfoEpoch = ++m_acceptanceEpoch;
             m_pendingSeekTimeline.reset();
             m_pendingSeekTargetPosition.reset();
+            m_pendingPlaybackRate.reset();
+            m_pendingSeekRequestId = 0;
+            m_pendingSeekKind = PendingSeekKind::Seek;
             m_positionGateTarget.reset();
             m_lastForwardedPosition.reset();
             m_runtimeEofForwarded = false;
@@ -231,13 +288,23 @@ private:
 
     void handleSeekCompleted(const PlayerEvent& event, const SeekCompletedEvent& payload)
     {
-        const auto seekState = takePendingSeekState(payload.position);
+        const auto seekState = takePendingSeekState(payload);
         if (!seekState.has_value())
             return;
 
         m_timeline.acceptCoreTimeline(event.metadata, seekState->timeline);
         m_runtimeControl.completeSeek(seekState->timeline);
-        forward(event);
+        if (seekState->kind == PendingSeekKind::RateChange) {
+            forward({
+                .metadata = event.metadata,
+                .payload = PlaybackRateChangedEvent {
+                    .playbackRate = seekState->playbackRate.value_or(runtime::kDefaultPlaybackRate),
+                    .position = payload.position,
+                },
+            });
+        } else {
+            forward(event);
+        }
     }
 
     void handlePositionChanged(const PlayerEvent& event)
@@ -315,18 +382,11 @@ private:
 
     void forwardErrorIfCurrentOrUnopened(const PlayerEvent& event)
     {
-        if (m_timeline.acceptsCoreEvent(event.metadata)) {
-            forward(event);
+        if (!acceptsError(event.metadata))
             return;
-        }
 
-        bool shouldForward = false;
-        {
-            std::lock_guard lock(m_mutex);
-            shouldForward = m_acceptsUnopenedErrors && !m_timeline.hasAcceptedTimeline();
-        }
-        if (shouldForward)
-            forward(event);
+        cancelFrameAcceptance();
+        forward(event);
     }
 
     void forward(const PlayerEvent& event)
@@ -338,22 +398,37 @@ private:
     struct PendingSeekState {
         runtime::RuntimeTimeline timeline {};
         std::chrono::milliseconds targetPosition { 0 };
+        PendingSeekKind kind = PendingSeekKind::Seek;
+        std::optional<double> playbackRate;
     };
 
     [[nodiscard("empty means the seek completion does not match an active runtime seek")]]
     std::optional<PendingSeekState> takePendingSeekState(
-        std::chrono::milliseconds completedPosition)
+        const SeekCompletedEvent& completed)
     {
         std::lock_guard lock(m_mutex);
         if (!m_pendingSeekTimeline.has_value())
             return std::nullopt;
+        if (m_pendingSeekRequestId != 0
+            && completed.requestId != m_pendingSeekRequestId) {
+            return std::nullopt;
+        }
+        if (m_pendingSeekTargetPosition.has_value()
+            && completed.requestedPosition != *m_pendingSeekTargetPosition) {
+            return std::nullopt;
+        }
 
         PendingSeekState state {
             .timeline = *m_pendingSeekTimeline,
-            .targetPosition = m_pendingSeekTargetPosition.value_or(completedPosition),
+            .targetPosition = m_pendingSeekTargetPosition.value_or(completed.position),
+            .kind = m_pendingSeekKind,
+            .playbackRate = m_pendingPlaybackRate,
         };
         m_pendingSeekTimeline.reset();
         m_pendingSeekTargetPosition.reset();
+        m_pendingPlaybackRate.reset();
+        m_pendingSeekRequestId = 0;
+        m_pendingSeekKind = PendingSeekKind::Seek;
         m_positionGateTarget = state.targetPosition;
         m_lastForwardedPosition.reset();
         m_runtimeEofForwarded = false;
@@ -365,9 +440,12 @@ private:
     RuntimeControl& m_runtimeControl;
     SessionTimeline& m_timeline;
     ISessionEvents* m_events = nullptr;
-    std::mutex m_mutex;
+    mutable std::mutex m_mutex;
     std::optional<runtime::RuntimeTimeline> m_pendingSeekTimeline;
     std::optional<std::chrono::milliseconds> m_pendingSeekTargetPosition;
+    PendingSeekKind m_pendingSeekKind = PendingSeekKind::Seek;
+    std::optional<double> m_pendingPlaybackRate;
+    SeekRequestId m_pendingSeekRequestId = 0;
     std::optional<std::chrono::milliseconds> m_positionGateTarget;
     std::optional<std::chrono::milliseconds> m_lastForwardedPosition;
     std::uint64_t m_acceptanceEpoch = 0;

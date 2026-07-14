@@ -28,6 +28,7 @@ struct PlaybackSessionDependencies {
     runtime::IAudioOutput* audioOutput = nullptr;
     runtime::IVideoPresenter* videoPresenter = nullptr;
     ISessionEvents* events = nullptr;
+    runtime::IAudioTempoProcessor* audioTempoProcessor = nullptr;
 };
 
 } // namespace media_sdk::session

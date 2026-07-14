@@ -60,12 +60,18 @@ media_sdk::PlayerEvent positionEvent(media_sdk::EventMetadata metadata,
 }
 
 media_sdk::PlayerEvent seekCompletedEvent(media_sdk::EventMetadata metadata,
-                                          std::chrono::milliseconds position)
+                                          std::chrono::milliseconds position,
+                                          std::chrono::milliseconds requestedPosition = -1ms,
+                                          media_sdk::SeekRequestId requestId = 0)
 {
+    if (requestedPosition < 0ms)
+        requestedPosition = position;
     return {
         .metadata = metadata,
         .payload = media_sdk::SeekCompletedEvent {
             .position = position,
+            .requestedPosition = requestedPosition,
+            .requestId = requestId,
         },
     };
 }
@@ -294,6 +300,89 @@ void seekCompletedCompletesRuntimeTimelineAndResumesFrameAcceptance()
     assert(acceptedRuntime.has_value());
     assert(acceptedRuntime->sessionId == 21);
     assert(acceptedRuntime->generation == 8);
+}
+
+void rateChangeCompletionEmitsRateEventInsteadOfSeekEvent()
+{
+    media_sdk::session::SessionTimeline timeline;
+    RecordingRuntimeControl runtime;
+    RecordingSessionEvents events;
+    media_sdk::session::SessionEventRouter<RecordingRuntimeControl> router(
+        runtime,
+        timeline,
+        &events);
+
+    router.beginOpen();
+    router.onEvent(mediaInfoEvent(coreTimeline(10, 3)));
+    router.beginRateChange(runtimeTimeline(21, 8), 1200ms, 1.5);
+    events.events.clear();
+
+    router.onEvent(seekCompletedEvent(coreTimeline(10, 4), 1200ms));
+
+    assert(runtime.completeSeekCount == 1);
+    assert(events.events.size() == 1);
+    const auto* rate = std::get_if<media_sdk::PlaybackRateChangedEvent>(
+        &events.events.back().payload);
+    assert(rate);
+    assert(rate->playbackRate == 1.5);
+    assert(rate->position == 1200ms);
+}
+
+void supersededSeekCompletionCannotCommitLatestRateTimeline()
+{
+    media_sdk::session::SessionTimeline timeline;
+    RecordingRuntimeControl runtime;
+    RecordingSessionEvents events;
+    media_sdk::session::SessionEventRouter<RecordingRuntimeControl> router(
+        runtime,
+        timeline,
+        &events);
+
+    router.beginOpen();
+    router.onEvent(mediaInfoEvent(coreTimeline(10, 3)));
+    router.beginRateChange(runtimeTimeline(21, 8), 1000ms, 1.25);
+    router.beginRateChange(runtimeTimeline(21, 9), 1400ms, 1.5);
+    events.events.clear();
+
+    router.onEvent(seekCompletedEvent(coreTimeline(10, 4), 1000ms, 1000ms));
+    assert(runtime.completeSeekCount == 0);
+    assert(events.events.empty());
+    assert(!timeline.hasAcceptedTimeline());
+
+    router.onEvent(seekCompletedEvent(coreTimeline(10, 5), 1400ms, 1400ms));
+    assert(runtime.completeSeekCount == 1);
+    assert(runtime.lastCompletedSeek.generation == 9);
+    assert(events.events.size() == 1);
+    const auto* rate = std::get_if<media_sdk::PlaybackRateChangedEvent>(
+        &events.events.back().payload);
+    assert(rate && rate->playbackRate == 1.5);
+}
+
+void supersededSamePositionCompletionCannotCommitLatestRateTimeline()
+{
+    media_sdk::session::SessionTimeline timeline;
+    RecordingRuntimeControl runtime;
+    RecordingSessionEvents events;
+    media_sdk::session::SessionEventRouter<RecordingRuntimeControl> router(
+        runtime,
+        timeline,
+        &events);
+
+    router.beginOpen();
+    router.onEvent(mediaInfoEvent(coreTimeline(10, 3)));
+    router.beginRateChange(runtimeTimeline(21, 8), 1000ms, 1.25, 41);
+    router.beginRateChange(runtimeTimeline(21, 9), 1000ms, 1.5, 42);
+    events.events.clear();
+
+    router.onEvent(seekCompletedEvent(coreTimeline(10, 4), 1000ms, 1000ms, 41));
+    assert(runtime.completeSeekCount == 0);
+    assert(events.events.empty());
+
+    router.onEvent(seekCompletedEvent(coreTimeline(10, 5), 1000ms, 1000ms, 42));
+    assert(runtime.completeSeekCount == 1);
+    const auto* rate = std::get_if<media_sdk::PlaybackRateChangedEvent>(
+        &events.events.back().payload);
+    assert(rate && rate->playbackRate == 1.5);
 }
 
 void seekForwardsRuntimeClockPositionsInsteadOfDecoderPositions()
@@ -555,6 +644,9 @@ int main()
     positionChangedIsForwardedOnlyForAcceptedCoreTimeline();
     runtimeClockTickForwardsPositionForAcceptedTimeline();
     seekCompletedCompletesRuntimeTimelineAndResumesFrameAcceptance();
+    rateChangeCompletionEmitsRateEventInsteadOfSeekEvent();
+    supersededSeekCompletionCannotCommitLatestRateTimeline();
+    supersededSamePositionCompletionCannotCommitLatestRateTimeline();
     seekForwardsRuntimeClockPositionsInsteadOfDecoderPositions();
     seekForwardsAnchoredRuntimeClockAtTarget();
     coreEndOfFileEnqueuesRuntimeEofWithoutExternalEof();

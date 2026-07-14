@@ -7,6 +7,7 @@
 
 #include "media_sdk/Error.h"
 
+#include <algorithm>
 #include <cstdint>
 #include <functional>
 #include <mutex>
@@ -90,9 +91,11 @@ public:
         m_player.stop();
     }
 
-    Result<void> seek(std::chrono::milliseconds position, SeekPlaybackMode mode) override
+    Result<void> seek(std::chrono::milliseconds position,
+                      SeekPlaybackMode mode,
+                      SeekRequestId requestId) override
     {
-        return m_player.seek(position, mode);
+        return m_player.seek(position, mode, requestId);
     }
 
     PlayerDiagnostics diagnostics() const override
@@ -150,6 +153,18 @@ public:
     void seek(std::chrono::microseconds position) override
     {
         m_player.seek(position);
+    }
+
+    Result<void> setPlaybackRate(
+        double playbackRate,
+        std::chrono::microseconds position) override
+    {
+        return m_player.setPlaybackRate(playbackRate, position);
+    }
+
+    double playbackRate() const override
+    {
+        return m_player.playbackRate();
     }
 
     void completeSeek(runtime::SessionId sessionId, runtime::Generation generation) override
@@ -248,6 +263,8 @@ struct PlaybackSession::Impl final
         Idle,
         Playing,
         Paused,
+        Completed,
+        Error,
     };
 
     Impl(PlaybackSessionConfig sessionConfig,
@@ -275,6 +292,7 @@ struct PlaybackSession::Impl final
 
     Result<void> open(const std::filesystem::path& path)
     {
+        std::lock_guard discontinuityLock(m_discontinuityMutex);
         if (path.empty())
             return sessionFailure(MediaErrorCode::OpenFailed, "Cannot open an empty media path");
         if (!dependencies.audioOutput) {
@@ -290,7 +308,7 @@ struct PlaybackSession::Impl final
                                   "PlaybackSession factories are not configured");
         }
 
-        stop();
+        stopLocked();
 
         auto newCore = factories->createCore(config.core,
                                              static_cast<IEventSink&>(*this),
@@ -310,12 +328,13 @@ struct PlaybackSession::Impl final
         eventRouter.beginOpen();
         const auto result = newCore->open(path);
         if (!result.ok())
-            stop();
+            stopLocked();
         return result;
     }
 
     void play()
     {
+        std::lock_guard discontinuityLock(m_discontinuityMutex);
         {
             std::lock_guard lock(m_mutex);
             commandState = PlaybackCommandState::Playing;
@@ -330,6 +349,7 @@ struct PlaybackSession::Impl final
 
     void pause()
     {
+        std::lock_guard discontinuityLock(m_discontinuityMutex);
         {
             std::lock_guard lock(m_mutex);
             commandState = PlaybackCommandState::Paused;
@@ -355,6 +375,12 @@ struct PlaybackSession::Impl final
     }
 
     void stop()
+    {
+        std::lock_guard discontinuityLock(m_discontinuityMutex);
+        stopLocked();
+    }
+
+    void stopLocked()
     {
         std::shared_ptr<detail::IPlaybackSessionCorePlayer> coreToStop;
         std::shared_ptr<detail::IPlaybackSessionRuntimePlayer> runtimeToStop;
@@ -384,6 +410,7 @@ struct PlaybackSession::Impl final
 
     Result<void> seek(std::chrono::milliseconds position, SeekPlaybackMode mode)
     {
+        std::lock_guard discontinuityLock(m_discontinuityMutex);
         if (position < std::chrono::milliseconds { 0 })
             return sessionFailure(MediaErrorCode::SeekFailed, "Cannot seek to a negative position");
 
@@ -392,11 +419,32 @@ struct PlaybackSession::Impl final
             return sessionFailure(MediaErrorCode::InternalStateError, "PlaybackSession is not open");
 
         const auto stateBeforeSeek = playbackCommandState();
+        const auto requestId = nextSeekRequestId();
         const bool resumeAfterSeek = mode == SeekPlaybackMode::ResumePlayback
             || stateBeforeSeek == PlaybackCommandState::Playing;
         if (handles.runtimePlayer) {
-            handles.runtimePlayer->seek(std::chrono::duration_cast<std::chrono::microseconds>(position));
-            eventRouter.beginSeek(handles.runtimePlayer->timeline(), position);
+            const auto runtimeTimelineBeforeSeek = handles.runtimePlayer->timeline();
+            const auto targetPosition =
+                std::chrono::duration_cast<std::chrono::microseconds>(position);
+            const auto configuredRate = playbackRate();
+            if (!runtime::playbackRatesEqual(
+                    configuredRate,
+                    handles.runtimePlayer->playbackRate())) {
+                const auto rateResult = handles.runtimePlayer->setPlaybackRate(
+                    configuredRate,
+                    targetPosition);
+                if (!rateResult.ok()) {
+                    if (!sameTimeline(
+                            handles.runtimePlayer->timeline(),
+                            runtimeTimelineBeforeSeek)) {
+                        stopLocked();
+                    }
+                    return rateResult;
+                }
+            } else {
+                handles.runtimePlayer->seek(targetPosition);
+            }
+            eventRouter.beginSeek(handles.runtimePlayer->timeline(), position, requestId);
         } else {
             eventRouter.cancelFrameAcceptance();
         }
@@ -404,7 +452,7 @@ struct PlaybackSession::Impl final
         const auto coreSeekMode = resumeAfterSeek
             ? SeekPlaybackMode::ResumePlayback
             : SeekPlaybackMode::PreservePlaybackState;
-        const auto seekResult = handles.corePlayer->seek(position, coreSeekMode);
+        const auto seekResult = handles.corePlayer->seek(position, coreSeekMode, requestId);
         if (!seekResult.ok())
             return seekResult;
 
@@ -417,8 +465,104 @@ struct PlaybackSession::Impl final
             }
             if (handles.runtimePlayer)
                 handles.runtimePlayer->resume();
+        } else if (stateBeforeSeek == PlaybackCommandState::Completed
+                   || stateBeforeSeek == PlaybackCommandState::Error) {
+            std::lock_guard lock(m_mutex);
+            if (core == handles.corePlayer)
+                commandState = PlaybackCommandState::Paused;
         }
         return seekResult;
+    }
+
+    Result<void> setPlaybackRate(double playbackRate)
+    {
+        std::lock_guard discontinuityLock(m_discontinuityMutex);
+        if (!runtime::isPlaybackRateSupported(playbackRate)) {
+            return sessionFailure(
+                MediaErrorCode::InvalidArgument,
+                "PlaybackSession requires a playback rate between 0.5 and 2.0");
+        }
+
+        Handles handles;
+        PlaybackCommandState state = PlaybackCommandState::Idle;
+        {
+            std::lock_guard lock(m_mutex);
+            if (runtime::playbackRatesEqual(config.runtime.playbackRate, playbackRate))
+                return Result<void>::success();
+            handles = {
+                .corePlayer = core,
+                .runtimePlayer = runtimePlayer,
+            };
+            state = commandState;
+            if (state == PlaybackCommandState::Completed
+                || state == PlaybackCommandState::Error) {
+                config.runtime.playbackRate = playbackRate;
+                return Result<void>::success();
+            }
+            if (!handles.corePlayer || !handles.runtimePlayer) {
+                config.runtime.playbackRate = playbackRate;
+                return Result<void>::success();
+            }
+        }
+
+        const auto clock = handles.runtimePlayer->clock();
+        const auto runtimeTimelineBeforeChange = handles.runtimePlayer->timeline();
+        if (!clock.valid || clock.generation != runtimeTimelineBeforeChange.generation) {
+            return sessionFailure(
+                MediaErrorCode::InternalStateError,
+                "PlaybackSession cannot change rate without an authoritative runtime clock");
+        }
+
+        const auto mediaPosition = std::max(
+            clock.position,
+            std::chrono::microseconds { 0 });
+        const auto rateResult = handles.runtimePlayer->setPlaybackRate(
+            playbackRate,
+            mediaPosition);
+        if (!rateResult.ok()) {
+            if (!sameTimeline(
+                    handles.runtimePlayer->timeline(),
+                    runtimeTimelineBeforeChange)) {
+                stopLocked();
+            }
+            return rateResult;
+        }
+
+        const auto targetPosition =
+            std::chrono::duration_cast<std::chrono::milliseconds>(mediaPosition);
+        const auto rateTimeline = handles.runtimePlayer->timeline();
+        const auto requestId = nextSeekRequestId();
+        eventRouter.beginRateChange(
+            rateTimeline,
+            targetPosition,
+            playbackRate,
+            requestId);
+        {
+            std::lock_guard lock(m_mutex);
+            if (core != handles.corePlayer || runtimePlayer != handles.runtimePlayer) {
+                eventRouter.cancelFrameAcceptance();
+                return sessionFailure(
+                    MediaErrorCode::InternalStateError,
+                    "PlaybackSession rate change was superseded");
+            }
+            config.runtime.playbackRate = playbackRate;
+        }
+
+        const auto seekMode = state == PlaybackCommandState::Playing
+            ? SeekPlaybackMode::ResumePlayback
+            : SeekPlaybackMode::PreservePlaybackState;
+        const auto seekResult = handles.corePlayer->seek(targetPosition, seekMode, requestId);
+        if (!seekResult.ok()) {
+            stopLocked();
+            return seekResult;
+        }
+        return Result<void>::success();
+    }
+
+    double playbackRate() const
+    {
+        std::lock_guard lock(m_mutex);
+        return config.runtime.playbackRate;
     }
 
     void notifyNativeRenderingFailed()
@@ -479,6 +623,7 @@ struct PlaybackSession::Impl final
         }
 
         std::uint64_t expectedLifecycleEpoch = 0;
+        PlaybackSessionConfig runtimeSessionConfig;
         {
             std::lock_guard lock(m_mutex);
             if (!core || currentPath.empty()) {
@@ -486,14 +631,16 @@ struct PlaybackSession::Impl final
                                       "PlaybackSession runtime open was superseded");
             }
             expectedLifecycleEpoch = lifecycleEpoch;
+            runtimeSessionConfig = config;
         }
 
         auto newRuntime = factories->createRuntime(
-            runtimeConfigForMedia(config, info),
+            runtimeConfigForMedia(runtimeSessionConfig, info),
             runtime::RuntimePlayerDependencies {
                 .audioOutput = dependencies.audioOutput,
                 .videoPresenter = dependencies.videoPresenter,
                 .events = static_cast<runtime::IRuntimePlayerEvents*>(this),
+                .audioTempoProcessor = dependencies.audioTempoProcessor,
             });
         if (!newRuntime) {
             return runtimeFailure(MediaErrorCode::InternalStateError,
@@ -588,7 +735,22 @@ private:
 
     void onEvent(const PlayerEvent& event) override
     {
+        const bool acceptedError = std::holds_alternative<ErrorEvent>(event.payload)
+            && eventRouter.acceptsError(event.metadata);
         eventRouter.onEvent(event);
+        if (!acceptedError)
+            return;
+
+        std::shared_ptr<detail::IPlaybackSessionRuntimePlayer> runtimeToPause;
+        {
+            std::lock_guard lock(m_mutex);
+            if (!core)
+                return;
+            commandState = PlaybackCommandState::Error;
+            runtimeToPause = runtimePlayer;
+        }
+        if (runtimeToPause)
+            runtimeToPause->pause();
     }
 
     DecodeFramePushResult pushAudio(AudioFrame frame, DecodeFrameMetadata metadata) override
@@ -632,6 +794,13 @@ private:
     {
         if (!timelineState.acceptsRuntimeTimeline(runtimeTimeline))
             return;
+        {
+            std::lock_guard lock(m_mutex);
+            if (runtimePlayer
+                && sameTimeline(runtimePlayer->timeline(), runtimeTimeline)) {
+                commandState = PlaybackCommandState::Completed;
+            }
+        }
         eventRouter.onEndOfStreamPresented(runtimeTimeline);
         notifyRuntimeDiagnostics();
     }
@@ -646,12 +815,23 @@ private:
 
     void onRuntimeError(MediaError error) override
     {
-        const auto runtime = currentRuntimePlayer();
-        if (!runtime)
+        const auto handles = currentHandles();
+        if (!handles.runtimePlayer)
             return;
-        const auto coreMetadata = timelineState.coreForRuntimeTimeline(runtime->timeline());
+        const auto coreMetadata = timelineState.coreForRuntimeTimeline(
+            handles.runtimePlayer->timeline());
         if (!coreMetadata.has_value())
             return;
+        {
+            std::lock_guard lock(m_mutex);
+            if (runtimePlayer != handles.runtimePlayer)
+                return;
+            commandState = PlaybackCommandState::Error;
+        }
+        eventRouter.cancelFrameAcceptance();
+        handles.runtimePlayer->pause();
+        if (handles.corePlayer)
+            handles.corePlayer->pause();
         emitError(*coreMetadata, std::move(error));
     }
 
@@ -687,7 +867,8 @@ private:
 
         const auto fallbackPosition =
             std::chrono::duration_cast<std::chrono::milliseconds>(action.resumePosition);
-        eventRouter.beginFallbackSeek(fallbackTimeline, fallbackPosition);
+        const auto requestId = nextSeekRequestId();
+        eventRouter.beginFallbackSeek(fallbackTimeline, fallbackPosition, requestId);
 
         auto fallbackCore = currentFactories->createCore(
             fallbackCoreConfig,
@@ -716,7 +897,10 @@ private:
         }
 
         fallbackCore->play();
-        const auto seekResult = fallbackCore->seek(fallbackPosition, SeekPlaybackMode::ResumePlayback);
+        const auto seekResult = fallbackCore->seek(
+            fallbackPosition,
+            SeekPlaybackMode::ResumePlayback,
+            requestId);
         if (!seekResult.ok()) {
             emitError(*coreMetadata, seekResult.error());
             return;
@@ -752,6 +936,12 @@ private:
         return commandState;
     }
 
+    SeekRequestId nextSeekRequestId()
+    {
+        std::lock_guard lock(m_mutex);
+        return ++lastSeekRequestId;
+    }
+
     std::shared_ptr<detail::IPlaybackSessionRuntimePlayer> currentRuntimePlayer() const
     {
         std::lock_guard lock(m_mutex);
@@ -782,6 +972,7 @@ private:
     PlaybackSessionDependencies dependencies;
     std::shared_ptr<detail::PlaybackSessionFactories> factories;
     mutable std::mutex m_mutex;
+    std::mutex m_discontinuityMutex;
     SessionTimeline timelineState;
     PlaybackSessionRuntimeControl runtimeControl;
     SessionEventRouter<PlaybackSessionRuntimeControl> eventRouter;
@@ -790,6 +981,7 @@ private:
     std::filesystem::path currentPath;
     std::optional<runtime::RuntimeTimeline> handledFallbackTimeline;
     std::uint64_t lifecycleEpoch = 0;
+    SeekRequestId lastSeekRequestId = 0;
     PlaybackCommandState commandState = PlaybackCommandState::Idle;
 };
 
@@ -841,6 +1033,16 @@ Result<void> PlaybackSession::seek(std::chrono::milliseconds position)
 Result<void> PlaybackSession::seek(std::chrono::milliseconds position, SeekPlaybackMode mode)
 {
     return m_impl->seek(position, mode);
+}
+
+Result<void> PlaybackSession::setPlaybackRate(double playbackRate)
+{
+    return m_impl->setPlaybackRate(playbackRate);
+}
+
+double PlaybackSession::playbackRate() const
+{
+    return m_impl->playbackRate();
 }
 
 void PlaybackSession::notifyNativeRenderingFailed()

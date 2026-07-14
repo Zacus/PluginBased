@@ -812,6 +812,9 @@ void videoOnlyRateDoesNotRequireTempoProcessor()
     auto player = makePlayer(audio, presenter, config);
 
     assert(player.open().ok());
+    assert(player.setPlaybackRate(0.75, 100ms).ok());
+    assert(player.playbackRate() == 0.75);
+    assert(player.timeline().generation == 2);
 }
 
 void timelineTracksSeekGeneration()
@@ -825,6 +828,80 @@ void timelineTracksSeekGeneration()
     const auto timeline = player.timeline();
     assert(timeline.sessionId == 1);
     assert(timeline.generation == 2);
+}
+
+void playbackRateChangeRebuildsRuntimeGeneration()
+{
+    MockAudioOutput audio;
+    audio.setClock(250ms, 1);
+    MockPresenter presenter;
+    MockAudioTempoProcessor tempo;
+    auto player = makePlayer(audio, presenter, tempo, {});
+    assert(player.open().ok());
+
+    const auto result = player.setPlaybackRate(1.5, 250ms);
+
+    assert(result.ok());
+    assert(player.playbackRate() == 1.5);
+    assert(player.timeline().generation == 2);
+    assert(audio.flushCount == 1);
+    assert(player.diagnostics().playbackRate == 1.5);
+    assert(player.diagnostics().playbackRateChangeCount == 1);
+    assert(player.enqueueAudio(runtimeAudio(1, 1, 250ms)).status
+           == media_sdk::runtime::RuntimeFramePushStatus::RejectedGeneration);
+    assert(player.enqueueAudio(runtimeAudio(1, 2, 250ms)).status
+           == media_sdk::runtime::RuntimeFramePushStatus::Accepted);
+    assert(waitUntil([&audio]() { return audio.writeCount == 1; }));
+    assert(tempo.configureCount == 1);
+    assert(tempo.configuredRate == 1.5);
+    assert(tempo.lastInputGeneration == 2);
+    assert(audio.lastWritePlaybackRate == 1.5);
+}
+
+void playbackRateChangeValidationLeavesRuntimeTimelineUntouched()
+{
+    MockAudioOutput audio;
+    MockPresenter presenter;
+    auto player = makePlayer(audio, presenter);
+    assert(player.open().ok());
+
+    const auto invalid = player.setPlaybackRate(3.0, 100ms);
+    assert(!invalid.ok());
+    assert(invalid.error().code == media_sdk::MediaErrorCode::InvalidArgument);
+    assert(player.timeline().generation == 1);
+    assert(audio.flushCount == 0);
+
+    const auto invalidPosition = player.setPlaybackRate(1.5, -1ms);
+    assert(!invalidPosition.ok());
+    assert(invalidPosition.error().code == media_sdk::MediaErrorCode::InvalidArgument);
+    assert(player.timeline().generation == 1);
+
+    const auto unsupported = player.setPlaybackRate(1.5, 100ms);
+    assert(!unsupported.ok());
+    assert(unsupported.error().code == media_sdk::MediaErrorCode::UnsupportedFormat);
+    assert(player.timeline().generation == 1);
+    assert(player.playbackRate() == 1.0);
+    assert(audio.flushCount == 0);
+}
+
+void pausedPlaybackRateChangeKeepsRuntimePaused()
+{
+    MockAudioOutput audio;
+    audio.setClock(400ms, 1);
+    MockPresenter presenter;
+    MockAudioTempoProcessor tempo;
+    auto player = makePlayer(audio, presenter, tempo, {});
+    assert(player.open().ok());
+    player.pause();
+
+    assert(player.setPlaybackRate(0.75, 400ms).ok());
+
+    const auto clock = player.clock();
+    assert(clock.valid);
+    assert(clock.generation == 2);
+    assert(clock.position == 400ms);
+    assert(clock.paused);
+    assert(audio.resumeCount == 1);
 }
 
 void seekKeepsLastPresentedFrameUntilTargetFrameArrives()
@@ -2048,6 +2125,9 @@ int main()
     openRejectsNonOneAudioRateWithoutTempoProcessor();
     videoOnlyRateDoesNotRequireTempoProcessor();
     timelineTracksSeekGeneration();
+    playbackRateChangeRebuildsRuntimeGeneration();
+    playbackRateChangeValidationLeavesRuntimeTimelineUntouched();
+    pausedPlaybackRateChangeKeepsRuntimePaused();
     seekKeepsLastPresentedFrameUntilTargetFrameArrives();
     seekClockIsAnchoredBeforeFirstAudioArrives();
     seekAudioGapDoesNotExposeFirstAudioPtsAsImmediateClock();

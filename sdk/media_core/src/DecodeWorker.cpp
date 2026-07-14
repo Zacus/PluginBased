@@ -175,13 +175,25 @@ Result<void> DecodeWorker::submitSeek(std::chrono::milliseconds position)
 
 Result<void> DecodeWorker::submitSeek(std::chrono::milliseconds position, SeekPlaybackMode mode)
 {
+    return submitSeek(position, mode, 0);
+}
+
+Result<void> DecodeWorker::submitSeek(std::chrono::milliseconds position,
+                                      SeekPlaybackMode mode,
+                                      SeekRequestId requestId)
+{
     if (position < std::chrono::milliseconds { 0 })
     {
         return Result<void>::failure(makeError(MediaErrorCode::SeekFailed,
                                               "Cannot seek to a negative position"));
     }
 
-    submit({ .type = CommandType::Seek, .position = position, .seekPlaybackMode = mode });
+    submit({
+        .type = CommandType::Seek,
+        .position = position,
+        .seekPlaybackMode = mode,
+        .seekRequestId = requestId,
+    });
     return Result<void>::success();
 }
 
@@ -275,7 +287,7 @@ void DecodeWorker::handleCommand(Command command, WorkerStopToken stopToken)
         const bool resumeAfterSeek = command.seekPlaybackMode == SeekPlaybackMode::ResumePlayback;
         const bool wasPlaying = m_playing || resumeAfterSeek;
         const auto seekPosition = command.position;
-        if (!handleSeek(seekPosition, wasPlaying))
+        if (!handleSeek(seekPosition, wasPlaying, command.seekRequestId))
             break;
         if (resumeAfterSeek && !m_playing)
         {
@@ -470,7 +482,9 @@ void DecodeWorker::decodeSeekPreroll(WorkerStopToken stopToken)
     }
 }
 
-bool DecodeWorker::handleSeek(std::chrono::milliseconds position, bool wasPlaying)
+bool DecodeWorker::handleSeek(std::chrono::milliseconds position,
+                              bool wasPlaying,
+                              SeekRequestId requestId)
 {
     if (!m_hasMedia)
         return false;
@@ -490,7 +504,7 @@ bool DecodeWorker::handleSeek(std::chrono::milliseconds position, bool wasPlayin
         avcodec_flush_buffers(m_media.audioCodecContext.get());
     ++m_generation;
 
-    beginAccurateSeek(position, wasPlaying);
+    beginAccurateSeek(position, wasPlaying, requestId);
     return true;
 }
 
@@ -521,12 +535,15 @@ int DecodeWorker::seekDemuxer(std::chrono::milliseconds position)
     return ret;
 }
 
-void DecodeWorker::beginAccurateSeek(std::chrono::milliseconds position, bool preferAudioCompletion)
+void DecodeWorker::beginAccurateSeek(std::chrono::milliseconds position,
+                                     bool preferAudioCompletion,
+                                     SeekRequestId requestId)
 {
     const auto target = std::chrono::duration_cast<std::chrono::microseconds>(position);
     const bool hasAudio = m_media.audioStreamIndex >= 0 && m_media.audioCodecContext;
     const bool hasVideo = m_media.videoStreamIndex >= 0 && m_media.videoCodecContext;
     m_pendingSeekTarget = target;
+    m_pendingSeekRequestId = requestId;
     m_seekTailVideoFrame.reset();
     m_seekGate.emplace(SeekPrerollGateConfig {
         .target = target,
@@ -561,6 +578,7 @@ void DecodeWorker::emitSeekCompletedIfReady()
             .firstVideoPts = firstVideo,
             .exact = true,
             .audioGap = audioGap,
+            .requestId = m_pendingSeekRequestId,
         }));
         const auto position = requested;
         emitEvent(makeEvent(PositionChangedEvent { position }));
@@ -571,6 +589,7 @@ void DecodeWorker::emitSeekCompletedIfReady()
     {
         m_seekGate.reset();
         m_pendingSeekTarget.reset();
+        m_pendingSeekRequestId = 0;
     }
 }
 
@@ -595,6 +614,7 @@ void DecodeWorker::emitSeekFallbackCompletion()
             .firstVideoPts = firstVideo,
             .exact = false,
             .audioGap = audioGap,
+            .requestId = m_pendingSeekRequestId,
         }));
         const auto position = requested;
         emitEvent(makeEvent(PositionChangedEvent { position }));
@@ -612,6 +632,7 @@ void DecodeWorker::emitPendingSeekFallbackCompletion()
     publishSeekTailVideoFrameIfAvailable();
     m_seekGate.reset();
     m_pendingSeekTarget.reset();
+    m_pendingSeekRequestId = 0;
     m_seekTailVideoFrame.reset();
 }
 
@@ -629,8 +650,10 @@ void DecodeWorker::publishSeekTailVideoFrameIfAvailable()
 
 void DecodeWorker::closeMedia()
 {
-    if (!m_hasMedia)
+    if (!m_hasMedia) {
+        m_pendingSeekRequestId = 0;
         return;
+    }
 
     m_videoFrameProcessor.reset();
     std::atomic_store(
@@ -642,6 +665,7 @@ void DecodeWorker::closeMedia()
     m_decodePerformance.reset();
     m_seekGate.reset();
     m_pendingSeekTarget.reset();
+    m_pendingSeekRequestId = 0;
     m_seekTailVideoFrame.reset();
 }
 

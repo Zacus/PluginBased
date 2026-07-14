@@ -50,6 +50,7 @@ struct RuntimeFramePushResult {
 
 struct RuntimeDiagnostics {
     double playbackRate = 1.0;
+    std::uint64_t playbackRateChangeCount = 0;
     std::uint64_t nativeDecoded = 0;
     std::uint64_t nativeAccepted = 0;
     std::uint64_t nativePresented = 0;

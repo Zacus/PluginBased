@@ -61,12 +61,14 @@ media_sdk::PlayerEvent mediaInfoEvent(media_sdk::EventMetadata metadata)
 }
 
 media_sdk::PlayerEvent seekCompletedEvent(media_sdk::EventMetadata metadata,
-                                          std::chrono::milliseconds position)
+                                          std::chrono::milliseconds position,
+                                          media_sdk::SeekRequestId requestId = 0)
 {
     return {
         .metadata = metadata,
         .payload = media_sdk::SeekCompletedEvent {
             .position = position,
+            .requestId = requestId,
         },
     };
 }
@@ -197,7 +199,8 @@ public:
     void pause() override;
     void stop() override;
     media_sdk::Result<void> seek(std::chrono::milliseconds position,
-                                  media_sdk::SeekPlaybackMode mode) override;
+                                  media_sdk::SeekPlaybackMode mode,
+                                  media_sdk::SeekRequestId requestId) override;
     media_sdk::PlayerDiagnostics diagnostics() const override;
 
     void emitMediaInfo(media_sdk::EventMetadata metadata)
@@ -205,9 +208,14 @@ public:
         m_events.onEvent(mediaInfoEvent(metadata));
     }
 
-    void emitSeekCompleted(media_sdk::EventMetadata metadata, std::chrono::milliseconds position)
+    void emitSeekCompleted(media_sdk::EventMetadata metadata,
+                           std::chrono::milliseconds position,
+                           media_sdk::SeekRequestId requestId = 0)
     {
-        m_events.onEvent(seekCompletedEvent(metadata, position));
+        m_events.onEvent(seekCompletedEvent(
+            metadata,
+            position,
+            requestId == 0 ? lastSeekRequestId : requestId));
     }
 
     void emitEndOfFile(media_sdk::EventMetadata metadata)
@@ -254,6 +262,7 @@ public:
     std::filesystem::path lastOpenedPath;
     std::chrono::milliseconds lastSeekPosition { 0 };
     media_sdk::SeekPlaybackMode lastSeekMode = media_sdk::SeekPlaybackMode::PreservePlaybackState;
+    media_sdk::SeekRequestId lastSeekRequestId = 0;
 
 private:
     TestContext& m_context;
@@ -279,6 +288,10 @@ public:
     void resume() override;
     void setAudioControls(media_sdk::runtime::RuntimeAudioControls controls) override;
     void seek(std::chrono::microseconds position) override;
+    media_sdk::Result<void> setPlaybackRate(
+        double playbackRate,
+        std::chrono::microseconds position) override;
+    double playbackRate() const override;
     void completeSeek(media_sdk::runtime::SessionId sessionId,
                       media_sdk::runtime::Generation generation) override;
     void notifyPresenterFailure(media_sdk::runtime::PresentStatus reason) override;
@@ -314,6 +327,7 @@ public:
     int pauseCount = 0;
     int resumeCount = 0;
     int seekCount = 0;
+    int rateChangeCount = 0;
     int completeSeekCount = 0;
     int presenterFailureCount = 0;
     int stopCount = 0;
@@ -322,6 +336,8 @@ public:
     media_sdk::runtime::RuntimeVideoFrame lastVideo {};
     media_sdk::runtime::RuntimeTimeline currentTimeline = runtimeTimeline(100, 1);
     std::chrono::microseconds lastSeekPosition { 0 };
+    std::chrono::microseconds lastRateChangePosition { 0 };
+    double currentPlaybackRate = 1.0;
     media_sdk::runtime::IRuntimePlayerEvents* m_events = nullptr;
 
 private:
@@ -370,11 +386,13 @@ void FakeCorePlayer::stop()
 }
 
 media_sdk::Result<void> FakeCorePlayer::seek(std::chrono::milliseconds position,
-                                             media_sdk::SeekPlaybackMode mode)
+                                             media_sdk::SeekPlaybackMode mode,
+                                             media_sdk::SeekRequestId requestId)
 {
     ++seekCount;
     lastSeekPosition = position;
     lastSeekMode = mode;
+    lastSeekRequestId = requestId;
     m_context.operations.push_back("core.seek");
     if (m_context.failNextSeek) {
         m_context.failNextSeek = false;
@@ -447,6 +465,23 @@ void FakeRuntimePlayer::seek(std::chrono::microseconds position)
     lastSeekPosition = position;
     ++currentTimeline.generation;
     m_context.operations.push_back("runtime.seek");
+}
+
+media_sdk::Result<void> FakeRuntimePlayer::setPlaybackRate(
+    double playbackRate,
+    std::chrono::microseconds position)
+{
+    ++rateChangeCount;
+    currentPlaybackRate = playbackRate;
+    lastRateChangePosition = position;
+    ++currentTimeline.generation;
+    m_context.operations.push_back("runtime.setPlaybackRate");
+    return success();
+}
+
+double FakeRuntimePlayer::playbackRate() const
+{
+    return currentPlaybackRate;
 }
 
 void FakeRuntimePlayer::completeSeek(media_sdk::runtime::SessionId,
@@ -661,6 +696,195 @@ void seekCallsRuntimeSeekBeforeCoreSeek()
     assert(std::holds_alternative<media_sdk::SeekCompletedEvent>(events.events.back().payload));
 }
 
+void playbackRateCanBeConfiguredBeforeRuntimeOpen()
+{
+    TestContext context;
+    DummyAudioOutput audio;
+    DummyVideoPresenter presenter;
+    auto session = makeSession(context, &audio, &presenter);
+    assert(session->open("sample.mov").ok());
+
+    assert(session->setPlaybackRate(1.5).ok());
+    assert(session->playbackRate() == 1.5);
+    assert(!context.runtime);
+
+    context.core->emitMediaInfo(coreTimeline(10, 3));
+    assert(context.runtimeConfigs.back().playbackRate == 1.5);
+}
+
+void playbackRateChangeRebuildsTimelineAndEmitsDedicatedEvent()
+{
+    TestContext context;
+    DummyAudioOutput audio;
+    DummyVideoPresenter presenter;
+    RecordingSessionEvents events;
+    auto session = makeSession(context, &audio, &presenter, &events);
+    assert(session->open("sample.mov").ok());
+    context.core->emitMediaInfo(coreTimeline(10, 3));
+    session->play();
+    context.runtime->lastSeekPosition = 750ms;
+    context.operations.clear();
+    events.events.clear();
+
+    const auto result = session->setPlaybackRate(1.5);
+
+    assert(result.ok());
+    assert(session->playbackRate() == 1.5);
+    assert(context.runtime->rateChangeCount == 1);
+    assert(context.runtime->lastRateChangePosition == 750ms);
+    assert(context.core->lastSeekPosition == 750ms);
+    assert(context.core->lastSeekMode == media_sdk::SeekPlaybackMode::ResumePlayback);
+    assert((context.operations == std::vector<std::string> {
+        "runtime.setPlaybackRate",
+        "core.seek",
+    }));
+    assert(events.events.empty());
+
+    context.core->emitSeekCompleted(coreTimeline(10, 4), 750ms);
+    assert(context.runtime->completeSeekCount == 1);
+    assert(events.events.size() == 1);
+    const auto* rate = std::get_if<media_sdk::PlaybackRateChangedEvent>(
+        &events.events.back().payload);
+    assert(rate);
+    assert(rate->playbackRate == 1.5);
+    assert(rate->position == 750ms);
+}
+
+void playbackRateChangeWhilePausedPreservesPauseState()
+{
+    TestContext context;
+    DummyAudioOutput audio;
+    DummyVideoPresenter presenter;
+    auto session = makeSession(context, &audio, &presenter);
+    assert(session->open("sample.mov").ok());
+    context.core->emitMediaInfo(coreTimeline(10, 3));
+    session->pause();
+    context.runtime->lastSeekPosition = 500ms;
+    context.operations.clear();
+
+    assert(session->setPlaybackRate(0.75).ok());
+    assert(context.core->lastSeekMode == media_sdk::SeekPlaybackMode::PreservePlaybackState);
+    assert((context.operations == std::vector<std::string> {
+        "runtime.setPlaybackRate",
+        "core.seek",
+    }));
+    context.core->emitSeekCompleted(coreTimeline(10, 4), 500ms);
+    assert(context.runtime->paused);
+}
+
+void playbackRateChangeAfterCompletionOnlyUpdatesConfiguration()
+{
+    TestContext context;
+    DummyAudioOutput audio;
+    DummyVideoPresenter presenter;
+    auto session = makeSession(context, &audio, &presenter);
+    assert(session->open("sample.mov").ok());
+    context.core->emitMediaInfo(coreTimeline(10, 3));
+    session->play();
+    context.core->emitEndOfFile(coreTimeline(10, 3));
+    context.runtime->triggerEndOfStreamPresented();
+    context.operations.clear();
+
+    assert(session->setPlaybackRate(1.5).ok());
+    assert(session->playbackRate() == 1.5);
+    assert(context.runtime->rateChangeCount == 0);
+    assert(context.core->seekCount == 0);
+    assert(context.operations.empty());
+
+    assert(session->seek(0ms, media_sdk::SeekPlaybackMode::ResumePlayback).ok());
+    assert(context.runtime->rateChangeCount == 1);
+    assert(context.runtime->lastRateChangePosition == 0ms);
+    assert(context.core->seekCount == 1);
+    assert(context.core->lastSeekMode == media_sdk::SeekPlaybackMode::ResumePlayback);
+    context.core->emitSeekCompleted(coreTimeline(10, 4), 0ms);
+}
+
+void playbackRateValidationAndIdempotenceDoNotChangeTimeline()
+{
+    TestContext context;
+    DummyAudioOutput audio;
+    DummyVideoPresenter presenter;
+    auto session = makeSession(context, &audio, &presenter);
+    assert(session->open("sample.mov").ok());
+    context.core->emitMediaInfo(coreTimeline(10, 3));
+
+    assert(!session->setPlaybackRate(3.0).ok());
+    assert(session->setPlaybackRate(1.0).ok());
+    assert(context.runtime->rateChangeCount == 0);
+    assert(context.core->seekCount == 0);
+}
+
+void failedRateChangeSeekStopsInconsistentSession()
+{
+    TestContext context;
+    DummyAudioOutput audio;
+    DummyVideoPresenter presenter;
+    auto session = makeSession(context, &audio, &presenter);
+    assert(session->open("sample.mov").ok());
+    context.core->emitMediaInfo(coreTimeline(10, 3));
+    context.runtime->lastSeekPosition = 300ms;
+    context.failNextSeek = true;
+
+    const auto result = session->setPlaybackRate(1.25);
+
+    assert(!result.ok());
+    assert(context.runtime->stopCount == 1);
+    assert(context.core->stopCount == 1);
+    assert(session->timeline().sessionId == 0);
+}
+
+void latestRateChangeIgnoresSupersededSeekCompletion()
+{
+    TestContext context;
+    DummyAudioOutput audio;
+    DummyVideoPresenter presenter;
+    RecordingSessionEvents events;
+    auto session = makeSession(context, &audio, &presenter, &events);
+    assert(session->open("sample.mov").ok());
+    context.core->emitMediaInfo(coreTimeline(10, 3));
+    events.events.clear();
+
+    context.runtime->lastSeekPosition = 100ms;
+    assert(session->setPlaybackRate(1.25).ok());
+    const auto firstRequestId = context.core->lastSeekRequestId;
+    context.runtime->lastSeekPosition = 100ms;
+    assert(session->setPlaybackRate(1.5).ok());
+    const auto secondRequestId = context.core->lastSeekRequestId;
+
+    context.core->emitSeekCompleted(coreTimeline(10, 4), 100ms, firstRequestId);
+    assert(events.events.empty());
+    assert(context.runtime->completeSeekCount == 0);
+
+    context.core->emitSeekCompleted(coreTimeline(10, 5), 100ms, secondRequestId);
+    assert(context.runtime->completeSeekCount == 1);
+    assert(events.events.size() == 1);
+    const auto* rate = std::get_if<media_sdk::PlaybackRateChangedEvent>(
+        &events.events.back().payload);
+    assert(rate && rate->playbackRate == 1.5);
+}
+
+void stopDuringRateChangeSuppressesLateCompletion()
+{
+    TestContext context;
+    DummyAudioOutput audio;
+    DummyVideoPresenter presenter;
+    RecordingSessionEvents events;
+    auto session = makeSession(context, &audio, &presenter, &events);
+    assert(session->open("sample.mov").ok());
+    context.core->emitMediaInfo(coreTimeline(10, 3));
+    const auto core = context.core;
+    events.events.clear();
+    context.runtime->lastSeekPosition = 100ms;
+    assert(session->setPlaybackRate(1.5).ok());
+    const auto requestId = core->lastSeekRequestId;
+
+    session->stop();
+    core->emitSeekCompleted(coreTimeline(10, 4), 100ms, requestId);
+
+    assert(events.events.empty());
+    assert(context.runtime->completeSeekCount == 0);
+}
+
 void runtimeErrorIsForwardedAsSessionErrorEvent()
 {
     TestContext context;
@@ -684,6 +908,37 @@ void runtimeErrorIsForwardedAsSessionErrorEvent()
     assert(error->error.message == "audio flush failed");
     assert(events.events.back().metadata.sessionId == 10);
     assert(events.events.back().metadata.generation == 3);
+
+    assert(session->setPlaybackRate(1.5).ok());
+    assert(session->playbackRate() == 1.5);
+    assert(context.runtime->rateChangeCount == 0);
+    assert(context.core->seekCount == 0);
+    assert(context.runtime->paused);
+}
+
+void asynchronousRateChangeSeekFailureDoesNotPublishSuccess()
+{
+    TestContext context;
+    DummyAudioOutput audio;
+    DummyVideoPresenter presenter;
+    RecordingSessionEvents events;
+    auto session = makeSession(context, &audio, &presenter, &events);
+    assert(session->open("sample.mov").ok());
+    context.core->emitMediaInfo(coreTimeline(10, 3));
+    events.events.clear();
+    context.runtime->lastSeekPosition = 250ms;
+    assert(session->setPlaybackRate(1.5).ok());
+
+    context.core->emitError(coreTimeline(10, 3), "seek failed asynchronously");
+
+    assert(events.events.size() == 1);
+    assert(std::holds_alternative<media_sdk::ErrorEvent>(events.events.back().payload));
+    assert(context.runtime->completeSeekCount == 0);
+    assert(context.runtime->paused);
+    assert(session->setPlaybackRate(0.75).ok());
+    assert(context.runtime->rateChangeCount == 1);
+    context.core->emitSeekCompleted(coreTimeline(10, 4), 250ms);
+    assert(events.events.size() == 1);
 }
 
 void seekWhilePlayingReappliesPlaybackAfterSeekCommand()
@@ -1178,7 +1433,16 @@ int main()
     playCallsCorePlayAndRuntimeResume();
     pauseCallsCorePauseAndRuntimePause();
     seekCallsRuntimeSeekBeforeCoreSeek();
+    playbackRateCanBeConfiguredBeforeRuntimeOpen();
+    playbackRateChangeRebuildsTimelineAndEmitsDedicatedEvent();
+    playbackRateChangeWhilePausedPreservesPauseState();
+    playbackRateChangeAfterCompletionOnlyUpdatesConfiguration();
+    playbackRateValidationAndIdempotenceDoNotChangeTimeline();
+    failedRateChangeSeekStopsInconsistentSession();
+    latestRateChangeIgnoresSupersededSeekCompletion();
+    stopDuringRateChangeSuppressesLateCompletion();
     runtimeErrorIsForwardedAsSessionErrorEvent();
+    asynchronousRateChangeSeekFailureDoesNotPublishSuccess();
     seekWhilePlayingReappliesPlaybackAfterSeekCommand();
     resumeSeekUsesAtomicCoreSeekWithoutQueuedPlay();
     failedResumeSeekDoesNotPromotePausedSessionToPlaying();

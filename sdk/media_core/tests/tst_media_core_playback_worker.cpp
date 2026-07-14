@@ -804,9 +804,9 @@ void testBurstSeekCoalescesQueuedRequestsBeforeDecodeResumes()
     player.play();
     assert(frames.waitForBlockedAudioFrame());
 
-    assert(player.seek(100ms).ok());
-    assert(player.seek(150ms).ok());
-    assert(player.seek(200ms).ok());
+    assert(player.seek(100ms, media_sdk::SeekPlaybackMode::PreservePlaybackState, 101).ok());
+    assert(player.seek(150ms, media_sdk::SeekPlaybackMode::PreservePlaybackState, 102).ok());
+    assert(player.seek(200ms, media_sdk::SeekPlaybackMode::PreservePlaybackState, 103).ok());
 
     frames.releaseAudioFrames();
 
@@ -838,6 +838,7 @@ void testBurstSeekCoalescesQueuedRequestsBeforeDecodeResumes()
     const auto* payload = std::get_if<media_sdk::SeekCompletedEvent>(&seekCompleted->payload);
     assert(payload);
     assert(payload->requestedPosition == payload->position);
+    assert(payload->requestId == 103);
 
     std::filesystem::remove(samplePath);
 }

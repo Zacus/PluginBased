@@ -41,6 +41,13 @@ Result<void> PlaybackController::seek(std::chrono::milliseconds position, SeekPl
     return m_worker.submitSeek(position, mode);
 }
 
+Result<void> PlaybackController::seek(std::chrono::milliseconds position,
+                                      SeekPlaybackMode mode,
+                                      SeekRequestId requestId)
+{
+    return m_worker.submitSeek(position, mode, requestId);
+}
+
 PlayerDiagnostics PlaybackController::diagnostics() const
 {
     return m_worker.diagnostics();

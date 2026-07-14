@@ -74,6 +74,9 @@ public:
     void resume();
     void setAudioControls(RuntimeAudioControls controls);
     void seek(std::chrono::microseconds position);
+    [[nodiscard("rate changes can fail validation or audio tempo capability checks")]]
+    Result<void> setPlaybackRate(double playbackRate, std::chrono::microseconds position);
+    [[nodiscard]] double playbackRate() const;
     void completeSeek(SessionId sessionId, Generation generation);
     void notifyPresenterFailure(PresentStatus reason);
     void stop();

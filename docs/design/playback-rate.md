@@ -207,12 +207,16 @@ wallWait = (framePts - masterMediaPosition) / playbackRate
 3. runtime 开启新 generation，设置新速率，终止旧队列等待。
 4. 清空音视频队列、音频输出、tempo processor、调度器和 EOF 状态。
 5. event router 登记 `RateChange` 类型的待完成时间线切换。
-6. core 向捕获位置提交一次精确 seek，并保留 playing/paused 状态。
+6. session 为 discontinuity 分配 request id，core 向捕获位置提交一次精确 seek，
+   并保留 playing/paused 状态。
 7. seek 预卷完成后，router 建立新的 core/runtime generation 映射。
 8. session 发布 `PlaybackRateChangedEvent`，不向上泄漏内部 `SeekCompletedEvent`。
 
 用户 seek 与切速共享统一的 discontinuity 串行化机制。连续快速切速时采用
 latest-wins：旧请求的完成事件不能覆盖最新速率或代际。
+core 合并连续 seek 命令时必须保留最后一个 request id，并在
+`SeekCompletedEvent` 中原样返回；仅靠 position 或推算 generation 无法区分
+同位置的连续切速请求。
 
 若 core 重定位失败，session 发布结构化错误并停止或保持暂停，不能在已清空的
 新速率 runtime 与旧 core 时间线之间继续播放。
@@ -337,4 +341,3 @@ seek 期间的软件兜底时钟也必须使用 `elapsed * playbackRate` 推进�
 | 快速切速与 seek 交错 | 统一 discontinuity 序列号，latest-wins |
 | FFmpeg 依赖侵入 runtime | 独立具体模块，通过接口注入 |
 | 错误时静默回退导致音画不同步 | 非 `1.0x` 失败即显式报错并停止输出 |
-

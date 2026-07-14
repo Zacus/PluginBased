@@ -25,6 +25,9 @@ public:
     void stop();
     Result<void> seek(std::chrono::milliseconds position);
     Result<void> seek(std::chrono::milliseconds position, SeekPlaybackMode mode);
+    Result<void> seek(std::chrono::milliseconds position,
+                      SeekPlaybackMode mode,
+                      SeekRequestId requestId);
     [[nodiscard]] PlayerDiagnostics diagnostics() const;
 
 private:

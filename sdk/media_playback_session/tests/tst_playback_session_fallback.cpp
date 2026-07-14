@@ -57,12 +57,14 @@ media_sdk::PlayerEvent mediaInfoEvent(media_sdk::EventMetadata metadata)
 }
 
 media_sdk::PlayerEvent seekCompletedEvent(media_sdk::EventMetadata metadata,
-                                          std::chrono::milliseconds position)
+                                          std::chrono::milliseconds position,
+                                          media_sdk::SeekRequestId requestId = 0)
 {
     return {
         .metadata = metadata,
         .payload = media_sdk::SeekCompletedEvent {
             .position = position,
+            .requestId = requestId,
         },
     };
 }
@@ -184,7 +186,8 @@ public:
     void pause() override;
     void stop() override;
     media_sdk::Result<void> seek(std::chrono::milliseconds position,
-                                  media_sdk::SeekPlaybackMode mode) override;
+                                  media_sdk::SeekPlaybackMode mode,
+                                  media_sdk::SeekRequestId requestId) override;
 
     void emitMediaInfo(media_sdk::EventMetadata metadata)
     {
@@ -193,7 +196,7 @@ public:
 
     void emitSeekCompleted(media_sdk::EventMetadata metadata, std::chrono::milliseconds position)
     {
-        m_events.onEvent(seekCompletedEvent(metadata, position));
+        m_events.onEvent(seekCompletedEvent(metadata, position, lastSeekRequestId));
     }
 
     media_sdk::DecodeFramePushResult pushVideo(media_sdk::DecodeFrameMetadata metadata)
@@ -208,6 +211,7 @@ public:
     int seekCount = 0;
     std::filesystem::path lastOpenedPath;
     std::chrono::milliseconds lastSeekPosition { 0 };
+    media_sdk::SeekRequestId lastSeekRequestId = 0;
 
 private:
     TestContext& m_context;
@@ -234,6 +238,15 @@ public:
     void resume() override {}
     void setAudioControls(media_sdk::runtime::RuntimeAudioControls) override {}
     void seek(std::chrono::microseconds) override {}
+    media_sdk::Result<void> setPlaybackRate(
+        double playbackRate,
+        std::chrono::microseconds) override
+    {
+        currentPlaybackRate = playbackRate;
+        ++currentTimeline.generation;
+        return media_sdk::Result<void>::success();
+    }
+    double playbackRate() const override { return currentPlaybackRate; }
     void completeSeek(media_sdk::runtime::SessionId sessionId,
                       media_sdk::runtime::Generation generation) override;
     void notifyPresenterFailure(media_sdk::runtime::PresentStatus reason) override;
@@ -269,6 +282,7 @@ public:
     media_sdk::runtime::RuntimeVideoFrame lastVideo {};
     media_sdk::runtime::IRuntimePlayerEvents* events = nullptr;
     std::chrono::microseconds clockPosition { 0 };
+    double currentPlaybackRate = 1.0;
 };
 
 struct TestContext {
@@ -301,10 +315,12 @@ void FakeCorePlayer::stop()
 }
 
 media_sdk::Result<void> FakeCorePlayer::seek(std::chrono::milliseconds position,
-                                             media_sdk::SeekPlaybackMode)
+                                             media_sdk::SeekPlaybackMode,
+                                             media_sdk::SeekRequestId requestId)
 {
     ++seekCount;
     lastSeekPosition = position;
+    lastSeekRequestId = requestId;
     if (m_context.failNextCoreSeek && m_index == 1)
         return seekFailure();
     return success();
