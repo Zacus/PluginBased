@@ -29,6 +29,7 @@ struct Options {
     std::filesystem::path output;
     std::string label = "unlabelled";
     bool hardwareDecode = false;
+    bool decoderBufferPool = true;
     std::size_t holdVideoFrames = 3;
     std::uint64_t maxVideoFrames = 0;
     std::chrono::milliseconds timeout { 120'000 };
@@ -43,6 +44,15 @@ struct PoolSnapshot {
     std::uint64_t highWatermark = 0;
     std::uint64_t retainedCount = 0;
     std::uint64_t inFlightCount = 0;
+};
+
+struct DecoderPoolSnapshot {
+    std::uint64_t callbackCount = 0;
+    std::uint64_t pooledFrameCount = 0;
+    std::uint64_t fallbackCount = 0;
+    std::uint64_t poolRebuildCount = 0;
+    std::uint64_t planeAcquireCount = 0;
+    std::uint64_t planeAllocationCount = 0;
 };
 
 std::string jsonEscape(std::string_view value)
@@ -112,6 +122,11 @@ std::optional<Options> parseOptions(int argc, char** argv)
             options.hardwareDecode = true;
         } else if (argument == "--software") {
             options.hardwareDecode = false;
+        } else if (argument == "--decoder-buffer-pool") {
+            const auto value = argumentValue(i, argc, argv);
+            if (!value || (*value != "enabled" && *value != "disabled"))
+                return std::nullopt;
+            options.decoderBufferPool = *value == "enabled";
         } else {
             std::cerr << "Unknown argument: " << argument << '\n';
             return std::nullopt;
@@ -313,6 +328,17 @@ void writePoolSnapshot(std::ostream& output,
            << ",\"in_flight_count\":" << pool.inFlightCount << '}';
 }
 
+void writeDecoderPoolSnapshot(std::ostream& output,
+                              const DecoderPoolSnapshot& pool)
+{
+    output << "{\"callback_count\":" << pool.callbackCount
+           << ",\"pooled_frame_count\":" << pool.pooledFrameCount
+           << ",\"fallback_count\":" << pool.fallbackCount
+           << ",\"pool_rebuild_count\":" << pool.poolRebuildCount
+           << ",\"plane_acquire_count\":" << pool.planeAcquireCount
+           << ",\"plane_allocation_count\":" << pool.planeAllocationCount << '}';
+}
+
 } // namespace
 
 int main(int argc, char** argv)
@@ -321,7 +347,8 @@ int main(int argc, char** argv)
     if (!options.has_value()) {
         std::cerr << "Usage: MediaSdkVideoBenchmark --input FILE --output FILE --label NAME "
                      "[--software|--hardware] [--hold-video-frames N] [--timeout-ms N] "
-                     "[--max-video-frames N] [--report-interval-ms N]\n";
+                     "[--max-video-frames N] [--report-interval-ms N] "
+                     "[--decoder-buffer-pool enabled|disabled]\n";
         return 2;
     }
     if (!std::filesystem::is_regular_file(options->input)) {
@@ -336,6 +363,7 @@ int main(int argc, char** argv)
     BenchmarkSink sink(options->holdVideoFrames, options->maxVideoFrames);
     media_sdk::PlayerConfig config;
     config.enableHardwareDecode = options->hardwareDecode;
+    config.enableDecoderBufferPool = options->decoderBufferPool;
     config.preferNativeVideoFrames = options->hardwareDecode;
 #if defined(MEDIA_SDK_BENCHMARK_HAS_POOL_DIAGNOSTICS)
     config.decodePerformanceReportInterval = options->reportInterval;
@@ -352,8 +380,11 @@ int main(int argc, char** argv)
 
     PoolSnapshot poolBeforeRelease;
     PoolSnapshot poolAfterRelease;
+    DecoderPoolSnapshot decoderPoolBeforeStop;
+    DecoderPoolSnapshot decoderPoolAfterStop;
 #if defined(MEDIA_SDK_BENCHMARK_HAS_POOL_DIAGNOSTICS)
-    const auto beforeRelease = player.diagnostics().videoPicturePool;
+    const auto diagnosticsBeforeStop = player.diagnostics();
+    const auto beforeRelease = diagnosticsBeforeStop.videoPicturePool;
     poolBeforeRelease = {
         .acquireCount = beforeRelease.acquireCount,
         .reuseCount = beforeRelease.reuseCount,
@@ -363,12 +394,22 @@ int main(int argc, char** argv)
         .retainedCount = beforeRelease.retainedCount,
         .inFlightCount = beforeRelease.inFlightCount,
     };
+    const auto& decoderBeforeStop = diagnosticsBeforeStop.decoderBufferPool;
+    decoderPoolBeforeStop = {
+        .callbackCount = decoderBeforeStop.callbackCount,
+        .pooledFrameCount = decoderBeforeStop.pooledFrameCount,
+        .fallbackCount = decoderBeforeStop.fallbackCount,
+        .poolRebuildCount = decoderBeforeStop.poolRebuildCount,
+        .planeAcquireCount = decoderBeforeStop.planeAcquireCount,
+        .planeAllocationCount = decoderBeforeStop.planeAllocationCount,
+    };
 #endif
     player.stop();
     const bool stopped = sink.waitUntilStopped(5s);
     sink.releaseHeldFrames();
 #if defined(MEDIA_SDK_BENCHMARK_HAS_POOL_DIAGNOSTICS)
-    const auto afterRelease = player.diagnostics().videoPicturePool;
+    const auto diagnosticsAfterStop = player.diagnostics();
+    const auto afterRelease = diagnosticsAfterStop.videoPicturePool;
     poolAfterRelease = {
         .acquireCount = poolBeforeRelease.acquireCount,
         .reuseCount = poolBeforeRelease.reuseCount,
@@ -377,6 +418,15 @@ int main(int argc, char** argv)
         .highWatermark = poolBeforeRelease.highWatermark,
         .retainedCount = afterRelease.retainedCount,
         .inFlightCount = afterRelease.inFlightCount,
+    };
+    const auto& decoderAfterStop = diagnosticsAfterStop.decoderBufferPool;
+    decoderPoolAfterStop = {
+        .callbackCount = decoderAfterStop.callbackCount,
+        .pooledFrameCount = decoderAfterStop.pooledFrameCount,
+        .fallbackCount = decoderAfterStop.fallbackCount,
+        .poolRebuildCount = decoderAfterStop.poolRebuildCount,
+        .planeAcquireCount = decoderAfterStop.planeAcquireCount,
+        .planeAllocationCount = decoderAfterStop.planeAllocationCount,
     };
 #endif
     const auto elapsed = std::chrono::steady_clock::now() - started;
@@ -406,6 +456,8 @@ int main(int argc, char** argv)
            << "  \"input\": \"" << jsonEscape(std::filesystem::absolute(options->input).string()) << "\",\n"
            << "  \"system\": \"" << jsonEscape(systemName()) << "\",\n"
            << "  \"hardware_decode\": " << (options->hardwareDecode ? "true" : "false") << ",\n"
+           << "  \"decoder_buffer_pool_enabled\": "
+           << (options->decoderBufferPool ? "true" : "false") << ",\n"
            << "  \"hold_video_frames\": " << options->holdVideoFrames << ",\n"
            << "  \"max_video_frames\": " << options->maxVideoFrames << ",\n"
            << "  \"completed\": "
@@ -446,6 +498,10 @@ int main(int argc, char** argv)
     writePoolSnapshot(output, poolBeforeRelease);
     output << ",\n  \"pool_after_release\": ";
     writePoolSnapshot(output, poolAfterRelease);
+    output << ",\n  \"decoder_pool_before_stop\": ";
+    writeDecoderPoolSnapshot(output, decoderPoolBeforeStop);
+    output << ",\n  \"decoder_pool_after_stop\": ";
+    writeDecoderPoolSnapshot(output, decoderPoolAfterStop);
     output << "\n}\n";
 
     if (!finished || !stopped) {

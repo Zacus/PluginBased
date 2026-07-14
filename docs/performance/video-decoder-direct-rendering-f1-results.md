@@ -2,7 +2,10 @@
 
 ## 决策
 
-**NO-GO：不启动 F2 正式实现。**
+**F1 门禁 NO-GO：当时不启动 F2 正式实现。**
+
+这是 F1 性能门禁的历史决策。后续产品决策明确要求实施 F2，但没有改变本报告的性能
+结论；正式路径功能验证见 `video-decoder-direct-rendering-f2-validation.md`。
 
 原因：
 

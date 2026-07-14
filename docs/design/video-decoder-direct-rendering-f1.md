@@ -150,6 +150,12 @@ F2。
   HEVC 以 51/1830 次、ProRes 以 36/360 次 allocation/acquire 完成复用。
 
 生命周期可行性成立，但产品主 case 没有收益，极限压力项最佳收益也仅 `1.04%`，低于
-3% 门槛，且 FFmpeg default 本身已经池化。F1 结论为 **NO-GO**，不启动 F2，不向
+3% 门槛，且 FFmpeg default 本身已经池化。F1 结论为 **NO-GO**，当时不启动 F2，不向
 `PlayerConfig` 或 PlayPlugin 引入实验开关。完整结果见
 `docs/performance/video-decoder-direct-rendering-f1-results.md`。
+
+## 12. 后续产品决策
+
+F1 的性能 NO-GO 结论不变。2026-07-14 后续明确要求实施 F2，因此正式实现以可控生命周期、
+诊断和显式开关为目标启动，不宣称性能收益。正式设计见
+`docs/design/video-decoder-direct-rendering-f2.md`。

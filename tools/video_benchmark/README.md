@@ -139,3 +139,19 @@ python3 tools/get_buffer2_f1_benchmark.py \
   --output-markdown docs/performance/video-decoder-direct-rendering-f1-results.md \
   --label current --runs 5 --warmups 1
 ```
+
+## get_buffer2 F2 生产路径验证
+
+正式 SDK benchmark 可显式启用或关闭 decoder buffer pool，并输出
+`decoder_pool_before_stop` / `decoder_pool_after_stop`：
+
+```bash
+./build/tools/video_benchmark/MediaSdkVideoBenchmark \
+  --input benchmark_media/tearsofsteel-1080p24-h264.mp4 \
+  --output benchmark_artifacts/get_buffer2-f2/h264-enabled.json \
+  --label h264-enabled --software --max-video-frames 24 \
+  --decoder-buffer-pool enabled
+```
+
+启用的软件解码 case 应满足 `pooled_frame_count >= frames.video`、`fallback_count == 0`；
+关闭 case 的 decoder pool 统计应全部为 0。硬件解码不安装该 callback。

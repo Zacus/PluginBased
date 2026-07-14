@@ -2,7 +2,8 @@
 
 关联设计：[Decoder Direct Rendering F1 设计](../design/video-decoder-direct-rendering-f1.md)
 
-状态：F1.1 至 F1.4 已完成。最终结论为 **NO-GO**，F2 不启动。
+状态：F1.1 至 F1.4 已完成。性能结论为 **NO-GO**；后续产品决策明确启动 F2，见
+[F2 任务拆分](video-decoder-direct-rendering-f2-tasks.md)。
 
 ## 1. 约束
 

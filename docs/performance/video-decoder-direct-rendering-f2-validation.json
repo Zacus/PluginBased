@@ -1,0 +1,55 @@
+{
+  "schema_version": 1,
+  "validation_kind": "get_buffer2_f2_production_path",
+  "performance_claim": false,
+  "cases": [
+    {
+      "name": "h264_1080p24_enabled",
+      "video_frames": 24,
+      "checksum": 7071350510766113730,
+      "pixel_format": "yuv420p",
+      "callback_count": 34,
+      "pooled_frame_count": 34,
+      "fallback_count": 0,
+      "pool_rebuild_count": 1,
+      "plane_acquire_count": 102,
+      "plane_allocation_count": 45
+    },
+    {
+      "name": "h264_1080p24_disabled",
+      "video_frames": 24,
+      "checksum": 7071350510766113730,
+      "pixel_format": "yuv420p",
+      "callback_count": 0,
+      "pooled_frame_count": 0,
+      "fallback_count": 0,
+      "pool_rebuild_count": 0,
+      "plane_acquire_count": 0,
+      "plane_allocation_count": 0
+    },
+    {
+      "name": "hevc_main10_4k60_enabled",
+      "video_frames": 60,
+      "checksum": 8641017727881922618,
+      "pixel_format": "yuv420p10",
+      "callback_count": 69,
+      "pooled_frame_count": 69,
+      "fallback_count": 0,
+      "pool_rebuild_count": 1,
+      "plane_acquire_count": 207,
+      "plane_allocation_count": 51
+    },
+    {
+      "name": "prores_422_10bit_4k120_enabled",
+      "video_frames": 120,
+      "checksum": 10651236218738602710,
+      "pixel_format": "yuv422p10",
+      "callback_count": 120,
+      "pooled_frame_count": 120,
+      "fallback_count": 0,
+      "pool_rebuild_count": 1,
+      "plane_acquire_count": 360,
+      "plane_allocation_count": 36
+    }
+  ]
+}
