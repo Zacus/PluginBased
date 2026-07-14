@@ -1,6 +1,8 @@
 add_library(media_sdk_core STATIC
     src/CpuVideoPicturePool.cpp
     src/CpuVideoPicturePool.h
+    src/DecoderBufferPool.cpp
+    src/DecoderBufferPool.h
     src/DecodePerformance.cpp
     src/Demuxer.cpp
     src/FFmpegUtils.h
@@ -39,6 +41,25 @@ target_link_libraries(media_sdk_core PRIVATE
 )
 
 if(BUILD_TESTING)
+    add_executable(MediaSdkCoreDecoderBufferPoolTest
+        tests/tst_media_core_decoder_buffer_pool.cpp
+    )
+    target_compile_features(MediaSdkCoreDecoderBufferPoolTest PRIVATE cxx_std_20)
+    set_target_properties(MediaSdkCoreDecoderBufferPoolTest PROPERTIES
+        CXX_EXTENSIONS OFF
+        AUTOMOC OFF
+        AUTOUIC OFF
+        AUTORCC OFF
+    )
+    target_include_directories(MediaSdkCoreDecoderBufferPoolTest PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/include"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src"
+    )
+    target_link_libraries(MediaSdkCoreDecoderBufferPoolTest PRIVATE media_sdk_core FFmpeg::all)
+    add_test(NAME media_sdk_core_decoder_buffer_pool
+        COMMAND $<TARGET_FILE:MediaSdkCoreDecoderBufferPoolTest>
+    )
+
     add_executable(MediaSdkCoreVideoPicturePoolTest
         tests/tst_media_core_video_picture_pool.cpp
     )
