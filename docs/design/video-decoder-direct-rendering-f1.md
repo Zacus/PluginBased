@@ -118,7 +118,7 @@ default 模式同样记录 callback 次数，但不伪造 FFmpeg 私有池的 al
 
 功能验证：
 
-- H.264 1080p24 和 HEVC Main10 4K60；
+- H.264 1080p24、HEVC Main10 4K60，以及 synthetic ProRes 422 10-bit 4K120 压力项；
 - default/prototype 帧数与 checksum 一致；
 - frame threading、flush、重复 open/close；
 - format change、新旧 buffer 同时在途；
@@ -138,16 +138,18 @@ F2。
 
 ## 11. 实验结果
 
-2026-07-14 完成 H.264 1080p24 和 HEVC Main10 4K60 的 Release 对照，各 1 次预热加
-5 次正式运行：
+2026-07-14 完成 H.264 1080p24、HEVC Main10 4K60 和 synthetic ProRes 422 10-bit
+4K120 的 Release 对照，各 1 次预热加 5 次正式运行：
 
-- H.264：wall 改善 `0.74%`，CPU 改善 `0.08%`，RSS 增加 `0.41%`；
-- HEVC 4K60：wall 改善 `0.34%`，CPU 回退 `0.07%`，RSS 增加 `0.06%`；
+- H.264：wall 回退 `0.47%`，CPU 改善 `0.53%`，RSS 降低 `0.26%`；
+- HEVC 4K60：wall 回退 `0.50%`，CPU 回退 `0.29%`，RSS 增加 `0.02%`；
+- ProRes 4K120：default/prototype 吞吐 `267.14/269.95 fps`，wall 改善 `1.04%`，
+  CPU 回退 `0.15%`，RSS 增加 `0.09%`；
 - 两种 allocator 的目标帧数和 checksum 全部一致；
 - prototype 全部命中、零 fallback，H.264 以 45 次 plane allocation 服务 750 次 acquire，
-  HEVC 以 51 次 allocation 服务 1830 次 acquire。
+  HEVC 以 51/1830 次、ProRes 以 36/360 次 allocation/acquire 完成复用。
 
-生命周期可行性成立，但主 case 最佳收益仅 `0.34%`，低于 3% 门槛，且 FFmpeg default
-本身已经池化。F1 结论为 **NO-GO**，不启动 F2，不向 `PlayerConfig` 或 PlayPlugin 引入
-实验开关。完整结果见
+生命周期可行性成立，但产品主 case 没有收益，极限压力项最佳收益也仅 `1.04%`，低于
+3% 门槛，且 FFmpeg default 本身已经池化。F1 结论为 **NO-GO**，不启动 F2，不向
+`PlayerConfig` 或 PlayPlugin 引入实验开关。完整结果见
 `docs/performance/video-decoder-direct-rendering-f1-results.md`。

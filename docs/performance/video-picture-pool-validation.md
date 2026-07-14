@@ -105,10 +105,12 @@ Allocations 模板在当前环境无法附加目标进程，因此 allocation �
 而不是 0%。CPU 保守上界不足以按数据门禁启动 F1。归因明细和 trace/XML 指纹见
 `docs/performance/video-picture-pool-allocator-profile.json`。
 
-2026-07-14 在明确授权下仍执行了隔离 F1 原型。原型的 H.264/HEVC 帧数与 checksum
-一致，生命周期和 fallback 测试通过，但 H.264 wall/CPU 仅改善 `0.74%/0.08%`，HEVC
-4K60 wall 改善 `0.34%`、CPU 回退 `0.07%`。结果低于 3% 门槛，F1 判定 NO-GO，
-不启动 F2，不修改 SDK/PlayPlugin 默认路径。
+2026-07-14 在明确授权下仍执行了隔离 F1 原型。H.264、HEVC 和 synthetic ProRes
+4K120 4:2:2 10-bit 的 default/prototype 帧数与 checksum 一致，生命周期和 fallback
+测试通过。H.264 wall 回退 `0.47%`、CPU 改善 `0.53%`；HEVC 4K60 wall/CPU 回退
+`0.50%/0.29%`；ProRes 4K120 吞吐为 `267.14/269.95 fps`，wall 改善 `1.04%` 但 CPU
+回退 `0.15%`。结果仍低于 3% 门槛，F1 判定 NO-GO，不启动 F2，不修改
+SDK/PlayPlugin 默认路径。
 
 只有未来平台或媒体的固定基准显示 decoder allocator 对 latency、CPU 或内存抖动有可重复
 显著影响时，才重新评估该 NO-GO 结论。

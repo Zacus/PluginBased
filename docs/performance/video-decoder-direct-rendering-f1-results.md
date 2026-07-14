@@ -6,14 +6,15 @@
 
 原因：
 
-- hevc_4k60_realtime best improvement 0.34% is below 3.00%
+- hevc_4k60_realtime best improvement -0.29% is below 3.00%
 
 ## 对比
 
-| Case | Runs | Wall default/prototype | Improvement | CPU default/prototype | Improvement | RSS delta | Plane allocation/acquire |
-|---|---:|---:|---:|---:|---:|---:|---:|
-| h264_1080p24 | 5 | 227.60/225.91 ms | +0.74% | 1439.25/1438.06 ms | +0.08% | +0.41% | 45/750 |
-| hevc_4k60_realtime | 5 | 1837.21/1830.90 ms | +0.34% | 12712.41/12720.73 ms | -0.07% | +0.06% | 51/1830 |
+| Case | Runs | Throughput default/prototype | Wall improvement | CPU improvement | RSS delta | Plane allocation/acquire |
+|---|---:|---:|---:|---:|---:|---:|
+| h264_1080p24 | 5 | 1061.83/1056.84 fps | -0.47% | +0.53% | -0.26% | 45/750 |
+| hevc_4k60_realtime | 5 | 324.21/322.58 fps | -0.50% | -0.29% | +0.02% | 51/1830 |
+| prores_4k120_422p10_stress | 5 | 267.14/269.95 fps | +1.04% | -0.15% | +0.09% | 36/360 |
 
 ## 解释
 
@@ -27,11 +28,15 @@ default 和 prototype 使用同一进程模型、demux/decode 代码和 callback
 底层 allocation 只统计成功创建的 plane buffer，FFmpeg default 私有池没有对应公开
 计数，因此不对两者的 allocation 次数作伪对比。
 
+4K120 4:2:2 10-bit case 是确定性 synthetic ProRes throughput stress，不包含实时
+PTS 节流、音频时钟、Qt Scene Graph 或 GPU texture upload；它不替代 HEVC 4K60
+产品主 case。
+
 ## 环境
 
-- Label: `f4977df`
+- Label: `7c7ebb8`
 - Platform: `macOS-15.6.1-arm64-arm-64bit`
-- Runner SHA-256: `5f3faa6752237af4c36bd441cff2b3e49112780a7126dab0282a28e817874518`
-- Manifest SHA-256: `b40e6ca0bc242d443d863f2d798ed510db8cb40aa2918c1df4e7b424a21fe732`
+- Runner SHA-256: `6c6654b3f9755426085c6df6af4a0be75f121d142c5be67430166a05c69948b9`
+- Manifest SHA-256: `622e0dc98dbde2bab9d764a2d48a0d772ba9ab3778e72730fca792e968fe1379`
 - Raw results: `benchmark_artifacts/get_buffer2-f1`
 - Machine report: `docs/performance/video-decoder-direct-rendering-f1-results.json`

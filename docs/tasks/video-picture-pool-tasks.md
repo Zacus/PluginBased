@@ -268,9 +268,10 @@ acquire 仍为 0。3 轮 Time Profiler 的直接 allocator/buffer 符号 CPU 中
 `0.054%`，包含全部 malloc/memset/bzero 的保守上界最大值为 `4.044%`，低于 5%；
 Allocations 占比不可用。数据门禁不建议启动 F1。
 
-2026-07-14 在明确授权下完成了隔离 F1。H.264 wall/CPU 改善 `0.74%/0.08%`；HEVC
-4K60 wall 改善 `0.34%`、CPU 回退 `0.07%`，低于 3% 的 F2 门槛。最终结论为
-**NO-GO**，不启动 F2，不接入 SDK 默认路径。
+2026-07-14 在明确授权下完成了隔离 F1，并补充 synthetic ProRes 422 10-bit 4K120
+压力项。H.264 wall 回退 `0.47%`、CPU 改善 `0.53%`；HEVC 4K60 wall/CPU 回退
+`0.50%/0.29%`；ProRes 4K120 wall 改善 `1.04%`、CPU 回退 `0.15%`。所有结果均低于
+3% 的 F2 门槛。最终结论为 **NO-GO**，不启动 F2，不接入 SDK 默认路径。
 
 ### F1. 技术验证
 

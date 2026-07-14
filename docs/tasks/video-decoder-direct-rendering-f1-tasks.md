@@ -43,10 +43,10 @@
 - 验收：无重复 buffer、UAF、double free、死锁或未回退的部分 frame。
 - 建议提交：`[组件测试] 验证get_buffer2原型生命周期`
 
-## 5. F1.4：真实媒体对比和决策
+## 5. F1.4：媒体对比和决策
 
-- 范围：H.264 1080p24、HEVC Main10 4K60，Release，default/prototype 各 1 次预热和
-  5 次正式运行。
+- 范围：H.264 1080p24、HEVC Main10 4K60 和 synthetic ProRes 422 10-bit 4K120
+  throughput stress，Release，default/prototype 各 1 次预热和 5 次正式运行。
 - 指标：帧数、checksum、wall/CPU/RSS、底层 plane allocation、callback/fallback。
 - GO：功能全部通过，wall/CPU 至少改善 3% 或分配/延迟抖动有显著收益，RSS 增幅不超过
   5%，无新增丢帧。
@@ -72,6 +72,6 @@ ctest --test-dir build --output-on-failure
 - GO/NO-GO 结论符合预先冻结的门槛；
 - NO-GO 时不把实验开关加入公共 SDK。
 
-实际结果满足正确性、fallback 和生命周期要求，但 HEVC 4K60 的最佳性能改善仅
-`0.34%`，未达到 3% 门槛。实验代码保留在 benchmark tools 供结果复核，不进入正式 SDK
-链路。
+实际结果满足正确性、fallback 和生命周期要求，但 HEVC 4K60 wall/CPU 分别回退
+`0.50%/0.29%`；ProRes 4K120 压力项最佳 wall 改善也仅 `1.04%`，未达到 3% 门槛。
+实验代码保留在 benchmark tools 供结果复核，不进入正式 SDK 链路。

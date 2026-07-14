@@ -14,14 +14,14 @@
         "timeout_ms": 120000,
         "url": "https://test.playready.microsoft.com/media/profficialsite/tearsofsteel_1080p_60s_24fps.6000kbps.1920x1080.h264-8b.2ch.128kbps.aac.mp4"
       },
-      "cpu_improvement_percent": 0.08275131804574902,
+      "cpu_improvement_percent": 0.5317191907391879,
       "default": {
         "callback_count_median": 250,
         "checksums": [
           18065298261563625599
         ],
         "completed_count": 5,
-        "cpu_median_ms": 1439.252,
+        "cpu_median_ms": 1443.243,
         "fallback_count_max": 250,
         "frame_counts": [
           240
@@ -29,9 +29,10 @@
         "plane_acquire_count_median": 0,
         "plane_allocation_count_median": 0,
         "prototype_frame_count_median": 0,
-        "rss_median_bytes": 111755264.0,
+        "rss_median_bytes": 112279552.0,
         "run_count": 5,
-        "wall_median_ms": 227.6
+        "throughput_fps_median": 1061.8341415070965,
+        "wall_median_ms": 226.024
       },
       "prototype": {
         "callback_count_median": 250,
@@ -39,7 +40,7 @@
           18065298261563625599
         ],
         "completed_count": 5,
-        "cpu_median_ms": 1438.0610000000001,
+        "cpu_median_ms": 1435.569,
         "fallback_count_max": 0,
         "frame_counts": [
           240
@@ -47,12 +48,13 @@
         "plane_acquire_count_median": 750,
         "plane_allocation_count_median": 45,
         "prototype_frame_count_median": 250,
-        "rss_median_bytes": 112214016.0,
+        "rss_median_bytes": 111984640.0,
         "run_count": 5,
-        "wall_median_ms": 225.911
+        "throughput_fps_median": 1056.8357457077057,
+        "wall_median_ms": 227.093
       },
-      "rss_delta_percent": 0.4104969945755754,
-      "wall_improvement_percent": 0.7420913884006999
+      "rss_delta_percent": -0.26265868962498173,
+      "wall_improvement_percent": -0.47295862386294746
     },
     "hevc_4k60_realtime": {
       "case": {
@@ -67,14 +69,14 @@
         "timeout_ms": 30000,
         "url": "https://test.playready.microsoft.com/media/profficialsite/bbb-3840x2160-cfg02-frag-6mbps.mp4"
       },
-      "cpu_improvement_percent": -0.0654399964633086,
+      "cpu_improvement_percent": -0.2853221555516757,
       "default": {
         "callback_count_median": 610,
         "checksums": [
           18434670839406717555
         ],
         "completed_count": 5,
-        "cpu_median_ms": 12712.409,
+        "cpu_median_ms": 12731.923999999999,
         "fallback_count_max": 610,
         "frame_counts": [
           600
@@ -82,9 +84,10 @@
         "plane_acquire_count_median": 0,
         "plane_allocation_count_median": 0,
         "prototype_frame_count_median": 0,
-        "rss_median_bytes": 706543616.0,
+        "rss_median_bytes": 706756608.0,
         "run_count": 5,
-        "wall_median_ms": 1837.213
+        "throughput_fps_median": 324.20725921667207,
+        "wall_median_ms": 1850.668
       },
       "prototype": {
         "callback_count_median": 610,
@@ -92,7 +95,7 @@
           18434670839406717555
         ],
         "completed_count": 5,
-        "cpu_median_ms": 12720.728000000001,
+        "cpu_median_ms": 12768.251,
         "fallback_count_max": 0,
         "frame_counts": [
           600
@@ -100,24 +103,93 @@
         "plane_acquire_count_median": 1830,
         "plane_allocation_count_median": 51,
         "prototype_frame_count_median": 610,
-        "rss_median_bytes": 706985984.0,
+        "rss_median_bytes": 706904064.0,
         "run_count": 5,
-        "wall_median_ms": 1830.904
+        "throughput_fps_median": 322.5839403735845,
+        "wall_median_ms": 1859.981
       },
-      "rss_delta_percent": 0.06261014748168073,
-      "wall_improvement_percent": 0.34340057467479107
+      "rss_delta_percent": 0.020863759649488837,
+      "wall_improvement_percent": -0.5032237008474834
+    },
+    "prores_4k120_422p10_stress": {
+      "case": {
+        "benchmark_kind": "throughput_stress",
+        "codec": "prores-422-10",
+        "f1_required": false,
+        "f1_stress": true,
+        "filename": "synthetic-prores-4k120-422p10.mov",
+        "generator": {
+          "bitrate": 200000000,
+          "codec": "prores",
+          "encoder": "prores_ks",
+          "fps": 120,
+          "height": 2160,
+          "pixel_format": "yuv422p10le",
+          "profile": "standard",
+          "seconds": 1,
+          "width": 3840
+        },
+        "hold_video_frames": 3,
+        "id": "prores_4k120_422p10_stress",
+        "max_video_frames": 120,
+        "minimum_runs": 5,
+        "sha256": "bf012d90c4e820afb16730ed0b99f8b6d5da35b75b4d0f81bd0d66238d760af9",
+        "source_kind": "generated",
+        "timeout_ms": 120000
+      },
+      "cpu_improvement_percent": -0.1493406263532505,
+      "default": {
+        "callback_count_median": 120,
+        "checksums": [
+          10651236218738602710
+        ],
+        "completed_count": 5,
+        "cpu_median_ms": 3191.362,
+        "fallback_count_max": 120,
+        "frame_counts": [
+          120
+        ],
+        "plane_acquire_count_median": 0,
+        "plane_allocation_count_median": 0,
+        "prototype_frame_count_median": 0,
+        "rss_median_bytes": 470450176.0,
+        "run_count": 5,
+        "throughput_fps_median": 267.14396388213606,
+        "wall_median_ms": 449.196
+      },
+      "prototype": {
+        "callback_count_median": 120,
+        "checksums": [
+          10651236218738602710
+        ],
+        "completed_count": 5,
+        "cpu_median_ms": 3196.1279999999997,
+        "fallback_count_max": 0,
+        "frame_counts": [
+          120
+        ],
+        "plane_acquire_count_median": 360,
+        "plane_allocation_count_median": 36,
+        "prototype_frame_count_median": 120,
+        "rss_median_bytes": 470876160.0,
+        "run_count": 5,
+        "throughput_fps_median": 269.945605960399,
+        "wall_median_ms": 444.534
+      },
+      "rss_delta_percent": 0.09054816465835482,
+      "wall_improvement_percent": 1.0378542996821063
     }
   },
   "decision": "NO-GO",
-  "label": "f4977df",
-  "manifest_sha256": "b40e6ca0bc242d443d863f2d798ed510db8cb40aa2918c1df4e7b424a21fe732",
+  "label": "7c7ebb8",
+  "manifest_sha256": "622e0dc98dbde2bab9d764a2d48a0d772ba9ab3778e72730fca792e968fe1379",
   "platform": "macOS-15.6.1-arm64-arm-64bit",
   "primary_case": "hevc_4k60_realtime",
   "reasons": [
-    "hevc_4k60_realtime best improvement 0.34% is below 3.00%"
+    "hevc_4k60_realtime best improvement -0.29% is below 3.00%"
   ],
   "runner": "MediaSdkGetBuffer2Benchmark",
-  "runner_sha256": "5f3faa6752237af4c36bd441cff2b3e49112780a7126dab0282a28e817874518",
+  "runner_sha256": "6c6654b3f9755426085c6df6af4a0be75f121d142c5be67430166a05c69948b9",
   "runs": 5,
   "schema_version": 1,
   "start_f2": false,
