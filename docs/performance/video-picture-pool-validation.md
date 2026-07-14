@@ -102,10 +102,13 @@ allocator/buffer 符号 CPU 占比中位数为 `0.054%`；把所有 `libsystem_m
 `memset` 和 `bzero` 也计入后，三轮保守上界最大值为 `4.044%`，仍低于 5% 门槛。
 
 Allocations 模板在当前环境无法附加目标进程，因此 allocation 占比明确记为不可用，
-而不是 0%。CPU 保守上界已不足以启动 F1；因此不启动 `AVCodecContext::get_buffer2`
-原型和正式实现，里程碑 F 保持关闭。归因明细和 trace/XML 指纹见
+而不是 0%。CPU 保守上界不足以按数据门禁启动 F1。归因明细和 trace/XML 指纹见
 `docs/performance/video-picture-pool-allocator-profile.json`。
 
-只有在固定媒体基准显示 decoder allocator 对 latency、CPU 或内存抖动有可重复显著影响
-时，才重新开启 F1，并为 codec alignment、frame threading、硬件回调和 fallback 单独
-编写设计补充。
+2026-07-14 在明确授权下仍执行了隔离 F1 原型。原型的 H.264/HEVC 帧数与 checksum
+一致，生命周期和 fallback 测试通过，但 H.264 wall/CPU 仅改善 `0.74%/0.08%`，HEVC
+4K60 wall 改善 `0.34%`、CPU 回退 `0.07%`。结果低于 3% 门槛，F1 判定 NO-GO，
+不启动 F2，不修改 SDK/PlayPlugin 默认路径。
+
+只有未来平台或媒体的固定基准显示 decoder allocator 对 latency、CPU 或内存抖动有可重复
+显著影响时，才重新评估该 NO-GO 结论。

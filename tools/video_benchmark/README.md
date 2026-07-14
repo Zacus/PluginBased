@@ -123,3 +123,15 @@ build-release/tools/video_benchmark/MediaSdkGetBuffer2Benchmark \
 将 `--allocator prototype` 替换为 `default` 即得到同 runner、同 callback 层级的对照组。
 两种模式必须先满足帧数和 checksum 一致，性能结果才有效。F1 设计和退出条件见
 `docs/design/video-decoder-direct-rendering-f1.md`。
+
+完整 F1 对照使用交替执行顺序，默认覆盖 H.264 1080p24 和 HEVC Main10 4K60：
+
+```bash
+python3 tools/get_buffer2_f1_benchmark.py \
+  --runner build-release/tools/video_benchmark/MediaSdkGetBuffer2Benchmark \
+  --media-dir benchmark_media \
+  --output-dir benchmark_artifacts/get_buffer2-f1 \
+  --output-json docs/performance/video-decoder-direct-rendering-f1-results.json \
+  --output-markdown docs/performance/video-decoder-direct-rendering-f1-results.md \
+  --label current --runs 5 --warmups 1
+```

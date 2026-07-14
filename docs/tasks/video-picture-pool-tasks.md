@@ -266,7 +266,11 @@ benchmark 已完成数据门禁，结果为 `CLOSED`。4K60 baseline/current 各
 帧均无 late drop，当前平均呈现延迟中位数为 `1.263 ms`；但 direct-output 路径 pool
 acquire 仍为 0。3 轮 Time Profiler 的直接 allocator/buffer 符号 CPU 中位数为
 `0.054%`，包含全部 malloc/memset/bzero 的保守上界最大值为 `4.044%`，低于 5%；
-Allocations 占比不可用。在 CPU 达到 5% 或 allocation 达到 15% 的门槛之前，不启动 F1。
+Allocations 占比不可用。数据门禁不建议启动 F1。
+
+2026-07-14 在明确授权下完成了隔离 F1。H.264 wall/CPU 改善 `0.74%/0.08%`；HEVC
+4K60 wall 改善 `0.34%`、CPU 回退 `0.07%`，低于 3% 的 F2 门槛。最终结论为
+**NO-GO**，不启动 F2，不接入 SDK 默认路径。
 
 ### F1. 技术验证
 
@@ -285,9 +289,9 @@ Allocations 占比不可用。在 CPU 达到 5% 或 allocation 达到 15% 的门
 - 目标媒体有可重复的分配或延迟收益；
 - 不兼容 codec 可无行为差异地回退默认 allocator。
 
-### F2. 正式实现
+### F2. 正式实现（关闭）
 
-F1 通过后再编写单独设计补充和任务拆分，不直接在本任务中展开实现。
+F1 未通过收益门槛，不编写正式实现，不增加产品开关。
 
 建议提交：`[技术验证] 评估解码器直连视频帧池`
 

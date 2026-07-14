@@ -2,6 +2,8 @@
 
 关联设计：[Decoder Direct Rendering F1 设计](../design/video-decoder-direct-rendering-f1.md)
 
+状态：F1.1 至 F1.4 已完成。最终结论为 **NO-GO**，F2 不启动。
+
 ## 1. 约束
 
 - F1 是 `tools/video_benchmark/` 下的独立实验，不进入 SDK/PlayPlugin 默认路径。
@@ -69,3 +71,7 @@ ctest --test-dir build --output-on-failure
 - 原始数据和环境指纹可复核；
 - GO/NO-GO 结论符合预先冻结的门槛；
 - NO-GO 时不把实验开关加入公共 SDK。
+
+实际结果满足正确性、fallback 和生命周期要求，但 HEVC 4K60 的最佳性能改善仅
+`0.34%`，未达到 3% 门槛。实验代码保留在 benchmark tools 供结果复核，不进入正式 SDK
+链路。

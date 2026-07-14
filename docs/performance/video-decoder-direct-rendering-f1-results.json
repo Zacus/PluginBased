@@ -1,0 +1,130 @@
+{
+  "cases": {
+    "h264_1080p24": {
+      "case": {
+        "codec": "h264",
+        "f1_required": true,
+        "filename": "tearsofsteel-1080p24-h264.mp4",
+        "hold_video_frames": 3,
+        "id": "h264_1080p24",
+        "max_video_frames": 240,
+        "minimum_runs": 5,
+        "report_interval_ms": 100,
+        "sha256": "5f54703c66a86a8d6de7e8021d53de1cf5c82216d5c6361d832bdb85084d5984",
+        "timeout_ms": 120000,
+        "url": "https://test.playready.microsoft.com/media/profficialsite/tearsofsteel_1080p_60s_24fps.6000kbps.1920x1080.h264-8b.2ch.128kbps.aac.mp4"
+      },
+      "cpu_improvement_percent": 0.08275131804574902,
+      "default": {
+        "callback_count_median": 250,
+        "checksums": [
+          18065298261563625599
+        ],
+        "completed_count": 5,
+        "cpu_median_ms": 1439.252,
+        "fallback_count_max": 250,
+        "frame_counts": [
+          240
+        ],
+        "plane_acquire_count_median": 0,
+        "plane_allocation_count_median": 0,
+        "prototype_frame_count_median": 0,
+        "rss_median_bytes": 111755264.0,
+        "run_count": 5,
+        "wall_median_ms": 227.6
+      },
+      "prototype": {
+        "callback_count_median": 250,
+        "checksums": [
+          18065298261563625599
+        ],
+        "completed_count": 5,
+        "cpu_median_ms": 1438.0610000000001,
+        "fallback_count_max": 0,
+        "frame_counts": [
+          240
+        ],
+        "plane_acquire_count_median": 750,
+        "plane_allocation_count_median": 45,
+        "prototype_frame_count_median": 250,
+        "rss_median_bytes": 112214016.0,
+        "run_count": 5,
+        "wall_median_ms": 225.911
+      },
+      "rss_delta_percent": 0.4104969945755754,
+      "wall_improvement_percent": 0.7420913884006999
+    },
+    "hevc_4k60_realtime": {
+      "case": {
+        "benchmark_kind": "realtime_pipeline",
+        "codec": "hevc-main10",
+        "f1_required": true,
+        "filename": "bbb-4k60-hevc-main10.mp4",
+        "id": "hevc_4k60_realtime",
+        "max_presented_frames": 600,
+        "minimum_runs": 5,
+        "sha256": "456cdf865a5416a7661bdece55c47b67f85ebff0287595bf9af34211972e4b43",
+        "timeout_ms": 30000,
+        "url": "https://test.playready.microsoft.com/media/profficialsite/bbb-3840x2160-cfg02-frag-6mbps.mp4"
+      },
+      "cpu_improvement_percent": -0.0654399964633086,
+      "default": {
+        "callback_count_median": 610,
+        "checksums": [
+          18434670839406717555
+        ],
+        "completed_count": 5,
+        "cpu_median_ms": 12712.409,
+        "fallback_count_max": 610,
+        "frame_counts": [
+          600
+        ],
+        "plane_acquire_count_median": 0,
+        "plane_allocation_count_median": 0,
+        "prototype_frame_count_median": 0,
+        "rss_median_bytes": 706543616.0,
+        "run_count": 5,
+        "wall_median_ms": 1837.213
+      },
+      "prototype": {
+        "callback_count_median": 610,
+        "checksums": [
+          18434670839406717555
+        ],
+        "completed_count": 5,
+        "cpu_median_ms": 12720.728000000001,
+        "fallback_count_max": 0,
+        "frame_counts": [
+          600
+        ],
+        "plane_acquire_count_median": 1830,
+        "plane_allocation_count_median": 51,
+        "prototype_frame_count_median": 610,
+        "rss_median_bytes": 706985984.0,
+        "run_count": 5,
+        "wall_median_ms": 1830.904
+      },
+      "rss_delta_percent": 0.06261014748168073,
+      "wall_improvement_percent": 0.34340057467479107
+    }
+  },
+  "decision": "NO-GO",
+  "label": "f4977df",
+  "manifest_sha256": "b40e6ca0bc242d443d863f2d798ed510db8cb40aa2918c1df4e7b424a21fe732",
+  "platform": "macOS-15.6.1-arm64-arm-64bit",
+  "primary_case": "hevc_4k60_realtime",
+  "reasons": [
+    "hevc_4k60_realtime best improvement 0.34% is below 3.00%"
+  ],
+  "runner": "MediaSdkGetBuffer2Benchmark",
+  "runner_sha256": "5f3faa6752237af4c36bd441cff2b3e49112780a7126dab0282a28e817874518",
+  "runs": 5,
+  "schema_version": 1,
+  "start_f2": false,
+  "thresholds": {
+    "maximum_regression_percent": 3.0,
+    "maximum_rss_increase_percent": 5.0,
+    "minimum_improvement_percent": 3.0
+  },
+  "warmups": 1
+}

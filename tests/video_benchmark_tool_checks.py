@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import json
+import hashlib
 import subprocess
 import sys
 import tempfile
@@ -10,6 +11,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 TOOL = ROOT / "tools" / "video_benchmark.py"
 PROFILE_TOOL = ROOT / "tools" / "video_allocator_profile.py"
+GET_BUFFER2_F1_TOOL = ROOT / "tools" / "get_buffer2_f1_benchmark.py"
 
 
 def write_json(path: Path, value: dict) -> None:
@@ -170,6 +172,78 @@ def main() -> None:
         assert abs(profile_result["decoder_allocator_cpu_percent"] - 20 / 120 * 100) < 1e-9
         assert profile_result["decoder_allocator_allocation_percent"] is None
         assert profile_result["time_profile"]["runs"][0]["direct_allocator_sample_weight_ns"] == 10
+
+        f1_root = root / "get-buffer2-f1"
+        media = f1_root / "media.bin"
+        media.parent.mkdir(parents=True, exist_ok=True)
+        media.write_bytes(b"fixed-media")
+        media_hash = hashlib.sha256(media.read_bytes()).hexdigest()
+        write_json(f1_root / "manifest.json", {
+            "schema_version": 1,
+            "cases": [{
+                "id": "primary",
+                "codec": "test",
+                "filename": media.name,
+                "sha256": media_hash,
+                "max_video_frames": 10,
+            }],
+        })
+        fake_runner = f1_root / "fake-runner.py"
+        fake_runner.write_text("""#!/usr/bin/env python3
+import argparse, json
+from pathlib import Path
+p=argparse.ArgumentParser()
+p.add_argument('--input'); p.add_argument('--output'); p.add_argument('--label')
+p.add_argument('--allocator'); p.add_argument('--max-video-frames', type=int)
+p.add_argument('--hold-video-frames'); p.add_argument('--timeout-ms')
+a=p.parse_args()
+prototype=a.allocator == 'prototype'
+result={
+  'completed': True,
+  'frames': {'video': a.max_video_frames, 'checksum': 7},
+  'timing': {
+    'wall_ms': 98.0 if prototype else 100.0,
+    'user_cpu_ms': 98.0 if prototype else 100.0,
+    'system_cpu_ms': 0.0,
+    'max_rss_bytes': 1000,
+  },
+  'allocator': {
+    'callback_count': 10,
+    'prototype_frame_count': 10 if prototype else 0,
+    'fallback_count': 0 if prototype else 10,
+    'plane_acquire_count': 30 if prototype else 0,
+    'plane_allocation_count': 3 if prototype else 0,
+  },
+}
+Path(a.output).write_text(json.dumps(result), encoding='utf-8')
+""", encoding="utf-8")
+        fake_runner.chmod(0o755)
+
+        f1_command = [
+            sys.executable,
+            str(GET_BUFFER2_F1_TOOL),
+            "--runner", str(fake_runner),
+            "--manifest", str(f1_root / "manifest.json"),
+            "--media-dir", str(f1_root),
+            "--output-dir", str(f1_root / "results"),
+            "--output-json", str(f1_root / "decision.json"),
+            "--output-markdown", str(f1_root / "decision.md"),
+            "--label", "test",
+            "--case", "primary",
+            "--primary-case", "primary",
+            "--runs", "2",
+            "--warmups", "0",
+        ]
+        subprocess.run(f1_command, check=True, capture_output=True, text=True)
+        f1_decision = json.loads((f1_root / "decision.json").read_text(encoding="utf-8"))
+        assert f1_decision["decision"] == "NO-GO"
+        subprocess.run(
+            f1_command + ["--minimum-improvement-percent", "1"],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        assert json.loads((f1_root / "decision.json").read_text(encoding="utf-8"))["decision"] == "GO"
 
 
 if __name__ == "__main__":

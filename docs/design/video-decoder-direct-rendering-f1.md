@@ -135,3 +135,19 @@ default 模式同样记录 callback 次数，但不伪造 FFmpeg 私有池的 al
 
 收益不足或复杂度无法由公共契约覆盖时结论为 NO-GO，保留报告并删除或封存原型，不进入
 F2。
+
+## 11. 实验结果
+
+2026-07-14 完成 H.264 1080p24 和 HEVC Main10 4K60 的 Release 对照，各 1 次预热加
+5 次正式运行：
+
+- H.264：wall 改善 `0.74%`，CPU 改善 `0.08%`，RSS 增加 `0.41%`；
+- HEVC 4K60：wall 改善 `0.34%`，CPU 回退 `0.07%`，RSS 增加 `0.06%`；
+- 两种 allocator 的目标帧数和 checksum 全部一致；
+- prototype 全部命中、零 fallback，H.264 以 45 次 plane allocation 服务 750 次 acquire，
+  HEVC 以 51 次 allocation 服务 1830 次 acquire。
+
+生命周期可行性成立，但主 case 最佳收益仅 `0.34%`，低于 3% 门槛，且 FFmpeg default
+本身已经池化。F1 结论为 **NO-GO**，不启动 F2，不向 `PlayerConfig` 或 PlayPlugin 引入
+实验开关。完整结果见
+`docs/performance/video-decoder-direct-rendering-f1-results.md`。
