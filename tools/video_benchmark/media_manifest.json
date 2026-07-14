@@ -38,6 +38,31 @@
       "timeout_ms": 30000,
       "minimum_runs": 5,
       "f1_required": true
+    },
+    {
+      "id": "prores_4k120_422p10_stress",
+      "codec": "prores-422-10",
+      "benchmark_kind": "throughput_stress",
+      "source_kind": "generated",
+      "filename": "synthetic-prores-4k120-422p10.mov",
+      "generator": {
+        "codec": "prores",
+        "encoder": "prores_ks",
+        "profile": "standard",
+        "pixel_format": "yuv422p10le",
+        "width": 3840,
+        "height": 2160,
+        "fps": 120,
+        "seconds": 1,
+        "bitrate": 200000000
+      },
+      "sha256": "bf012d90c4e820afb16730ed0b99f8b6d5da35b75b4d0f81bd0d66238d760af9",
+      "max_video_frames": 120,
+      "hold_video_frames": 3,
+      "timeout_ms": 120000,
+      "minimum_runs": 5,
+      "f1_required": false,
+      "f1_stress": true
     }
   ]
 }

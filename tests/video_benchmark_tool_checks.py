@@ -173,6 +173,51 @@ def main() -> None:
         assert profile_result["decoder_allocator_allocation_percent"] is None
         assert profile_result["time_profile"]["runs"][0]["direct_allocator_sample_weight_ns"] == 10
 
+        generated_media = b"generated-media"
+        generator = root / "fake-generator.py"
+        generator.write_text("""#!/usr/bin/env python3
+import argparse
+from pathlib import Path
+p=argparse.ArgumentParser()
+for name in ('output', 'codec', 'encoder', 'pixel-format', 'profile', 'width', 'height', 'fps', 'seconds', 'bitrate'):
+    p.add_argument('--' + name)
+a=p.parse_args()
+Path(a.output).write_bytes(b'generated-media')
+""", encoding="utf-8")
+        generator.chmod(0o755)
+        generated_manifest = root / "generated-manifest.json"
+        write_json(generated_manifest, {
+            "schema_version": 1,
+            "cases": [{
+                "id": "generated",
+                "codec": "prores",
+                "source_kind": "generated",
+                "filename": "generated.mov",
+                "generator": {
+                    "codec": "prores",
+                    "encoder": "prores_ks",
+                    "pixel_format": "yuv422p10le",
+                    "profile": "standard",
+                    "width": 3840,
+                    "height": 2160,
+                    "fps": 120,
+                    "seconds": 1,
+                    "bitrate": 200_000_000,
+                },
+                "sha256": hashlib.sha256(generated_media).hexdigest(),
+            }],
+        })
+        generated_media_dir = root / "generated-media"
+        subprocess.run([
+            sys.executable,
+            str(TOOL),
+            "fetch",
+            "--manifest", str(generated_manifest),
+            "--media-dir", str(generated_media_dir),
+            "--media-generator", str(generator),
+        ], check=True, capture_output=True, text=True)
+        assert (generated_media_dir / "generated.mov").read_bytes() == generated_media
+
         f1_root = root / "get-buffer2-f1"
         media = f1_root / "media.bin"
         media.parent.mkdir(parents=True, exist_ok=True)

@@ -13,7 +13,11 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_MANIFEST = ROOT / "tools" / "video_benchmark" / "media_manifest.json"
-DEFAULT_CASES = ("h264_1080p24", "hevc_4k60_realtime")
+DEFAULT_CASES = (
+    "h264_1080p24",
+    "hevc_4k60_realtime",
+    "prores_4k120_422p10_stress",
+)
 
 
 def fail(message: str) -> None:
@@ -84,6 +88,11 @@ def summarize(results: list[dict[str, Any]]) -> dict[str, Any]:
         for result in results
     ]
     rss = [float(result["timing"]["max_rss_bytes"]) for result in results]
+    throughput = [
+        float(result["frames"]["video"]) * 1000.0 / float(result["timing"]["wall_ms"])
+        for result in results
+        if float(result["timing"]["wall_ms"]) > 0.0
+    ]
     return {
         "run_count": len(results),
         "completed_count": sum(bool(result.get("completed")) for result in results),
@@ -92,6 +101,7 @@ def summarize(results: list[dict[str, Any]]) -> dict[str, Any]:
         "wall_median_ms": statistics.median(wall),
         "cpu_median_ms": statistics.median(cpu),
         "rss_median_bytes": statistics.median(rss),
+        "throughput_fps_median": statistics.median(throughput),
         "callback_count_median": statistics.median(
             int(result["allocator"]["callback_count"]) for result in results
         ),
@@ -253,17 +263,16 @@ def execute(args: argparse.Namespace) -> None:
     lines.extend([
         "## 对比",
         "",
-        "| Case | Runs | Wall default/prototype | Improvement | CPU default/prototype | Improvement | RSS delta | Plane allocation/acquire |",
-        "|---|---:|---:|---:|---:|---:|---:|---:|",
+        "| Case | Runs | Throughput default/prototype | Wall improvement | CPU improvement | RSS delta | Plane allocation/acquire |",
+        "|---|---:|---:|---:|---:|---:|---:|",
     ])
     for case_id, summary in summaries.items():
         default = summary["default"]
         prototype = summary["prototype"]
         lines.append(
             f"| {case_id} | {args.runs} | "
-            f"{default['wall_median_ms']:.2f}/{prototype['wall_median_ms']:.2f} ms | "
+            f"{default['throughput_fps_median']:.2f}/{prototype['throughput_fps_median']:.2f} fps | "
             f"{summary['wall_improvement_percent']:+.2f}% | "
-            f"{default['cpu_median_ms']:.2f}/{prototype['cpu_median_ms']:.2f} ms | "
             f"{summary['cpu_improvement_percent']:+.2f}% | "
             f"{summary['rss_delta_percent']:+.2f}% | "
             f"{prototype['plane_allocation_count_median']:.0f}/"
@@ -282,6 +291,10 @@ def execute(args: argparse.Namespace) -> None:
         "按奇偶轮交替执行顺序；媒体来源、SHA-256 和目标帧数由 manifest 固定。prototype",
         "底层 allocation 只统计成功创建的 plane buffer，FFmpeg default 私有池没有对应公开",
         "计数，因此不对两者的 allocation 次数作伪对比。",
+        "",
+        "4K120 4:2:2 10-bit case 是确定性 synthetic ProRes throughput stress，不包含实时",
+        "PTS 节流、音频时钟、Qt Scene Graph 或 GPU texture upload；它不替代 HEVC 4K60",
+        "产品主 case。",
         "",
         "## 环境",
         "",

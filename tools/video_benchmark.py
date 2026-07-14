@@ -66,17 +66,49 @@ def fetch_media(args: argparse.Namespace) -> None:
             print(f"[cached] {case['id']}: {destination}")
             continue
 
-        request = urllib.request.Request(
-            case["url"],
-            headers={"User-Agent": "PluginBased-MediaSdkBenchmark/1.0"},
-        )
-        print(f"[fetch]  {case['id']}: {case['url']}")
-        with tempfile.NamedTemporaryFile(dir=args.media_dir, delete=False) as temporary:
+        suffix = Path(case["filename"]).suffix
+        with tempfile.NamedTemporaryFile(dir=args.media_dir, suffix=suffix, delete=False) as temporary:
             temporary_path = Path(temporary.name)
+        if case.get("source_kind") == "generated":
+            if args.media_generator is None:
+                temporary_path.unlink(missing_ok=True)
+                fail(f"Case {case['id']} requires --media-generator")
+            generator = case.get("generator", {})
+            command = [
+                str(args.media_generator.resolve()),
+                "--output", str(temporary_path),
+                "--codec", str(generator["codec"]),
+                "--encoder", str(generator["encoder"]),
+                "--pixel-format", str(generator["pixel_format"]),
+                "--profile", str(generator["profile"]),
+                "--width", str(generator["width"]),
+                "--height", str(generator["height"]),
+                "--fps", str(generator["fps"]),
+                "--seconds", str(generator["seconds"]),
+                "--bitrate", str(generator["bitrate"]),
+            ]
+            print(f"[generate] {case['id']}: {generator['encoder']}/{generator['pixel_format']}")
             try:
-                with urllib.request.urlopen(request, timeout=args.timeout) as response:
-                    while chunk := response.read(1024 * 1024):
-                        temporary.write(chunk)
+                completed = subprocess.run(command, text=True, capture_output=True)
+            except Exception:
+                temporary_path.unlink(missing_ok=True)
+                raise
+            if completed.returncode != 0:
+                temporary_path.unlink(missing_ok=True)
+                sys.stderr.write(completed.stdout)
+                sys.stderr.write(completed.stderr)
+                fail(f"Media generator failed for {case['id']}")
+        else:
+            request = urllib.request.Request(
+                case["url"],
+                headers={"User-Agent": "PluginBased-MediaSdkBenchmark/1.0"},
+            )
+            print(f"[fetch]  {case['id']}: {case['url']}")
+            try:
+                with temporary_path.open("wb") as output:
+                    with urllib.request.urlopen(request, timeout=args.timeout) as response:
+                        while chunk := response.read(1024 * 1024):
+                            output.write(chunk)
             except Exception:
                 temporary_path.unlink(missing_ok=True)
                 raise
@@ -420,9 +452,14 @@ def compare_suites(args: argparse.Namespace) -> None:
         "|---|---|---|---|",
     ])
     for case_id, case in cases.items():
+        if case.get("source_kind") == "generated":
+            generator = case.get("generator", {})
+            source = f"generated {generator.get('encoder', 'unknown')}/{generator.get('pixel_format', 'unknown')}"
+        else:
+            source = f"[official test media]({case.get('url', '')})"
         lines.append(
             f"| {case_id} | {case.get('codec', 'unknown')} | "
-            f"[official test media]({case.get('url', '')}) | `{case.get('sha256', '')}` |"
+            f"{source} | `{case.get('sha256', '')}` |"
         )
     lines.extend([
         "",
@@ -446,7 +483,7 @@ def compare_suites(args: argparse.Namespace) -> None:
         f"- Machine report: `{args.output_json}`",
         "",
         "所有原始单次 JSON 均保留 wall/user/system CPU、max RSS、帧 checksum 和对应 runner",
-        "可观测的队列、延迟及对象池状态。媒体二进制不进入 Git，由 manifest URL 与",
+        "可观测的队列、延迟及对象池状态。媒体二进制不进入 Git，由 manifest source 与",
         "SHA-256 固定。",
         "",
     ])
@@ -464,6 +501,7 @@ def parser() -> argparse.ArgumentParser:
     fetch = subparsers.add_parser("fetch", help="download and verify manifest media")
     fetch.add_argument("--manifest", type=Path, default=DEFAULT_MANIFEST)
     fetch.add_argument("--media-dir", type=Path, required=True)
+    fetch.add_argument("--media-generator", type=Path)
     fetch.add_argument("--timeout", type=int, default=120)
     fetch.set_defaults(handler=fetch_media)
 

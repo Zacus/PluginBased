@@ -32,10 +32,13 @@ runner 只使用对应 revision 可用的 SDK 接口；较旧 revision 没有 po
 
 ```bash
 python3 tools/video_benchmark.py fetch \
+  --media-generator build-release/tools/video_benchmark/MediaSdkBenchmarkMediaGenerator \
   --media-dir benchmark_media
 ```
 
 媒体二进制不提交到 Git。`media_manifest.json` 固定来源、SHA-256、测量帧数和超时。
+4K120 4:2:2 10-bit 压力 case 由固定的 `prores_ks` Standard 参数生成；生成结果同样校验
+SHA-256，编码环境不一致时不会静默使用不同媒体。
 
 ## 执行
 
@@ -124,7 +127,8 @@ build-release/tools/video_benchmark/MediaSdkGetBuffer2Benchmark \
 两种模式必须先满足帧数和 checksum 一致，性能结果才有效。F1 设计和退出条件见
 `docs/design/video-decoder-direct-rendering-f1.md`。
 
-完整 F1 对照使用交替执行顺序，默认覆盖 H.264 1080p24 和 HEVC Main10 4K60：
+完整 F1 对照使用交替执行顺序，默认覆盖 H.264 1080p24、HEVC Main10 4K60，以及
+synthetic ProRes 422 10-bit 4K120 压力 case：
 
 ```bash
 python3 tools/get_buffer2_f1_benchmark.py \

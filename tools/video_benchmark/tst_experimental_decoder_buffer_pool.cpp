@@ -119,6 +119,23 @@ void simultaneousFramesNeverSharePlaneStorage()
     pool.detach(context.get());
 }
 
+void prores422TenBitUsesPrototypeBuffers()
+{
+    auto context = makeContext(AV_CODEC_ID_PRORES);
+    context->pix_fmt = AV_PIX_FMT_YUV422P10LE;
+    media_benchmark::ExperimentalDecoderBufferPool pool(true);
+    assert(pool.attach(context.get()));
+
+    auto frame = makeRequestedFrame();
+    frame->format = AV_PIX_FMT_YUV422P10LE;
+    assert(context->get_buffer2(context.get(), frame.get(), AV_GET_BUFFER_FLAG_REF) == 0);
+    assertPlaneCoverageAndAlignment(frame.get());
+    assert(pool.stats().prototypeFrameCount == 1);
+    assert(pool.stats().fallbackCount == 0);
+
+    pool.detach(context.get());
+}
+
 void formatChangeRetiresOldPoolsWithoutInvalidatingFrames()
 {
     auto context = makeContext();
@@ -210,6 +227,7 @@ int main()
 {
     allocatesAlignedPlanesAndReusesReleasedBuffers();
     simultaneousFramesNeverSharePlaneStorage();
+    prores422TenBitUsesPrototypeBuffers();
     formatChangeRetiresOldPoolsWithoutInvalidatingFrames();
     frameReferencesCanOutlivePoolFacade();
     disabledAndUnsupportedModesDelegateAndRestoreCallback();

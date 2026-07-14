@@ -3,6 +3,7 @@ extern "C" {
 #include <libavformat/avformat.h>
 #include <libavutil/error.h>
 #include <libavutil/opt.h>
+#include <libavutil/pixdesc.h>
 }
 
 #include <algorithm>
@@ -19,6 +20,9 @@ namespace {
 struct Options {
     std::filesystem::path output;
     AVCodecID codecId = AV_CODEC_ID_H264;
+    std::string encoderName;
+    std::string encoderProfile;
+    AVPixelFormat pixelFormat = AV_PIX_FMT_NONE;
     int width = 1920;
     int height = 1080;
     int fps = 30;
@@ -73,7 +77,26 @@ std::optional<Options> parseOptions(int argc, char** argv)
             if (*value == "h264") options.codecId = AV_CODEC_ID_H264;
             else if (*value == "hevc") options.codecId = AV_CODEC_ID_HEVC;
             else if (*value == "mpeg4") options.codecId = AV_CODEC_ID_MPEG4;
+            else if (*value == "prores") {
+                options.codecId = AV_CODEC_ID_PRORES;
+                options.encoderName = "prores_ks";
+                options.encoderProfile = "standard";
+                options.pixelFormat = AV_PIX_FMT_YUV422P10LE;
+            }
             else return std::nullopt;
+        } else if (argument == "--encoder") {
+            const auto value = nextValue(i, argc, argv);
+            if (!value) return std::nullopt;
+            options.encoderName = *value;
+        } else if (argument == "--pixel-format") {
+            const auto value = nextValue(i, argc, argv);
+            if (!value) return std::nullopt;
+            options.pixelFormat = av_get_pix_fmt(value->c_str());
+            if (options.pixelFormat == AV_PIX_FMT_NONE) return std::nullopt;
+        } else if (argument == "--profile") {
+            const auto value = nextValue(i, argc, argv);
+            if (!value) return std::nullopt;
+            options.encoderProfile = *value;
         } else if (argument == "--width") {
             if (!readInteger(options.width)) return std::nullopt;
         } else if (argument == "--height") {
@@ -95,7 +118,7 @@ std::optional<Options> parseOptions(int argc, char** argv)
     return options;
 }
 
-AVPixelFormat selectPixelFormat(const AVCodec* codec)
+AVPixelFormat selectPixelFormat(const AVCodec* codec, AVPixelFormat requested)
 {
     const void* configurations = nullptr;
     int configurationCount = 0;
@@ -106,10 +129,17 @@ AVPixelFormat selectPixelFormat(const AVCodec* codec)
                                      &configurations,
                                      &configurationCount) < 0
         || !configurations || configurationCount <= 0) {
-        return AV_PIX_FMT_YUV420P;
+        return requested != AV_PIX_FMT_NONE ? requested : AV_PIX_FMT_YUV420P;
     }
 
     const auto* formats = static_cast<const AVPixelFormat*>(configurations);
+    if (requested != AV_PIX_FMT_NONE) {
+        for (int i = 0; i < configurationCount; ++i) {
+            if (formats[i] == requested)
+                return formats[i];
+        }
+        return AV_PIX_FMT_NONE;
+    }
     for (int i = 0; i < configurationCount; ++i) {
         if (formats[i] == AV_PIX_FMT_YUV420P)
             return formats[i];
@@ -154,6 +184,23 @@ void fillNv12(AVFrame* frame, int frameIndex)
     }
 }
 
+void fillYuv422p10le(AVFrame* frame, int frameIndex)
+{
+    for (int y = 0; y < frame->height; ++y) {
+        auto* row = reinterpret_cast<std::uint16_t*>(frame->data[0] + y * frame->linesize[0]);
+        for (int x = 0; x < frame->width; ++x)
+            row[x] = static_cast<std::uint16_t>((x + y + frameIndex * 3) & 0x3ff);
+    }
+    for (int y = 0; y < frame->height; ++y) {
+        auto* u = reinterpret_cast<std::uint16_t*>(frame->data[1] + y * frame->linesize[1]);
+        auto* v = reinterpret_cast<std::uint16_t*>(frame->data[2] + y * frame->linesize[2]);
+        for (int x = 0; x < frame->width / 2; ++x) {
+            u[x] = static_cast<std::uint16_t>(384 + ((x + frameIndex) & 0x7f));
+            v[x] = static_cast<std::uint16_t>(640 - ((y + frameIndex) & 0x7f));
+        }
+    }
+}
+
 int drainPackets(AVCodecContext* codecContext,
                  AVFormatContext* formatContext,
                  AVStream* stream)
@@ -184,12 +231,15 @@ int main(int argc, char** argv)
     const auto options = parseOptions(argc, argv);
     if (!options) {
         std::cerr << "Usage: MediaSdkBenchmarkMediaGenerator --output FILE "
-                     "--codec h264|hevc|mpeg4 --width N --height N --fps N --seconds N "
+                     "--codec h264|hevc|mpeg4|prores [--encoder NAME] "
+                     "[--pixel-format NAME] [--profile NAME] --width N --height N --fps N --seconds N "
                      "--bitrate N\n";
         return 2;
     }
 
-    const AVCodec* codec = avcodec_find_encoder(options->codecId);
+    const AVCodec* codec = options->encoderName.empty()
+        ? avcodec_find_encoder(options->codecId)
+        : avcodec_find_encoder_by_name(options->encoderName.c_str());
     if (!codec) {
         std::cerr << "No encoder is available for " << avcodec_get_name(options->codecId) << '\n';
         return 1;
@@ -219,12 +269,22 @@ int main(int argc, char** argv)
     codecContext->bit_rate = options->bitRate;
     codecContext->gop_size = options->fps * 2;
     codecContext->max_b_frames = 0;
-    codecContext->pix_fmt = selectPixelFormat(codec);
+    codecContext->pix_fmt = selectPixelFormat(codec, options->pixelFormat);
+    if (codecContext->pix_fmt == AV_PIX_FMT_NONE) {
+        std::cerr << "Encoder " << codec->name << " does not support the requested pixel format\n";
+        return 1;
+    }
+    if (codecContext->pix_fmt == AV_PIX_FMT_YUV422P10LE)
+        codecContext->bits_per_raw_sample = 10;
+    if (options->codecId == AV_CODEC_ID_PRORES)
+        codecContext->profile = AV_PROFILE_PRORES_STANDARD;
     if (formatContext->oformat->flags & AVFMT_GLOBALHEADER)
         codecContext->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
     av_opt_set(codecContext->priv_data, "preset", "fast", 0);
     av_opt_set(codecContext->priv_data, "realtime", "1", 0);
     av_opt_set(codecContext->priv_data, "allow_sw", "1", 0);
+    if (!options->encoderProfile.empty())
+        av_opt_set(codecContext->priv_data, "profile", options->encoderProfile.c_str(), 0);
 
     result = avcodec_open2(codecContext.get(), codec, nullptr);
     if (result < 0) {
@@ -275,6 +335,8 @@ int main(int argc, char** argv)
             fillYuv420p(frame.get(), i);
         else if (frame->format == AV_PIX_FMT_NV12)
             fillNv12(frame.get(), i);
+        else if (frame->format == AV_PIX_FMT_YUV422P10LE)
+            fillYuv422p10le(frame.get(), i);
         else {
             std::cerr << "Unsupported encoder pixel format: " << frame->format << '\n';
             return 1;

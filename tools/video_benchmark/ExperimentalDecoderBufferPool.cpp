@@ -215,7 +215,9 @@ bool ExperimentalDecoderBufferPool::eligible(
 {
     if (!context || !frame || context->codec_type != AVMEDIA_TYPE_VIDEO
         || !context->codec || !(context->codec->capabilities & AV_CODEC_CAP_DR1)
-        || (context->codec_id != AV_CODEC_ID_H264 && context->codec_id != AV_CODEC_ID_HEVC)
+        || (context->codec_id != AV_CODEC_ID_H264
+            && context->codec_id != AV_CODEC_ID_HEVC
+            && context->codec_id != AV_CODEC_ID_PRORES)
         || context->hw_device_ctx || context->hw_frames_ctx || frame->format == AV_PIX_FMT_NONE
         || frame->width <= 0 || frame->height <= 0) {
         return false;
