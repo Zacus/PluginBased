@@ -79,6 +79,12 @@ struct RuntimeDiagnostics {
     std::uint64_t videoPicturePoolHighWatermark = 0;
     std::uint64_t videoPicturePoolRetainedCount = 0;
     std::uint64_t videoPicturePoolInFlightCount = 0;
+    std::uint64_t decoderBufferPoolCallbackCount = 0;
+    std::uint64_t decoderBufferPoolPooledFrameCount = 0;
+    std::uint64_t decoderBufferPoolFallbackCount = 0;
+    std::uint64_t decoderBufferPoolRebuildCount = 0;
+    std::uint64_t decoderBufferPoolPlaneAcquireCount = 0;
+    std::uint64_t decoderBufferPoolPlaneAllocationCount = 0;
     std::uint64_t eofAccepted = 0;
     std::uint64_t eofPresented = 0;
     std::uint64_t decodeFramePushWaitUs = 0;

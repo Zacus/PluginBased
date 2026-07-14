@@ -469,6 +469,7 @@ void SdkPlaybackAdapter::handleSessionEvent(
 
     if (const auto* payload = std::get_if<media_sdk::DecodePerformanceEvent>(&event.payload)) {
         const auto& pool = payload->videoPicturePool;
+        const auto& decoderPool = payload->decoderBufferPool;
         LOG_INFO("PlayPerf: decoder={} decoded={} transfer_avg={}us transfer_max={}us "
                  "normalize_avg={}us normalize_max={}us push_wait_avg={}us push_wait_max={}us",
                  payload->decoderName,
@@ -489,6 +490,16 @@ void SdkPlaybackAdapter::handleSessionEvent(
                      pool.highWatermark,
                      pool.retainedCount,
                      pool.inFlightCount);
+        }
+        if (decoderPool.callbackCount > 0) {
+            LOG_INFO("PlayPerf: decoder_pool callback={} pooled={} fallback={} rebuild={} "
+                     "plane_acquire={} plane_alloc={}",
+                     decoderPool.callbackCount,
+                     decoderPool.pooledFrameCount,
+                     decoderPool.fallbackCount,
+                     decoderPool.poolRebuildCount,
+                     decoderPool.planeAcquireCount,
+                     decoderPool.planeAllocationCount);
         }
         return;
     }
@@ -542,6 +553,16 @@ void SdkPlaybackAdapter::handleRuntimeDiagnostics(
                  diagnostics.videoPicturePoolRetainedCount,
                  diagnostics.videoPicturePoolInFlightCount);
     }
+    if (diagnostics.decoderBufferPoolCallbackCount > 0) {
+        LOG_INFO("PlayPerf: decoder_pool callback={} pooled={} fallback={} rebuild={} "
+                 "plane_acquire={} plane_alloc={}",
+                 diagnostics.decoderBufferPoolCallbackCount,
+                 diagnostics.decoderBufferPoolPooledFrameCount,
+                 diagnostics.decoderBufferPoolFallbackCount,
+                 diagnostics.decoderBufferPoolRebuildCount,
+                 diagnostics.decoderBufferPoolPlaneAcquireCount,
+                 diagnostics.decoderBufferPoolPlaneAllocationCount);
+    }
 }
 
 void SdkPlaybackAdapter::handleNativeRenderingFailed(std::uint64_t eventSerial)
@@ -555,6 +576,7 @@ media_sdk::session::PlaybackSessionConfig SdkPlaybackAdapter::sessionConfig() co
 {
     std::lock_guard lock(m_mutex);
     media_sdk::session::PlaybackSessionConfig config;
+    config.core.enableDecoderBufferPool = true;
     config.core.preferNativeVideoFrames = m_directNativeVideoEnabled;
     config.preferNativeVideoFrames = m_directNativeVideoEnabled;
     config.runtime.audioControls = {

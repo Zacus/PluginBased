@@ -37,6 +37,7 @@ public:
         , lastAudioControls(config.runtime.audioControls)
         , preferNativeVideoFrames(config.preferNativeVideoFrames)
         , corePreferNativeVideoFrames(config.core.preferNativeVideoFrames)
+        , coreDecoderBufferPoolEnabled(config.core.enableDecoderBufferPool)
     {
     }
 
@@ -97,6 +98,7 @@ public:
     bool emitErrorOnStop = false;
     bool preferNativeVideoFrames = false;
     bool corePreferNativeVideoFrames = false;
+    bool coreDecoderBufferPoolEnabled = false;
     std::chrono::milliseconds lastSeek { 0 };
     media_sdk::SeekPlaybackMode lastSeekMode = media_sdk::SeekPlaybackMode::PreservePlaybackState;
     media_sdk::runtime::RuntimeAudioControls lastAudioControls {};
@@ -185,6 +187,7 @@ void nativeRenderingFailureNotifiesCurrentSessionAndDisablesFutureNative()
     assert(harness.sessions.size() == 1);
     assert(harness.sessions[0]->preferNativeVideoFrames);
     assert(harness.sessions[0]->corePreferNativeVideoFrames);
+    assert(harness.sessions[0]->coreDecoderBufferPoolEnabled);
 
     harness.adapter.notifyNativeRenderingFailed();
     assert(harness.sessions[0]->nativeRenderingFailureCount == 1);
@@ -193,6 +196,7 @@ void nativeRenderingFailureNotifiesCurrentSessionAndDisablesFutureNative()
     assert(harness.sessions.size() == 2);
     assert(!harness.sessions[1]->preferNativeVideoFrames);
     assert(!harness.sessions[1]->corePreferNativeVideoFrames);
+    assert(harness.sessions[1]->coreDecoderBufferPoolEnabled);
 }
 
 } // namespace

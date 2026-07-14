@@ -2,6 +2,7 @@
 #include "Demuxer.h"
 #include "FFmpegUtils.h"
 #include "StreamDecoder.h"
+#include "media_sdk/PlayerConfig.h"
 
 #include <cassert>
 #include <chrono>
@@ -139,6 +140,52 @@ void testDemuxerReportsMissingFile()
     assert(!opened.error().message.empty());
 }
 
+void testOpenedMediaMovesAndClosesDecoderPoolBeforeCodecContext()
+{
+    const AVCodec* codec = avcodec_find_decoder(AV_CODEC_ID_H264);
+    assert(codec);
+    media_sdk::OpenedMedia media;
+    media.videoCodecContext.reset(avcodec_alloc_context3(codec));
+    assert(media.videoCodecContext);
+    media.videoCodecContext->codec_type = AVMEDIA_TYPE_VIDEO;
+    media.videoCodecContext->codec_id = AV_CODEC_ID_H264;
+    media.videoCodecContext->pix_fmt = AV_PIX_FMT_YUV420P;
+    media.videoCodecContext->width = 64;
+    media.videoCodecContext->height = 48;
+    media.decoderBufferPool = std::make_shared<media_sdk::DecoderBufferPool>();
+    assert(media.decoderBufferPool->attach(media.videoCodecContext.get()));
+
+    auto frame = media_sdk::makeFrame();
+    assert(frame);
+    frame->format = AV_PIX_FMT_YUV420P;
+    frame->width = 64;
+    frame->height = 48;
+    assert(media.videoCodecContext->get_buffer2(
+        media.videoCodecContext.get(), frame.get(), AV_GET_BUFFER_FLAG_REF) == 0);
+    frame->data[0][0] = 0x4a;
+
+    auto diagnosticsLease = media.decoderBufferPool;
+    media_sdk::OpenedMedia moved(std::move(media));
+    assert(moved.decoderBufferPool == diagnosticsLease);
+    media_sdk::OpenedMedia assigned;
+    assigned = std::move(moved);
+    assert(assigned.decoderBufferPool == diagnosticsLease);
+    assigned = {};
+
+    assert(frame->data[0][0] == 0x4a);
+    assert(diagnosticsLease->stats().pooledFrameCount == 1);
+}
+
+void testDecoderBufferPoolPolicyDefaultsToEnabled()
+{
+    assert(media_sdk::PlayerConfig {}.enableDecoderBufferPool);
+    assert(media_sdk::DemuxerOptions {}.enableDecoderBufferPool);
+
+    media_sdk::PlayerConfig disabled;
+    disabled.enableDecoderBufferPool = false;
+    assert(!disabled.enableDecoderBufferPool);
+}
+
 void testDecodePerformanceCreatesThrottledReportWithoutQt()
 {
     media_sdk::DecodePerformanceLogger logger(2s);
@@ -216,6 +263,8 @@ int main()
 {
     testDemuxerOpensFileAndStreamDecoderReadsFrame();
     testDemuxerReportsMissingFile();
+    testOpenedMediaMovesAndClosesDecoderPoolBeforeCodecContext();
+    testDecoderBufferPoolPolicyDefaultsToEnabled();
     testDecodePerformanceCreatesThrottledReportWithoutQt();
     testDecodePerformanceReportsFramePushOnlyActivity();
     return 0;

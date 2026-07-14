@@ -189,6 +189,7 @@ private:
     VideoFrameProcessor m_videoFrameProcessor;
     DecodePerformanceLogger m_decodePerformance;
     OpenedMedia m_media;
+    std::shared_ptr<DecoderBufferPool> m_decoderBufferPoolDiagnostics;
     std::optional<SeekPrerollGate> m_seekGate;
     std::optional<std::chrono::microseconds> m_pendingSeekTarget;
     std::optional<VideoFrame> m_seekTailVideoFrame;

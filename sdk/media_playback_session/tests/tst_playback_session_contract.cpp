@@ -1113,6 +1113,14 @@ void diagnosticsExposePerformanceGuardrailsAndForwardSnapshots()
         .retainedCount = 3,
         .inFlightCount = 2,
     };
+    context.coreDiagnostics.decoderBufferPool = {
+        .callbackCount = 20,
+        .pooledFrameCount = 19,
+        .fallbackCount = 1,
+        .poolRebuildCount = 2,
+        .planeAcquireCount = 57,
+        .planeAllocationCount = 9,
+    };
     context.core->emitMediaInfo(coreTimeline(10, 3));
 
     assert(events.diagnosticsCount == 1);
@@ -1125,6 +1133,12 @@ void diagnosticsExposePerformanceGuardrailsAndForwardSnapshots()
     assert(events.lastDiagnostics.videoPresented == 11);
     assert(events.lastDiagnostics.videoPicturePoolAcquireCount == 12);
     assert(events.lastDiagnostics.videoPicturePoolInFlightCount == 2);
+    assert(events.lastDiagnostics.decoderBufferPoolCallbackCount == 20);
+    assert(events.lastDiagnostics.decoderBufferPoolPooledFrameCount == 19);
+    assert(events.lastDiagnostics.decoderBufferPoolFallbackCount == 1);
+    assert(events.lastDiagnostics.decoderBufferPoolRebuildCount == 2);
+    assert(events.lastDiagnostics.decoderBufferPoolPlaneAcquireCount == 57);
+    assert(events.lastDiagnostics.decoderBufferPoolPlaneAllocationCount == 9);
 
     context.core->emitDecodePerformance(coreTimeline(10, 3));
     assert(std::holds_alternative<media_sdk::DecodePerformanceEvent>(
@@ -1137,6 +1151,8 @@ void diagnosticsExposePerformanceGuardrailsAndForwardSnapshots()
     assert(diagnostics.cpuPresented == 6);
     assert(diagnostics.videoPicturePoolReuseCount == 9);
     assert(diagnostics.videoPicturePoolRetainedCount == 3);
+    assert(diagnostics.decoderBufferPoolPooledFrameCount == 19);
+    assert(diagnostics.decoderBufferPoolPlaneAllocationCount == 9);
 
     context.coreDiagnostics.videoPicturePool.inFlightCount = 0;
     context.coreDiagnostics.videoPicturePool.retainedCount = 2;

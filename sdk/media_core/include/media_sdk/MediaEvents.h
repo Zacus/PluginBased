@@ -68,6 +68,7 @@ struct DecodePerformanceEvent {
     std::int64_t framePushAverageWaitUs = 0;
     std::int64_t framePushMaxWaitUs = 0;
     VideoPicturePoolSnapshot videoPicturePool;
+    DecoderBufferPoolSnapshot decoderBufferPool;
 };
 
 struct EventMetadata {

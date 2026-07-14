@@ -448,14 +448,22 @@ struct PlaybackSession::Impl final
         if (!handles.corePlayer)
             return snapshot;
 
-        const auto pool = handles.corePlayer->diagnostics().videoPicturePool;
-        snapshot.videoPicturePoolAcquireCount = pool.acquireCount;
-        snapshot.videoPicturePoolReuseCount = pool.reuseCount;
-        snapshot.videoPicturePoolAllocationCount = pool.allocationCount;
-        snapshot.videoPicturePoolTransientAllocationCount = pool.transientAllocationCount;
-        snapshot.videoPicturePoolHighWatermark = pool.highWatermark;
-        snapshot.videoPicturePoolRetainedCount = pool.retainedCount;
-        snapshot.videoPicturePoolInFlightCount = pool.inFlightCount;
+        const auto coreDiagnostics = handles.corePlayer->diagnostics();
+        const auto& picturePool = coreDiagnostics.videoPicturePool;
+        snapshot.videoPicturePoolAcquireCount = picturePool.acquireCount;
+        snapshot.videoPicturePoolReuseCount = picturePool.reuseCount;
+        snapshot.videoPicturePoolAllocationCount = picturePool.allocationCount;
+        snapshot.videoPicturePoolTransientAllocationCount = picturePool.transientAllocationCount;
+        snapshot.videoPicturePoolHighWatermark = picturePool.highWatermark;
+        snapshot.videoPicturePoolRetainedCount = picturePool.retainedCount;
+        snapshot.videoPicturePoolInFlightCount = picturePool.inFlightCount;
+        const auto& decoderPool = coreDiagnostics.decoderBufferPool;
+        snapshot.decoderBufferPoolCallbackCount = decoderPool.callbackCount;
+        snapshot.decoderBufferPoolPooledFrameCount = decoderPool.pooledFrameCount;
+        snapshot.decoderBufferPoolFallbackCount = decoderPool.fallbackCount;
+        snapshot.decoderBufferPoolRebuildCount = decoderPool.poolRebuildCount;
+        snapshot.decoderBufferPoolPlaneAcquireCount = decoderPool.planeAcquireCount;
+        snapshot.decoderBufferPoolPlaneAllocationCount = decoderPool.planeAllocationCount;
         return snapshot;
     }
 

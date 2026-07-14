@@ -412,6 +412,7 @@ void openNativeSession(TestContext& context,
     context.cores[0]->emitMediaInfo(metadata);
     assert(context.runtime);
     assert(context.coreConfigs[0].preferNativeVideoFrames);
+    assert(context.coreConfigs[0].enableDecoderBufferPool);
 }
 
 void nativeFallbackReopensCoreWithCpuFramesAndSeeksToResumePosition()
@@ -425,6 +426,7 @@ void nativeFallbackReopensCoreWithCpuFramesAndSeeksToResumePosition()
 
     assert(context.cores.size() == 2);
     assert(!context.coreConfigs[1].preferNativeVideoFrames);
+    assert(context.coreConfigs[1].enableDecoderBufferPool);
     assert(context.cores[0]->stopCount == 1);
     assert(context.cores[1]->openCount == 1);
     assert(context.cores[1]->lastOpenedPath == std::filesystem::path("sample.mov"));

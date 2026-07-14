@@ -25,7 +25,7 @@ struct OpenedMedia {
     AVCodecContextPtr videoCodecContext;
     AVCodecContextPtr audioCodecContext;
     std::unique_ptr<HardwareDecoderBackend> hardwareDecoder;
-    std::unique_ptr<DecoderBufferPool> decoderBufferPool;
+    std::shared_ptr<DecoderBufferPool> decoderBufferPool;
 
     int videoStreamIndex = -1;
     int audioStreamIndex = -1;

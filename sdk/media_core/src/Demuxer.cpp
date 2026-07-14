@@ -66,8 +66,10 @@ OpenedMedia& OpenedMedia::operator=(OpenedMedia&& other) noexcept
 
 void OpenedMedia::resetVideoDecoder() noexcept
 {
-    if (decoderBufferPool)
+    if (decoderBufferPool) {
         decoderBufferPool->detach(videoCodecContext.get());
+        decoderBufferPool->close();
+    }
     decoderBufferPool.reset();
     hardwareDecoder.reset();
     videoCodecContext.reset();
@@ -143,11 +145,11 @@ bool Demuxer::openVideoStream(OpenedMedia& media, const DemuxerOptions& options)
     if (hardwareDecoder && !hardwareDecoder->configureContext(context))
         hardwareDecoder.reset();
 
-    std::unique_ptr<DecoderBufferPool> decoderBufferPool;
+    std::shared_ptr<DecoderBufferPool> decoderBufferPool;
     const auto attachDecoderBufferPool = [&] {
         if (!options.enableDecoderBufferPool || hardwareDecoder)
             return;
-        auto candidate = std::make_unique<DecoderBufferPool>();
+        auto candidate = std::make_shared<DecoderBufferPool>();
         if (candidate->attach(context))
             decoderBufferPool = std::move(candidate);
     };

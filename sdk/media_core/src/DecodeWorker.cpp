@@ -128,6 +128,10 @@ Result<void> DecodeWorker::submitOpen(const std::filesystem::path& path)
 PlayerDiagnostics DecodeWorker::diagnostics() const
 {
     const auto stats = m_videoFrameProcessor.picturePoolStats();
+    const auto decoderPool = std::atomic_load(&m_decoderBufferPoolDiagnostics);
+    const auto decoderStats = decoderPool
+        ? decoderPool->stats()
+        : DecoderBufferPoolStats {};
     return {
         .videoPicturePool = {
             .acquireCount = stats.acquireCount,
@@ -137,6 +141,14 @@ PlayerDiagnostics DecodeWorker::diagnostics() const
             .highWatermark = stats.highWatermark,
             .retainedCount = stats.retainedCount,
             .inFlightCount = stats.inFlightCount,
+        },
+        .decoderBufferPool = {
+            .callbackCount = decoderStats.callbackCount,
+            .pooledFrameCount = decoderStats.pooledFrameCount,
+            .fallbackCount = decoderStats.fallbackCount,
+            .poolRebuildCount = decoderStats.poolRebuildCount,
+            .planeAcquireCount = decoderStats.planeAcquireCount,
+            .planeAllocationCount = decoderStats.planeAllocationCount,
         },
     };
 }
@@ -295,6 +307,7 @@ void DecodeWorker::handleOpen(const std::filesystem::path& path)
     }
 
     m_media = std::move(opened.value());
+    std::atomic_store(&m_decoderBufferPoolDiagnostics, m_media.decoderBufferPool);
     ++m_sessionId;
     m_generation = 0;
     m_hasMedia = true;
@@ -620,6 +633,9 @@ void DecodeWorker::closeMedia()
         return;
 
     m_videoFrameProcessor.reset();
+    std::atomic_store(
+        &m_decoderBufferPoolDiagnostics,
+        std::shared_ptr<DecoderBufferPool> {});
     m_media = {};
     m_hasMedia = false;
     m_playing = false;
@@ -842,6 +858,9 @@ void DecodeWorker::maybeEmitDecodePerformanceReport()
         return;
 
     const auto pool = m_videoFrameProcessor.picturePoolStats();
+    const auto decoderPool = m_media.decoderBufferPool
+        ? m_media.decoderBufferPool->stats()
+        : DecoderBufferPoolStats {};
     emitEvent(makeEvent(DecodePerformanceEvent {
         .decoderName = std::move(report->decoderName),
         .decodedVideoFrames = report->stats.decodedVideoFrames,
@@ -859,6 +878,14 @@ void DecodeWorker::maybeEmitDecodePerformanceReport()
             .highWatermark = pool.highWatermark,
             .retainedCount = pool.retainedCount,
             .inFlightCount = pool.inFlightCount,
+        },
+        .decoderBufferPool = {
+            .callbackCount = decoderPool.callbackCount,
+            .pooledFrameCount = decoderPool.pooledFrameCount,
+            .fallbackCount = decoderPool.fallbackCount,
+            .poolRebuildCount = decoderPool.poolRebuildCount,
+            .planeAcquireCount = decoderPool.planeAcquireCount,
+            .planeAllocationCount = decoderPool.planeAllocationCount,
         },
     }));
 }
