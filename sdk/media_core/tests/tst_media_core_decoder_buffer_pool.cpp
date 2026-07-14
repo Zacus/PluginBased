@@ -1,5 +1,6 @@
 #include "DecoderBufferPool.h"
 
+#include <algorithm>
 #include <array>
 #include <cassert>
 #include <cstdint>
@@ -9,6 +10,7 @@
 
 extern "C" {
 #include <libavutil/cpu.h>
+#include <libavutil/imgutils.h>
 }
 
 namespace {
@@ -57,14 +59,43 @@ FramePtr makeRequestedFrame(
     return frame;
 }
 
+void freeAttachedContext(
+    media_sdk::DecoderBufferPool& pool,
+    CodecContextPtr& context)
+{
+    AVCodecContext* rawContext = context.release();
+    pool.freeAttachedContext(rawContext);
+    assert(rawContext == nullptr);
+}
+
 int customGetBuffer(AVCodecContext*, AVFrame* frame, int)
 {
     return av_frame_get_buffer(frame, 32);
 }
 
-void assertPlaneCoverageAndAlignment(const AVFrame* frame)
+void assertPlaneCoverageAndAlignment(AVCodecContext* context, const AVFrame* frame)
 {
-    const std::size_t alignment = av_cpu_max_align();
+    const std::size_t alignment = std::max<std::size_t>(av_cpu_max_align(), 1);
+    int alignedWidth = frame->width;
+    int alignedHeight = frame->height;
+    std::array<int, AV_NUM_DATA_POINTERS> strideAlignment {};
+    avcodec_align_dimensions2(
+        context,
+        &alignedWidth,
+        &alignedHeight,
+        strideAlignment.data());
+
+    std::array<std::ptrdiff_t, 4> planeLinesizes {};
+    std::copy_n(frame->linesize, planeLinesizes.size(), planeLinesizes.begin());
+    std::array<std::size_t, 4> planeSizes {};
+    assert(av_image_fill_plane_sizes(
+        planeSizes.data(),
+        static_cast<AVPixelFormat>(frame->format),
+        alignedHeight,
+        planeLinesizes.data()) == 0);
+
+    constexpr std::size_t edgePadding = 16;
+    const std::size_t requiredExtraSize = edgePadding + alignment - 1;
     for (int plane = 0; plane < 3; ++plane) {
         assert(frame->buf[plane]);
         assert(frame->data[plane]);
@@ -72,6 +103,7 @@ void assertPlaneCoverageAndAlignment(const AVFrame* frame)
         assert(reinterpret_cast<std::uintptr_t>(frame->data[plane]) % alignment == 0);
         assert(frame->data[plane] >= frame->buf[plane]->data);
         assert(frame->data[plane] < frame->buf[plane]->data + frame->buf[plane]->size);
+        assert(frame->buf[plane]->size >= planeSizes[plane] + requiredExtraSize);
     }
 }
 
@@ -83,7 +115,7 @@ void allocatesAlignedPlanesAndReusesReleasedBuffers()
 
     auto frame = makeRequestedFrame();
     assert(context->get_buffer2(context.get(), frame.get(), AV_GET_BUFFER_FLAG_REF) == 0);
-    assertPlaneCoverageAndAlignment(frame.get());
+    assertPlaneCoverageAndAlignment(context.get(), frame.get());
     std::array<std::uint8_t*, 3> firstData { frame->data[0], frame->data[1], frame->data[2] };
     assert(pool.stats().planeAllocationCount == 3);
 
@@ -96,7 +128,7 @@ void allocatesAlignedPlanesAndReusesReleasedBuffers()
         assert(frame->data[plane] == firstData[plane]);
     assert(pool.stats().planeAllocationCount == 3);
 
-    pool.detach(context.get());
+    freeAttachedContext(pool, context);
 }
 
 void concurrentFramesUseDistinctStorage()
@@ -126,7 +158,7 @@ void concurrentFramesUseDistinctStorage()
             assert(frames[index]->data[0] != frames[other]->data[0]);
     }
     assert(pool.stats().pooledFrameCount == frameCount);
-    pool.detach(context.get());
+    freeAttachedContext(pool, context);
 }
 
 void supportsValidatedCodecAndPixelFormatSet()
@@ -140,7 +172,7 @@ void supportsValidatedCodecAndPixelFormatSet()
             : AV_PIX_FMT_YUV420P);
         assert(context->get_buffer2(context.get(), frame.get(), AV_GET_BUFFER_FLAG_REF) == 0);
         assert(pool.stats().pooledFrameCount == 1);
-        pool.detach(context.get());
+        freeAttachedContext(pool, context);
     }
 }
 
@@ -159,8 +191,7 @@ void formatChangesRetirePoolsWithoutInvalidatingFrames()
     assert(oldFrame->data[0][0] == 0x5a);
     assert(oldFrame->data[0] != newFrame->data[0]);
 
-    pool.detach(context.get());
-    pool.close();
+    freeAttachedContext(pool, context);
     assert(oldFrame->data[0][0] == 0x5a);
 }
 
@@ -173,11 +204,30 @@ void frameReferencesCanOutlivePoolFacade()
         assert(pool.attach(context.get()));
         assert(context->get_buffer2(context.get(), frame.get(), AV_GET_BUFFER_FLAG_REF) == 0);
         frame->data[0][0] = 0x33;
-        pool.detach(context.get());
+        freeAttachedContext(pool, context);
     }
-    context.reset();
     assert(frame->data[0][0] == 0x33);
     av_frame_unref(frame.get());
+}
+
+void freesOpenedCodecAfterFrameWorkersStop()
+{
+    auto context = makeContext();
+    context->thread_count = 4;
+    context->thread_type = FF_THREAD_FRAME;
+    media_sdk::DecoderBufferPool pool;
+    assert(pool.attach(context.get()));
+    assert(avcodec_open2(context.get(), context->codec, nullptr) == 0);
+
+    auto frame = makeRequestedFrame();
+    assert(context->get_buffer2(context.get(), frame.get(), AV_GET_BUFFER_FLAG_REF) == 0);
+    frame->data[0][0] = 0x6b;
+
+    AVCodecContext* rawContext = context.release();
+    pool.freeAttachedContext(rawContext);
+    assert(rawContext == nullptr);
+    assert(frame->data[0][0] == 0x6b);
+    assert(pool.stats().pooledFrameCount == 1);
 }
 
 void refusesContextsOwnedByOtherBufferProviders()
@@ -202,7 +252,7 @@ void refusesContextsOwnedByOtherBufferProviders()
     assert(!hardwarePool.attach(hardwareContext.get()));
 }
 
-void unsupportedFramesFallbackAndDetachRestoresContext()
+void unsupportedFramesFallbackAndContextReleaseRemainSafe()
 {
     auto context = makeContext();
     assert(avcodec_open2(context.get(), context->codec, nullptr) == 0);
@@ -216,9 +266,7 @@ void unsupportedFramesFallbackAndDetachRestoresContext()
     assert(pool.stats().fallbackCount == 1);
     assert(pool.stats().pooledFrameCount == 0);
 
-    pool.detach(context.get());
-    assert(context->get_buffer2 == avcodec_default_get_buffer2);
-    assert(context->opaque == nullptr);
+    freeAttachedContext(pool, context);
 }
 
 } // namespace
@@ -230,7 +278,8 @@ int main()
     supportsValidatedCodecAndPixelFormatSet();
     formatChangesRetirePoolsWithoutInvalidatingFrames();
     frameReferencesCanOutlivePoolFacade();
+    freesOpenedCodecAfterFrameWorkersStop();
     refusesContextsOwnedByOtherBufferProviders();
-    unsupportedFramesFallbackAndDetachRestoresContext();
+    unsupportedFramesFallbackAndContextReleaseRemainSafe();
     return 0;
 }

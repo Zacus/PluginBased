@@ -29,3 +29,17 @@ StreamDecoder` 正式路径运行，software decode，最多持有 3 个输出 f
 
 本轮是功能和生命周期验收，不是 Release 多轮性能对照；不得用单轮 wall/CPU 数据宣称
 F2 带来性能改善。
+
+## 审核修复复验
+
+2026-07-14 修正多线程 codec 销毁顺序和 plane 尾部余量后，使用相同 Debug 正式路径重新
+运行三个 enabled case：
+
+| Case | Delivered frames | Callback/pooled | Fallback | Rebuild | Stop 后统计 |
+|---|---:|---:|---:|---:|---:|
+| H.264 1080p24 enabled | 24 | 34/34 | 0 | 1 | 全部为 0 |
+| HEVC Main10 4K60 enabled | 60 | 69/69 | 0 | 1 | 全部为 0 |
+| ProRes 422 10-bit 4K120 enabled | 120 | 120/120 | 0 | 1 | 全部为 0 |
+
+完整构建和 50 项 CTest 通过。复验原始 JSON 位于忽略提交的
+`benchmark_artifacts/get_buffer2-f2-review/`。

@@ -140,7 +140,7 @@ void testDemuxerReportsMissingFile()
     assert(!opened.error().message.empty());
 }
 
-void testOpenedMediaMovesAndClosesDecoderPoolBeforeCodecContext()
+void testOpenedMediaMovesAndClosesCodecBeforeDecoderPool()
 {
     const AVCodec* codec = avcodec_find_decoder(AV_CODEC_ID_H264);
     assert(codec);
@@ -152,8 +152,14 @@ void testOpenedMediaMovesAndClosesDecoderPoolBeforeCodecContext()
     media.videoCodecContext->pix_fmt = AV_PIX_FMT_YUV420P;
     media.videoCodecContext->width = 64;
     media.videoCodecContext->height = 48;
+    media.videoCodecContext->thread_count = 4;
+    media.videoCodecContext->thread_type = FF_THREAD_FRAME;
     media.decoderBufferPool = std::make_shared<media_sdk::DecoderBufferPool>();
     assert(media.decoderBufferPool->attach(media.videoCodecContext.get()));
+    assert(avcodec_open2(
+        media.videoCodecContext.get(),
+        media.videoCodecContext->codec,
+        nullptr) == 0);
 
     auto frame = media_sdk::makeFrame();
     assert(frame);
@@ -263,7 +269,7 @@ int main()
 {
     testDemuxerOpensFileAndStreamDecoderReadsFrame();
     testDemuxerReportsMissingFile();
-    testOpenedMediaMovesAndClosesDecoderPoolBeforeCodecContext();
+    testOpenedMediaMovesAndClosesCodecBeforeDecoderPool();
     testDecoderBufferPoolPolicyDefaultsToEnabled();
     testDecodePerformanceCreatesThrottledReportWithoutQt();
     testDecodePerformanceReportsFramePushOnlyActivity();

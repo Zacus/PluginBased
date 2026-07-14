@@ -34,7 +34,7 @@ public:
     DecoderBufferPool& operator=(DecoderBufferPool&&) = delete;
 
     [[nodiscard]] bool attach(AVCodecContext* context);
-    void detach(AVCodecContext* context);
+    void freeAttachedContext(AVCodecContext*& context) noexcept;
     void close();
     [[nodiscard]] DecoderBufferPoolStats stats() const;
 

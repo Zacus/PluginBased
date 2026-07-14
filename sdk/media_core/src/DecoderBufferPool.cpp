@@ -2,11 +2,13 @@
 
 #include <algorithm>
 #include <array>
+#include <cassert>
 #include <climits>
 #include <limits>
 #include <utility>
 
 extern "C" {
+#include <libavutil/cpu.h>
 #include <libavutil/imgutils.h>
 #include <libavutil/pixdesc.h>
 }
@@ -48,8 +50,7 @@ void DecoderBufferPool::PoolSet::clear()
 
 DecoderBufferPool::~DecoderBufferPool()
 {
-    if (m_attachedContext)
-        detach(m_attachedContext);
+    assert(!m_attachedContext);
     close();
 }
 
@@ -73,19 +74,23 @@ bool DecoderBufferPool::attach(AVCodecContext* context)
     return true;
 }
 
-void DecoderBufferPool::detach(AVCodecContext* context)
+void DecoderBufferPool::freeAttachedContext(AVCodecContext*& context) noexcept
 {
-    std::lock_guard lock(m_mutex);
-    if (!context || context != m_attachedContext)
+    bool attached = false;
+    {
+        std::lock_guard lock(m_mutex);
+        attached = context && context == m_attachedContext;
+        assert(attached || (!context && !m_attachedContext));
+    }
+
+    avcodec_free_context(&context);
+    if (!attached)
         return;
 
-    if (context->get_buffer2 == &DecoderBufferPool::getBufferCallback
-        && context->opaque == this) {
-        context->get_buffer2 = m_previousGetBuffer2;
-        context->opaque = nullptr;
-    }
+    std::lock_guard lock(m_mutex);
     m_attachedContext = nullptr;
     m_previousGetBuffer2 = nullptr;
+    m_activePools.clear();
 }
 
 void DecoderBufferPool::close()
@@ -288,16 +293,20 @@ bool DecoderBufferPool::rebuildPools(
         return false;
     }
 
+    constexpr std::size_t edgePadding = 16;
+    const std::size_t maximumAlignment = std::max<std::size_t>(av_cpu_max_align(), 1);
+    const std::size_t extraSize = edgePadding + maximumAlignment - 1;
+
     for (std::size_t index = 0; index < planeSizes.size(); ++index) {
         if (planeSizes[index] == 0)
             continue;
         if (planeSizes[index] > std::numeric_limits<std::size_t>::max()
-                - AV_INPUT_BUFFER_PADDING_SIZE) {
+                - extraSize) {
             return false;
         }
 
         replacement.pools[index] = av_buffer_pool_init2(
-            planeSizes[index] + AV_INPUT_BUFFER_PADDING_SIZE,
+            planeSizes[index] + extraSize,
             this,
             &DecoderBufferPool::allocatePlane,
             nullptr);

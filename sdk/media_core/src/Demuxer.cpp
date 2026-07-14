@@ -67,12 +67,13 @@ OpenedMedia& OpenedMedia::operator=(OpenedMedia&& other) noexcept
 void OpenedMedia::resetVideoDecoder() noexcept
 {
     if (decoderBufferPool) {
-        decoderBufferPool->detach(videoCodecContext.get());
-        decoderBufferPool->close();
+        AVCodecContext* context = videoCodecContext.release();
+        decoderBufferPool->freeAttachedContext(context);
+    } else {
+        videoCodecContext.reset();
     }
     decoderBufferPool.reset();
     hardwareDecoder.reset();
-    videoCodecContext.reset();
 }
 
 Result<OpenedMedia> Demuxer::open(const std::filesystem::path& path,
@@ -154,10 +155,12 @@ bool Demuxer::openVideoStream(OpenedMedia& media, const DemuxerOptions& options)
             decoderBufferPool = std::move(candidate);
     };
     const auto releaseContext = [&] {
-        if (decoderBufferPool)
-            decoderBufferPool->detach(context);
+        if (decoderBufferPool) {
+            decoderBufferPool->freeAttachedContext(context);
+        } else {
+            avcodec_free_context(&context);
+        }
         decoderBufferPool.reset();
-        avcodec_free_context(&context);
     };
 
     attachDecoderBufferPool();

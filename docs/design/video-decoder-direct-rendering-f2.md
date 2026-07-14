@@ -30,7 +30,8 @@ F1 证明自管 `get_buffer2` 池在 H.264、HEVC 4K60 和 ProRes 4K120 上均�
 池按 `(pixel format, width, height)` 建立 format epoch。通过
 `avcodec_align_dimensions2()`、`av_image_fill_linesizes()` 和
 `av_image_fill_plane_sizes()` 计算每平面布局，每个 plane 使用独立 `AVBufferPool`，并
-预留 `AV_INPUT_BUFFER_PADDING_SIZE`。format epoch 变化时先完整创建新池，再替换旧池。
+按 FFmpeg 默认分配器契约预留 `16 + av_cpu_max_align() - 1` 字节。format epoch 变化时
+先完整创建新池，再替换旧池。
 
 借出的 `AVBufferRef` 是 frame 数据的实际 owner。池关闭只执行
 `av_buffer_pool_uninit()`，不等待在途 frame；最后一个引用释放后旧 pool state 自动销毁。
@@ -39,12 +40,18 @@ F1 证明自管 `get_buffer2` 池在 H.264、HEVC 4K60 和 ProRes 4K120 上均�
 
 `OpenedMedia` 负责 codec 与 pool 的成对生命周期，移动赋值和析构均按以下顺序执行：
 
-1. 从 `AVCodecContext` 解绑 callback；
-2. 关闭 active pools；
-3. 释放 hardware backend 和 codec context。
+1. 保持 callback、pool facade 和 hardware backend 有效；
+2. 调用 `avcodec_free_context()`，由 FFmpeg 停止并回收复制了 callback/opaque 的 frame
+   worker context；
+3. 清除 pool 的 attachment 和 active pools，再释放 pool facade 与 hardware backend。
+
+已经打开的多线程 codec 不允许先解绑或销毁 pool。FFmpeg frame worker 会复制
+`get_buffer2` 和 `opaque`，只有 codec context 完成释放后才保证不再进入 callback。
+内部 API 因此不提供独立 detach；成功 attach 后必须通过成对的 context 释放入口结束生命周期。
 
 `DecodeWorker::diagnostics()` 通过原子 `shared_ptr` 获取只读租约。关闭时先清空对外租约
-入口，再解绑 codec；已经开始的诊断读取可安全读取原子计数，但不能触发新的 acquire。
+入口，再按上述顺序释放 codec 和 pool；已经开始的诊断读取可安全读取原子计数，但不能
+触发新的 acquire。
 callback 使用 mutex 串行保护 format epoch 重建和 plane acquire，底层引用回收由
 `AVBufferPool` 自身同步。
 
@@ -65,6 +72,7 @@ stop 后当前媒体的 decoder pool snapshot 归零。统计用于确认路径�
 - 单元测试覆盖 alignment、复用、并发 acquire、format change、延迟 frame 释放和拒绝
   接管外部 callback/hardware context。
 - 生命周期测试覆盖 `OpenedMedia` move、赋值、close 和诊断租约晚于 codec。
+- 多线程 codec 销毁测试覆盖 pool/callback 存活到 frame worker 全部退出。
 - 真实媒体覆盖 H.264 1080p24、HEVC Main10 4K60、ProRes 422 10-bit 4K120。
 - 启用 case 必须全部命中、零 fallback；关闭 case callback 和池统计必须为零。
 - 完整 build 和 CTest 必须通过。
