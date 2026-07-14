@@ -8,7 +8,7 @@
 ```bash
 cmake -S . -B build-release -DCMAKE_BUILD_TYPE=Release
 cmake --build build-release \
-  --target MediaSdkVideoBenchmark MediaSdkRealtimeVideoBenchmark \
+  --target MediaSdkVideoBenchmark MediaSdkRealtimeVideoBenchmark MediaSdkGetBuffer2Benchmark \
            MediaSdkBenchmarkMediaGenerator --parallel
 ```
 
@@ -105,3 +105,21 @@ allocator profile JSON 示例：
 
 wall time 或 RSS 差异本身不能证明 FFmpeg decoder allocator 是瓶颈，因此没有归因报告时
 门禁必然为 `CLOSED`。
+
+## get_buffer2 F1 实验
+
+`MediaSdkGetBuffer2Benchmark` 直接使用 FFmpeg demux/decode，对比 FFmpeg default
+allocator 与隔离的 prototype allocator。它不经过 `media_sdk::Player`，也不改变 SDK 或
+PlayPlugin 默认行为。
+
+```bash
+build-release/tools/video_benchmark/MediaSdkGetBuffer2Benchmark \
+  --input benchmark_media/bbb-4k60-hevc-main10.mp4 \
+  --output benchmark_artifacts/get_buffer2/prototype.json \
+  --label current --allocator prototype \
+  --max-video-frames 600 --hold-video-frames 3
+```
+
+将 `--allocator prototype` 替换为 `default` 即得到同 runner、同 callback 层级的对照组。
+两种模式必须先满足帧数和 checksum 一致，性能结果才有效。F1 设计和退出条件见
+`docs/design/video-decoder-direct-rendering-f1.md`。

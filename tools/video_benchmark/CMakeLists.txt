@@ -78,6 +78,20 @@ if(EXISTS "${PLUGINBASED_SOURCE_DIR}/sdk/media_core/include/media_sdk/Diagnostic
         MEDIA_SDK_BENCHMARK_HAS_POOL_DIAGNOSTICS=1)
 endif()
 
+add_executable(MediaSdkGetBuffer2Benchmark
+    ExperimentalDecoderBufferPool.cpp
+    ExperimentalDecoderBufferPool.h
+    MediaSdkGetBuffer2Benchmark.cpp
+)
+target_compile_features(MediaSdkGetBuffer2Benchmark PRIVATE cxx_std_20)
+set_target_properties(MediaSdkGetBuffer2Benchmark PROPERTIES
+    CXX_EXTENSIONS OFF
+    AUTOMOC OFF
+    AUTOUIC OFF
+    AUTORCC OFF
+)
+target_link_libraries(MediaSdkGetBuffer2Benchmark PRIVATE FFmpeg::all)
+
 add_executable(MediaSdkBenchmarkMediaGenerator
     MediaSdkBenchmarkMediaGenerator.cpp
 )
