@@ -285,6 +285,7 @@ void DecodeWorker::handleOpen(const std::filesystem::path& path)
     m_decodePerformance.reset();
     auto opened = m_demuxer.open(path, {
         .enableHardwareDecode = m_config.enableHardwareDecode,
+        .enableDecoderBufferPool = m_config.enableDecoderBufferPool,
     });
     if (!opened.ok())
     {

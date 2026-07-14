@@ -1,5 +1,6 @@
 #pragma once
 
+#include "DecoderBufferPool.h"
 #include "FFmpegUtils.h"
 #include "HardwareDecoderBackend.h"
 #include "media_sdk/MediaEvents.h"
@@ -13,10 +14,18 @@
 namespace media_sdk {
 
 struct OpenedMedia {
+    OpenedMedia() = default;
+    ~OpenedMedia();
+    OpenedMedia(const OpenedMedia&) = delete;
+    OpenedMedia& operator=(const OpenedMedia&) = delete;
+    OpenedMedia(OpenedMedia&& other) noexcept;
+    OpenedMedia& operator=(OpenedMedia&& other) noexcept;
+
     AVFormatContextPtr formatContext;
     AVCodecContextPtr videoCodecContext;
     AVCodecContextPtr audioCodecContext;
     std::unique_ptr<HardwareDecoderBackend> hardwareDecoder;
+    std::unique_ptr<DecoderBufferPool> decoderBufferPool;
 
     int videoStreamIndex = -1;
     int audioStreamIndex = -1;
@@ -24,10 +33,14 @@ struct OpenedMedia {
     std::uint64_t audioChannelLayoutMask = 0;
     int audioSampleFormat = AV_SAMPLE_FMT_FLTP;
     std::string activeVideoDecoderName = "software";
+
+private:
+    void resetVideoDecoder() noexcept;
 };
 
 struct DemuxerOptions {
     bool enableHardwareDecode = true;
+    bool enableDecoderBufferPool = true;
 };
 
 class Demuxer

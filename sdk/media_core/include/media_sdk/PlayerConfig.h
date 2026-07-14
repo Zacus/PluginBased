@@ -12,6 +12,7 @@ struct PlayerConfig {
     int accurateSeekMaxDiscardedVideoFrames = 300;
     int accurateSeekMaxDiscardedAudioFrames = 1000;
     std::chrono::milliseconds decodePerformanceReportInterval { 2000 };
+    bool enableDecoderBufferPool = true;
 };
 
 } // namespace media_sdk
