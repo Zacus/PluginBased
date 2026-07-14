@@ -92,6 +92,25 @@ set_target_properties(MediaSdkGetBuffer2Benchmark PROPERTIES
 )
 target_link_libraries(MediaSdkGetBuffer2Benchmark PRIVATE FFmpeg::all)
 
+if(BUILD_TESTING)
+    add_executable(MediaSdkExperimentalDecoderBufferPoolTest
+        ExperimentalDecoderBufferPool.cpp
+        ExperimentalDecoderBufferPool.h
+        tst_experimental_decoder_buffer_pool.cpp
+    )
+    target_compile_features(MediaSdkExperimentalDecoderBufferPoolTest PRIVATE cxx_std_20)
+    set_target_properties(MediaSdkExperimentalDecoderBufferPoolTest PROPERTIES
+        CXX_EXTENSIONS OFF
+        AUTOMOC OFF
+        AUTOUIC OFF
+        AUTORCC OFF
+    )
+    target_link_libraries(MediaSdkExperimentalDecoderBufferPoolTest PRIVATE FFmpeg::all)
+    add_test(NAME media_sdk_experimental_decoder_buffer_pool
+        COMMAND $<TARGET_FILE:MediaSdkExperimentalDecoderBufferPoolTest>
+    )
+endif()
+
 add_executable(MediaSdkBenchmarkMediaGenerator
     MediaSdkBenchmarkMediaGenerator.cpp
 )
