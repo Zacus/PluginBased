@@ -20,6 +20,10 @@ void CoreAudioRingBuffer::configure(runtime::AudioFormat format, runtime::Genera
         m_sampleRate.store(format.sampleRate, std::memory_order_release);
         m_generation.store(generation, std::memory_order_release);
         m_playbackPositionUs.store(0, std::memory_order_release);
+        m_clockAnchorPositionUs.store(0, std::memory_order_release);
+        m_clockAnchorReadCursor.store(0, std::memory_order_release);
+        m_playbackRateMillionths.store(runtime::kPlaybackRateScale, std::memory_order_release);
+        m_rateAnchored.store(false, std::memory_order_release);
         resetCursors();
         m_configured.store(true, std::memory_order_release);
         m_closed.store(false, std::memory_order_release);
@@ -42,14 +46,28 @@ bool CoreAudioRingBuffer::write(runtime::AudioBufferView buffer)
     if (frameBytes == 0 || completeFrameBytes(m_capacityBytes) == 0)
         return false;
 
+    if (!runtime::isPlaybackRateSupported(buffer.playbackRate))
+        return false;
     if (buffer.bytes.empty())
         return true;
-
     if (buffer.bytes.size() % frameBytes != 0)
         return false;
 
-    if (queuedBytes() == 0)
+    const auto rateMillionths = runtime::playbackRateMillionths(buffer.playbackRate);
+    if (m_rateAnchored.load(std::memory_order_acquire)) {
+        if (rateMillionths != m_playbackRateMillionths.load(std::memory_order_acquire))
+            return false;
+    } else {
+        m_playbackRateMillionths.store(rateMillionths, std::memory_order_release);
+        m_rateAnchored.store(true, std::memory_order_release);
+    }
+
+    if (queuedBytes() == 0) {
+        const auto readCursor = m_readCursor.load(std::memory_order_acquire);
+        m_clockAnchorReadCursor.store(readCursor, std::memory_order_release);
+        m_clockAnchorPositionUs.store(buffer.pts.count(), std::memory_order_release);
         m_playbackPositionUs.store(buffer.pts.count(), std::memory_order_release);
+    }
 
     std::size_t copied = 0;
     while (copied < buffer.bytes.size()) {
@@ -126,9 +144,10 @@ CoreAudioRingBufferReadResult CoreAudioRingBuffer::read(std::span<std::byte> des
     std::fill(destination.begin() + static_cast<std::ptrdiff_t>(result.copiedBytes),
               destination.end(),
               std::byte { 0 });
-    m_readCursor.store(readCursor + result.copiedBytes, std::memory_order_release);
-    m_playbackPositionUs.fetch_add(durationForBytes(result.copiedBytes).count(),
-                                   std::memory_order_acq_rel);
+    const auto nextReadCursor = readCursor + result.copiedBytes;
+    m_readCursor.store(nextReadCursor, std::memory_order_release);
+    m_playbackPositionUs.store(mediaPositionForReadCursor(nextReadCursor),
+                               std::memory_order_release);
     if (result.copiedBytes > 0)
         wakeOneWriter();
     return result;
@@ -142,6 +161,10 @@ void CoreAudioRingBuffer::flush()
         m_generation.fetch_add(1, std::memory_order_acq_rel);
         resetCursors();
         m_playbackPositionUs.store(0, std::memory_order_release);
+        m_clockAnchorPositionUs.store(0, std::memory_order_release);
+        m_clockAnchorReadCursor.store(0, std::memory_order_release);
+        m_playbackRateMillionths.store(runtime::kPlaybackRateScale, std::memory_order_release);
+        m_rateAnchored.store(false, std::memory_order_release);
         endControlUpdate();
     }
     wakeAllWriters();
@@ -254,6 +277,28 @@ std::chrono::microseconds CoreAudioRingBuffer::durationForBytes(std::size_t byte
     return std::chrono::microseconds {
         frames * 1000000 / static_cast<std::int64_t>(sampleRate)
     };
+}
+
+std::int64_t CoreAudioRingBuffer::mediaPositionForReadCursor(std::uint64_t readCursor) const
+{
+    if (!m_rateAnchored.load(std::memory_order_acquire))
+        return m_playbackPositionUs.load(std::memory_order_acquire);
+
+    const auto anchorCursor = m_clockAnchorReadCursor.load(std::memory_order_acquire);
+    const auto anchorPosition = m_clockAnchorPositionUs.load(std::memory_order_acquire);
+    const auto frameBytes = m_bytesPerFrame.load(std::memory_order_acquire);
+    const auto sampleRate = m_sampleRate.load(std::memory_order_acquire);
+    if (readCursor < anchorCursor || frameBytes == 0 || sampleRate <= 0)
+        return anchorPosition;
+
+    const auto frames = (readCursor - anchorCursor) / frameBytes;
+    const auto rate = static_cast<std::uint64_t>(
+        m_playbackRateMillionths.load(std::memory_order_acquire));
+    const auto wholeSeconds = frames / static_cast<std::uint64_t>(sampleRate);
+    const auto remainingFrames = frames % static_cast<std::uint64_t>(sampleRate);
+    const auto mediaDurationUs = wholeSeconds * rate
+        + remainingFrames * rate / static_cast<std::uint64_t>(sampleRate);
+    return anchorPosition + static_cast<std::int64_t>(mediaDurationUs);
 }
 
 void CoreAudioRingBuffer::copyIntoRing(std::span<const std::byte> source,

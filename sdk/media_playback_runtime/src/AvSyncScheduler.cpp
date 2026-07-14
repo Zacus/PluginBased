@@ -9,10 +9,28 @@ AvSyncScheduler::AvSyncScheduler(AvSyncConfig config)
 {
 }
 
-void AvSyncScheduler::reset(Generation generation)
+void AvSyncScheduler::reset(Generation generation, double playbackRate)
 {
-    m_masterClock.reset(generation);
+    m_playbackRate = isPlaybackRateSupported(playbackRate)
+        ? playbackRate
+        : kDefaultPlaybackRate;
+    m_masterClock.reset(generation, m_playbackRate);
     m_consecutiveDrops = 0;
+}
+
+void AvSyncScheduler::pause()
+{
+    m_masterClock.pause();
+}
+
+void AvSyncScheduler::resume()
+{
+    m_masterClock.resume();
+}
+
+ClockSnapshot AvSyncScheduler::clockSnapshot(Generation currentGeneration) const
+{
+    return m_masterClock.snapshot(currentGeneration);
 }
 
 VideoScheduleDecision AvSyncScheduler::decide(
@@ -39,11 +57,14 @@ VideoScheduleDecision AvSyncScheduler::decide(
     }
 
     const auto untilFrame = framePts - masterPosition;
-    if (untilFrame > m_config.submitLeadTime) {
+    const auto wallTimeUntilFrame = playbackDurationForMediaDuration(
+        untilFrame,
+        m_playbackRate);
+    if (wallTimeUntilFrame > m_config.submitLeadTime) {
         m_consecutiveDrops = 0;
         decision.action = VideoScheduleAction::Wait;
         decision.waitTime = std::min(
-            untilFrame - m_config.submitLeadTime,
+            wallTimeUntilFrame - m_config.submitLeadTime,
             m_config.maxScheduledWait);
         return decision;
     }

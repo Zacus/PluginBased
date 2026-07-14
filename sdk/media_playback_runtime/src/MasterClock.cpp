@@ -23,7 +23,7 @@ MasterClock::MasterClock(NowFunction now)
 {
 }
 
-void MasterClock::reset(Generation generation)
+void MasterClock::reset(Generation generation, double playbackRate)
 {
     m_generation = generation;
     m_videoAnchorValid = false;
@@ -31,6 +31,48 @@ void MasterClock::reset(Generation generation)
     m_videoAnchorTime = {};
     m_videoClockCorrection = std::chrono::microseconds { 0 };
     m_lastVideoObservationPts.reset();
+    m_playbackRate = isPlaybackRateSupported(playbackRate)
+        ? playbackRate
+        : kDefaultPlaybackRate;
+    m_paused = false;
+}
+
+void MasterClock::pause()
+{
+    if (!m_videoAnchorValid || m_paused)
+        return;
+    m_videoAnchorPts = currentVideoPosition(now());
+    m_videoAnchorTime = {};
+    m_videoClockCorrection = std::chrono::microseconds { 0 };
+    m_paused = true;
+}
+
+void MasterClock::resume()
+{
+    if (!m_videoAnchorValid || !m_paused)
+        return;
+    m_videoAnchorTime = now();
+    m_paused = false;
+}
+
+ClockSnapshot MasterClock::snapshot(Generation currentGeneration) const
+{
+    if (!m_videoAnchorValid || m_generation != currentGeneration) {
+        return {
+            .generation = currentGeneration,
+            .valid = false,
+            .paused = m_paused,
+        };
+    }
+
+    return {
+        .position = currentVideoPosition(now()),
+        .hardwareLatency = std::chrono::microseconds { 0 },
+        .queuedDuration = std::chrono::microseconds { 0 },
+        .generation = currentGeneration,
+        .valid = true,
+        .paused = m_paused,
+    };
 }
 
 std::chrono::microseconds MasterClock::positionForVideoFrame(
@@ -65,10 +107,12 @@ std::chrono::microseconds MasterClock::smoothedVideoPosition(
     std::chrono::microseconds framePts,
     SteadyClock::time_point currentTime)
 {
+    if (m_paused)
+        return m_videoAnchorPts;
     const auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(
         currentTime - m_videoAnchorTime);
     if (!m_lastVideoObservationPts.has_value() || *m_lastVideoObservationPts != framePts) {
-        const auto extrapolated = m_videoAnchorPts + elapsed + m_videoClockCorrection;
+        const auto extrapolated = currentVideoPosition(currentTime);
         const auto error = framePts - extrapolated;
         const auto correctionDelta = std::chrono::microseconds {
             error.count() * videoClockSmoothingAlphaNumerator / videoClockSmoothingAlphaDenominator
@@ -76,7 +120,19 @@ std::chrono::microseconds MasterClock::smoothedVideoPosition(
         m_videoClockCorrection = clampCorrection(m_videoClockCorrection + correctionDelta);
         m_lastVideoObservationPts = framePts;
     }
-    return m_videoAnchorPts + elapsed + m_videoClockCorrection;
+    return currentVideoPosition(currentTime);
+}
+
+std::chrono::microseconds MasterClock::currentVideoPosition(
+    SteadyClock::time_point currentTime) const
+{
+    if (m_paused)
+        return m_videoAnchorPts;
+    const auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(
+        currentTime - m_videoAnchorTime);
+    return m_videoAnchorPts
+        + mediaDurationForPlaybackDuration(elapsed, m_playbackRate)
+        + m_videoClockCorrection;
 }
 
 } // namespace media_sdk::runtime

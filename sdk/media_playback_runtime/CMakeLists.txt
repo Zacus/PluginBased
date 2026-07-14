@@ -3,6 +3,7 @@ add_library(media_sdk_playback_runtime STATIC
     src/AvSyncScheduler.cpp
     src/MasterClock.cpp
     src/NativeFallbackController.cpp
+    src/PlaybackRate.cpp
     src/PlaybackRuntimeVersion.cpp
     src/PresentTracker.cpp
     src/RuntimePlayer.cpp
@@ -43,6 +44,23 @@ if(BUILD_TESTING)
     )
     add_test(NAME media_sdk_playback_runtime_interface_contract
         COMMAND $<TARGET_FILE:MediaSdkPlaybackRuntimeInterfaceContractTest>
+    )
+
+    add_executable(MediaSdkPlaybackRuntimePlaybackRateTest
+        tests/tst_playback_rate.cpp
+    )
+    target_compile_features(MediaSdkPlaybackRuntimePlaybackRateTest PRIVATE cxx_std_20)
+    set_target_properties(MediaSdkPlaybackRuntimePlaybackRateTest PROPERTIES
+        CXX_EXTENSIONS OFF
+        AUTOMOC OFF
+        AUTOUIC OFF
+        AUTORCC OFF
+    )
+    target_link_libraries(MediaSdkPlaybackRuntimePlaybackRateTest PRIVATE
+        media_sdk_playback_runtime
+    )
+    add_test(NAME media_sdk_playback_runtime_playback_rate
+        COMMAND $<TARGET_FILE:MediaSdkPlaybackRuntimePlaybackRateTest>
     )
 
     add_executable(MediaSdkPlaybackRuntimeFrameQueueTest

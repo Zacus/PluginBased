@@ -2,6 +2,7 @@
 
 #include "MasterClock.h"
 #include "media_sdk/runtime/AudioOutput.h"
+#include "media_sdk/runtime/PlaybackRate.h"
 #include "media_sdk/runtime/RuntimeTypes.h"
 
 #include <chrono>
@@ -33,7 +34,11 @@ class AvSyncScheduler
 public:
     explicit AvSyncScheduler(AvSyncConfig config = {});
 
-    void reset(Generation generation);
+    void reset(Generation generation, double playbackRate = kDefaultPlaybackRate);
+    void pause();
+    void resume();
+    [[nodiscard("video-only clock snapshots are the authoritative media position")]]
+    ClockSnapshot clockSnapshot(Generation currentGeneration) const;
     [[nodiscard("video scheduling decisions must be applied to render, wait, or drop frames")]]
     VideoScheduleDecision decide(
         std::chrono::microseconds framePts,
@@ -44,6 +49,7 @@ private:
     AvSyncConfig m_config;
     MasterClock m_masterClock;
     int m_consecutiveDrops = 0;
+    double m_playbackRate = kDefaultPlaybackRate;
 };
 
 } // namespace media_sdk::runtime

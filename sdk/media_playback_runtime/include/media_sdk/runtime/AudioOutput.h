@@ -1,6 +1,7 @@
 #pragma once
 
 #include "media_sdk/Result.h"
+#include "media_sdk/runtime/PlaybackRate.h"
 #include "media_sdk/runtime/RuntimeTypes.h"
 
 #include <chrono>
@@ -28,9 +29,11 @@ struct AudioBufferView {
     std::span<const std::byte> bytes;
     std::chrono::microseconds pts { 0 };
     Generation generation = 0;
+    double playbackRate = kDefaultPlaybackRate;
 };
 
 struct ClockSnapshot {
+    // position is media time. Latency and queued duration remain device/wall time.
     std::chrono::microseconds position { 0 };
     std::chrono::microseconds hardwareLatency { 0 };
     std::chrono::microseconds queuedDuration { 0 };

@@ -12,7 +12,8 @@ enum class MediaErrorCode {
     DecodeFailed,
     SeekFailed,
     UnsupportedFormat,
-    InternalStateError
+    InternalStateError,
+    InvalidArgument
 };
 
 struct MediaError {

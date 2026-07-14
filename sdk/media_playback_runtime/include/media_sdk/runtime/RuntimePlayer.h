@@ -2,6 +2,7 @@
 
 #include "media_sdk/Result.h"
 #include "media_sdk/runtime/AudioOutput.h"
+#include "media_sdk/runtime/PlaybackRate.h"
 #include "media_sdk/runtime/RuntimeTypes.h"
 #include "media_sdk/runtime/VideoPresenter.h"
 
@@ -34,6 +35,7 @@ struct RuntimePlayerConfig {
     RuntimeSyncConfig syncConfig {};
     bool audioClockEnabled = true;
     std::chrono::microseconds maxSeekAudioGapFill { std::chrono::milliseconds(2000) };
+    double playbackRate = kDefaultPlaybackRate;
 };
 
 struct RuntimePlayerDependencies {

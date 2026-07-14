@@ -43,6 +43,7 @@ private:
     std::size_t completeFrameBytes(std::size_t bytes) const;
     std::size_t queuedBytes() const;
     std::chrono::microseconds durationForBytes(std::size_t bytes) const;
+    std::int64_t mediaPositionForReadCursor(std::uint64_t readCursor) const;
     void copyIntoRing(std::span<const std::byte> source, std::uint64_t writeCursor);
     void copyFromRing(std::span<std::byte> destination, std::uint64_t readCursor) const;
     void wakeOneWriter();
@@ -62,6 +63,10 @@ private:
     std::atomic<int> m_sampleRate { 0 };
     std::atomic<runtime::Generation> m_generation { 1 };
     std::atomic<std::int64_t> m_playbackPositionUs { 0 };
+    std::atomic<std::int64_t> m_clockAnchorPositionUs { 0 };
+    std::atomic<std::uint64_t> m_clockAnchorReadCursor { 0 };
+    std::atomic<std::uint32_t> m_playbackRateMillionths { runtime::kPlaybackRateScale };
+    std::atomic_bool m_rateAnchored { false };
     std::atomic_bool m_configured { false };
     std::atomic_bool m_closed { true };
 };

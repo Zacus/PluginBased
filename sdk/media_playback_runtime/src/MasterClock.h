@@ -1,6 +1,7 @@
 #pragma once
 
 #include "media_sdk/runtime/AudioOutput.h"
+#include "media_sdk/runtime/PlaybackRate.h"
 #include "media_sdk/runtime/RuntimeTypes.h"
 
 #include <chrono>
@@ -17,7 +18,12 @@ public:
 
     explicit MasterClock(NowFunction now = {});
 
-    void reset(Generation generation);
+    void reset(Generation generation, double playbackRate = kDefaultPlaybackRate);
+    void pause();
+    void resume();
+
+    [[nodiscard("video-only clock snapshots are the authoritative media position")]]
+    ClockSnapshot snapshot(Generation currentGeneration) const;
 
     [[nodiscard("master clock position is required for video scheduling")]]
     std::chrono::microseconds positionForVideoFrame(
@@ -30,6 +36,8 @@ private:
     [[nodiscard]] std::chrono::microseconds smoothedVideoPosition(
         std::chrono::microseconds framePts,
         SteadyClock::time_point currentTime);
+    [[nodiscard]] std::chrono::microseconds currentVideoPosition(
+        SteadyClock::time_point currentTime) const;
 
     NowFunction m_now;
     Generation m_generation = 0;
@@ -38,6 +46,8 @@ private:
     SteadyClock::time_point m_videoAnchorTime {};
     std::chrono::microseconds m_videoClockCorrection { 0 };
     std::optional<std::chrono::microseconds> m_lastVideoObservationPts;
+    double m_playbackRate = kDefaultPlaybackRate;
+    bool m_paused = false;
 };
 
 } // namespace media_sdk::runtime

@@ -257,6 +257,70 @@ void queuedDurationUsesConfiguredSampleFormat()
     assert(snapshot.queuedDuration == 100ms);
 }
 
+void playbackRateMapsConsumedSamplesToMediaTime()
+{
+    constexpr std::size_t tenMillisecondsBytes = 48000 * 2 * 4 / 100;
+
+    media_sdk::platform::macos::CoreAudioRingBuffer fastBuffer(tenMillisecondsBytes);
+    fastBuffer.configure(audioFormat(), 1);
+    std::vector<std::byte> input(tenMillisecondsBytes);
+    assert(fastBuffer.write({
+        .bytes = input,
+        .pts = 100ms,
+        .generation = 1,
+        .playbackRate = 2.0,
+    }));
+    assert(fastBuffer.clock().queuedDuration == 10ms);
+    std::vector<std::byte> output(tenMillisecondsBytes);
+    (void)fastBuffer.read(output);
+    assert(fastBuffer.clock().position == 120ms);
+
+    media_sdk::platform::macos::CoreAudioRingBuffer slowBuffer(tenMillisecondsBytes);
+    slowBuffer.configure(audioFormat(), 1);
+    assert(slowBuffer.write({
+        .bytes = input,
+        .pts = 100ms,
+        .generation = 1,
+        .playbackRate = 0.5,
+    }));
+    (void)slowBuffer.read(output);
+    assert(slowBuffer.clock().position == 105ms);
+}
+
+void rejectsInvalidOrMixedRatesWithinGeneration()
+{
+    media_sdk::platform::macos::CoreAudioRingBuffer buffer(16);
+    buffer.configure(audioFormat(), 1);
+    const auto input = bytes({ 1, 2, 3, 4, 5, 6, 7, 8 });
+
+    assert(!buffer.write({
+        .bytes = input,
+        .pts = 10ms,
+        .generation = 1,
+        .playbackRate = 3.0,
+    }));
+    assert(buffer.write({
+        .bytes = input,
+        .pts = 10ms,
+        .generation = 1,
+        .playbackRate = 1.25,
+    }));
+    assert(!buffer.write({
+        .bytes = input,
+        .pts = 20ms,
+        .generation = 1,
+        .playbackRate = 1.5,
+    }));
+
+    buffer.flush();
+    assert(buffer.write({
+        .bytes = input,
+        .pts = 20ms,
+        .generation = 2,
+        .playbackRate = 1.5,
+    }));
+}
+
 void writeRejectsNonFrameAlignedBuffers()
 {
     media_sdk::platform::macos::CoreAudioRingBuffer buffer(16);
@@ -267,13 +331,22 @@ void writeRejectsNonFrameAlignedBuffers()
         .bytes = input,
         .pts = 80ms,
         .generation = 1,
+        .playbackRate = 1.25,
+    }));
+
+    const auto aligned = bytes({ 1, 2, 3, 4, 5, 6, 7, 8 });
+    assert(buffer.write({
+        .bytes = aligned,
+        .pts = 80ms,
+        .generation = 1,
+        .playbackRate = 1.5,
     }));
 
     std::vector<std::byte> output(8, std::byte { 7 });
     const auto read = buffer.read(output);
-    assert(read.copiedBytes == 0);
-    assert(read.silenceBytes == 8);
-    assert(output == bytes({ 0, 0, 0, 0, 0, 0, 0, 0 }));
+    assert(read.copiedBytes == 8);
+    assert(read.silenceBytes == 0);
+    assert(output == aligned);
 }
 
 void readConsumesOnlyCompletePcmFrames()
@@ -372,6 +445,8 @@ int main()
     flushRejectsBlockedWriterFromOldGeneration();
     queuedDurationUsesFormatByteRate();
     queuedDurationUsesConfiguredSampleFormat();
+    playbackRateMapsConsumedSamplesToMediaTime();
+    rejectsInvalidOrMixedRatesWithinGeneration();
     writeRejectsNonFrameAlignedBuffers();
     readConsumesOnlyCompletePcmFrames();
     closeWakesBlockedWriters();

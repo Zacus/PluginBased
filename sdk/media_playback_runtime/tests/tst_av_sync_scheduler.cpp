@@ -173,6 +173,55 @@ void repeatedVideoOnlyDecisionForSameFrameDoesNotCompoundSmoothing()
     assert(repeatedDecisionPosition == firstDecisionPosition + 10ms);
 }
 
+void scalesWallWaitByPlaybackRate()
+{
+    media_sdk::runtime::AvSyncScheduler scheduler({
+        .submitLeadTime = submitLeadTime,
+        .lateDropThreshold = lateDropThreshold,
+        .maxScheduledWait = maxScheduledWait,
+        .maxConsecutiveDropsBeforeForceRender = maxConsecutiveDropsBeforeForceRender,
+    });
+
+    scheduler.reset(4, 2.0);
+    const auto fast = scheduler.decide(110ms, audioClock(100ms, 4), 4);
+    assert(fast.action == media_sdk::runtime::VideoScheduleAction::Wait);
+    assert(fast.waitTime == 3ms);
+
+    scheduler.reset(5, 0.5);
+    const auto slow = scheduler.decide(110ms, audioClock(100ms, 5), 5);
+    assert(slow.action == media_sdk::runtime::VideoScheduleAction::Wait);
+    assert(slow.waitTime == 18ms);
+}
+
+void videoOnlyClockScalesAndFreezesWhilePaused()
+{
+    auto now = media_sdk::runtime::MasterClock::SteadyClock::time_point {};
+    media_sdk::runtime::MasterClock clock([&now]()
+    {
+        return now;
+    });
+    clock.reset(4, 2.0);
+
+    const auto invalidClock = audioClock(0us, 4, false);
+    (void)clock.positionForVideoFrame(100ms, invalidClock, 4);
+    now += 10ms;
+    assert(clock.snapshot(4).position == 120ms);
+
+    clock.pause();
+    const auto paused = clock.snapshot(4);
+    assert(paused.position == 120ms);
+    assert(paused.paused);
+    now += 50ms;
+    assert(clock.snapshot(4).position == 120ms);
+
+    clock.resume();
+    now += 10ms;
+    const auto resumed = clock.snapshot(4);
+    assert(resumed.position == 140ms);
+    assert(!resumed.paused);
+    assert(!clock.snapshot(3).valid);
+}
+
 } // namespace
 
 int main()
@@ -185,4 +234,6 @@ int main()
     ignoresAudioClockFromOldGeneration();
     smoothsVideoOnlyClockAgainstSingleDelayedObservation();
     repeatedVideoOnlyDecisionForSameFrameDoesNotCompoundSmoothing();
+    scalesWallWaitByPlaybackRate();
+    videoOnlyClockScalesAndFreezesWhilePaused();
 }

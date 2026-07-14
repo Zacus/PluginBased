@@ -42,6 +42,7 @@ public:
         lastWrittenBytes.assign(buffer.bytes.begin(), buffer.bytes.end());
         lastWritePts = buffer.pts;
         lastWriteGeneration = buffer.generation;
+        lastWritePlaybackRate = buffer.playbackRate;
         writePts.push_back(buffer.pts);
         if (clockFromWrites) {
             if (firstWriteAfterFlush || !snapshot.valid || snapshot.generation != buffer.generation) {
@@ -169,6 +170,7 @@ public:
     std::size_t writtenBytes = 0;
     std::vector<std::byte> lastWrittenBytes;
     std::vector<std::chrono::microseconds> writePts;
+    double lastWritePlaybackRate = 1.0;
     std::chrono::microseconds lastWritePts { 0 };
     media_sdk::runtime::Generation lastWriteGeneration = 0;
     bool failResume = false;
@@ -642,6 +644,21 @@ void openFailsAndClosesAudioWhenResumeFails()
     assert(presenter.events == nullptr);
 }
 
+void openRejectsInvalidPlaybackRateBeforeOpeningOutputs()
+{
+    MockAudioOutput audio;
+    MockPresenter presenter;
+    media_sdk::runtime::RuntimePlayerConfig config;
+    config.playbackRate = 3.0;
+    auto player = makePlayer(audio, presenter, config);
+
+    const auto result = player.open();
+    assert(!result.ok());
+    assert(result.error().code == media_sdk::MediaErrorCode::InvalidArgument);
+    assert(audio.openCount == 0);
+    assert(presenter.clearCount == 0);
+}
+
 void timelineTracksSeekGeneration()
 {
     MockAudioOutput audio;
@@ -818,6 +835,20 @@ void audioFramesAreWrittenToInjectedAudioOutput()
     assert(player.diagnostics().audioQueueHighWatermark >= 1);
     assert(player.diagnostics().audioBackpressureCount == 0);
     assert(player.diagnostics().audioWritten == 1);
+}
+
+void audioWritesCarryConfiguredPlaybackRate()
+{
+    MockAudioOutput audio;
+    MockPresenter presenter;
+    media_sdk::runtime::RuntimePlayerConfig config;
+    config.playbackRate = 1.25;
+    auto player = makePlayer(audio, presenter, config);
+    assert(player.open().ok());
+
+    discardFramePushResult(player.enqueueAudio(runtimeAudio(1, 1, 42ms)));
+    assert(waitUntil([&audio]() { return audio.writeCount == 1; }));
+    assert(audio.lastWritePlaybackRate == 1.25);
 }
 
 void audioControlsApplyGainAndMuteBeforeAudioWrite()
@@ -1105,7 +1136,7 @@ void runtimeClockTickerEmitsEffectivePlaybackClock()
     assert(events.lastClockTick.position == 22766ms);
 }
 
-void runtimeClockTickerDoesNotReuseAudioClockWhenAudioClockDisabled()
+void runtimeClockTickerPublishesVideoOnlyClockWithoutReusingAudioClock()
 {
     MockAudioOutput audio;
     audio.setClock(22766ms, 1);
@@ -1123,8 +1154,15 @@ void runtimeClockTickerDoesNotReuseAudioClockWhenAudioClockDisabled()
         });
     assert(player.open().ok());
 
-    std::this_thread::sleep_for(40ms);
-    assert(events.clockTickCount == 0);
+    discardFramePushResult(player.enqueueVideo(runtimeVideo(1, 1, 100ms)));
+    assert(waitUntil([&presenter]() { return presenter.presentCount == 1; }));
+    assert(waitUntil([&events]() { return events.clockTickCount > 0; }, 200ms));
+
+    std::lock_guard lock(events.mutex);
+    assert(events.lastClockTick.valid);
+    assert(events.lastClockTick.generation == 1);
+    assert(events.lastClockTick.position >= 100ms);
+    assert(events.lastClockTick.position < 1s);
 }
 
 void runtimeClockTickerAllowsStopFromClockCallback()
@@ -1717,6 +1755,7 @@ int main()
     runtimeSyncConfigKeepsLegacyPositionalMaxDropField();
     openStartsNewSessionAndResetsQueues();
     openFailsAndClosesAudioWhenResumeFails();
+    openRejectsInvalidPlaybackRateBeforeOpeningOutputs();
     timelineTracksSeekGeneration();
     seekKeepsLastPresentedFrameUntilTargetFrameArrives();
     seekClockIsAnchoredBeforeFirstAudioArrives();
@@ -1725,6 +1764,7 @@ int main()
     largeSeekAudioGapUsesSyntheticClockUntilAudioStarts();
     failedResumeKeepsSeekGapClockPaused();
     audioFramesAreWrittenToInjectedAudioOutput();
+    audioWritesCarryConfiguredPlaybackRate();
     audioControlsApplyGainAndMuteBeforeAudioWrite();
     audioControlsApplyGainForInt16Audio();
     audioControlsApplyGainForInt32Audio();
@@ -1735,7 +1775,7 @@ int main()
     videoWaitDecisionDelaysAndEventuallyPresentsSameFrame();
     videoOnlyPlaybackUsesMonotonicClockWhenAudioClockIsDisabled();
     runtimeClockTickerEmitsEffectivePlaybackClock();
-    runtimeClockTickerDoesNotReuseAudioClockWhenAudioClockDisabled();
+    runtimeClockTickerPublishesVideoOnlyClockWithoutReusingAudioClock();
     runtimeClockTickerAllowsStopFromClockCallback();
     presenterBackpressureWaitsForCompletionBeforeSubmittingNextFrame();
     skippedPresentConsumesFrameWithoutBackpressuringNextFrame();

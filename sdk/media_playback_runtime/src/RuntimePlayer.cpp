@@ -278,6 +278,13 @@ struct RuntimePlayer::Impl {
     {
         if (!dependencies.audioOutput || !dependencies.videoPresenter)
             return dependencyError("RuntimePlayer requires audio output and video presenter");
+        if (!isPlaybackRateSupported(config.playbackRate)) {
+            return Result<void>::failure({
+                .code = MediaErrorCode::InvalidArgument,
+                .message = "RuntimePlayer requires a playback rate between 0.5 and 2.0",
+                .detail = {},
+            });
+        }
 
         stop();
 
@@ -307,7 +314,7 @@ struct RuntimePlayer::Impl {
 
             audioQueue.reset(sessionId, generation);
             videoQueue.reset(sessionId, generation);
-            scheduler.reset(generation);
+            scheduler.reset(generation, config.playbackRate);
             presentTracker.reset(sessionId, generation);
             presentTracker.setMaxPending(dependencies.videoPresenter->capabilities().maxPendingFrames);
             fallbackController.reset(sessionId, generation, config.outputPolicy);
@@ -420,6 +427,7 @@ struct RuntimePlayer::Impl {
                 return;
             paused = true;
             pauseSeekGapClockLocked();
+            scheduler.pause();
             shouldPause = true;
         }
 
@@ -447,11 +455,13 @@ struct RuntimePlayer::Impl {
                     pausedSeekPrerollPending = false;
                     pausedSeekPrerollReserved = false;
                     resumeSeekGapClockLocked();
+                    scheduler.resume();
                 }
             } else {
                 if (running) {
                     paused = true;
                     pauseSeekGapClockLocked();
+                    scheduler.pause();
                 }
             }
         }
@@ -479,7 +489,7 @@ struct RuntimePlayer::Impl {
             fallbackPending = false;
             pausedSeekPrerollPending = false;
             pausedSeekPrerollReserved = false;
-            scheduler.reset(completedGeneration);
+            scheduler.reset(completedGeneration, config.playbackRate);
             shouldResume = true;
         }
 
@@ -490,11 +500,13 @@ struct RuntimePlayer::Impl {
                 if (running && isCurrentLocked(completedSessionId, completedGeneration)) {
                     paused = false;
                     resumeSeekGapClockLocked();
+                    scheduler.resume();
                 }
             } else {
                 if (running && isCurrentLocked(completedSessionId, completedGeneration)) {
                     paused = true;
                     pauseSeekGapClockLocked();
+                    scheduler.pause();
                 }
             }
         }
@@ -522,7 +534,9 @@ struct RuntimePlayer::Impl {
             presentTracker.clear();
             presentTracker.reset(activeSession, nextGeneration);
             presentTracker.setMaxPending(dependencies.videoPresenter->capabilities().maxPendingFrames);
-            scheduler.reset(nextGeneration);
+            scheduler.reset(nextGeneration, config.playbackRate);
+            if (paused)
+                scheduler.pause();
             fallbackController.reset(activeSession, nextGeneration, config.outputPolicy);
             seekClockAnchor.begin(nextGeneration, position, config.maxSeekAudioGapFill);
             seekGapClock = {};
@@ -684,6 +698,7 @@ struct RuntimePlayer::Impl {
                 .bytes = outputSamples,
                 .pts = framePts,
                 .generation = frameGeneration,
+                .playbackRate = config.playbackRate,
             });
             if (writeResult.ok()) {
                 {
@@ -787,6 +802,7 @@ struct RuntimePlayer::Impl {
                 .bytes = silence.value(),
                 .pts = chunkPts,
                 .generation = decision.generation,
+                .playbackRate = config.playbackRate,
             });
             if (!writeResult.ok()) {
                 if (isCurrent(checkedSessionId, decision.generation))
@@ -854,6 +870,13 @@ struct RuntimePlayer::Impl {
 
     ClockSnapshot effectivePlaybackClock(Generation activeGeneration) const
     {
+        if (!config.audioClockEnabled) {
+            std::lock_guard lock(m_mutex);
+            if (!running || generation != activeGeneration)
+                return {};
+            return scheduler.clockSnapshot(activeGeneration);
+        }
+
         const auto snapshot = audioClockSnapshotForGeneration(activeGeneration);
 
         ClockSnapshot result;
@@ -1160,7 +1183,8 @@ struct RuntimePlayer::Impl {
             presentTracker.clear();
             presentTracker.reset(activeSession, generation);
             presentTracker.setMaxPending(dependencies.videoPresenter->capabilities().maxPendingFrames);
-            scheduler.reset(generation);
+            scheduler.reset(generation, config.playbackRate);
+            scheduler.pause();
             if (transition.abortQueues)
                 diagnostics.queueAbortCount += 2;
             requestCpuDecode = transition.requestCpuDecode;
@@ -1263,9 +1287,7 @@ struct RuntimePlayer::Impl {
         Generation activeGeneration = 0;
         {
             std::lock_guard lock(m_mutex);
-            // 无音频媒体不能复用 audioOutput 时钟发布 position tick；
-            // video-only 需要独立的单调媒体时钟，避免把占位音频快照暴露给上层。
-            if (!running || paused || generation == 0 || !config.audioClockEnabled)
+            if (!running || paused || generation == 0)
                 return;
             activeSessionId = sessionId;
             activeGeneration = generation;
