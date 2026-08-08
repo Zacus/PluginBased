@@ -8,6 +8,7 @@
 
 # Build
 build/
+build-*/
 benchmark_artifacts/
 benchmark_media/
 dist/
