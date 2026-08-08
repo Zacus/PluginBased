@@ -6,7 +6,7 @@
 |---|---|---|
 | CMake | 3.21 | 构建系统 |
 | C++ 编译器 | C++17 | GCC 11 / Clang 14 / MSVC 2022 |
-| Qt | 6.8 | 通过 Qt Installer 或系统包管理器安装，不由此 vcpkg manifest 提供 |
+| Qt | 6.8.3（精确版本） | 通过 Qt 官方安装器安装，不由此 vcpkg manifest 提供 |
 | spdlog | 1.17.0#0 | 通过 vcpkg 安装 |
 | vcpkg | ea1a7396 | 必须与 `builtin-baseline` 保持一致 |
 
@@ -14,7 +14,19 @@
 
 ## 安装依赖
 
-### 方式一：vcpkg（推荐）
+### 1. Qt 官方预编译包
+
+通过 Qt 官方安装器安装 Desktop Qt `6.8.3`。基础 kit 已包含 Core、Gui、Quick、
+QuickControls2、Test 与 LinguistTools；另外选择以下模块：
+
+- `qtmultimedia`
+- `qtshadertools`
+
+项目使用 `Qt6::GuiPrivate`，因此顶层 CMake 精确要求 6.8.3，不会接受其他 Qt
+patch 版本。CI 使用固定的 `aqtinstall 3.3.0` 下载相同官方包，不通过 Homebrew
+安装 Qt。
+
+### 2. vcpkg
 
 ```bash
 # 安装 vcpkg（如未安装）
@@ -38,22 +50,26 @@ git -C vcpkg checkout ea1a7396b05637a53bf23c078647ecc0edee4b80
 `builtin-baseline`/`overrides` 与 `.github/workflows/ci.yml` 的 vcpkg checkout
 `ref`，然后重新执行配置、构建和 CTest。不要只更新其中一处。
 
-### 方式二：系统包管理器（Linux）
+### 3. 设置构建环境
 
 ```bash
-# Ubuntu / Debian
-sudo apt install qt6-base-dev qt6-declarative-dev qt6-multimedia-dev \
-                 libspdlog-dev libfmt-dev
+# macOS
+export VCPKG_ROOT=/path/to/vcpkg
+export QT_ROOT="$HOME/Qt/6.8.3/macos"
 
-# Arch
-sudo pacman -S qt6-base qt6-declarative qt6-multimedia spdlog
+# Linux
+export VCPKG_ROOT=/path/to/vcpkg
+export QT_ROOT="$HOME/Qt/6.8.3/gcc_64"
 ```
 
-### 方式三：Homebrew（macOS）
-
-```bash
-brew install qt spdlog
+```powershell
+# Windows / PowerShell
+$env:VCPKG_ROOT = "C:\src\vcpkg"
+$env:QT_ROOT = "C:\Qt\6.8.3\msvc2022_64"
 ```
+
+`QT_ROOT` 必须是包含 `lib/cmake/Qt6/Qt6Config.cmake` 的 kit 根目录；
+`VCPKG_ROOT` 必须是已 checkout 到项目固定提交并完成 bootstrap 的 vcpkg 根目录。
 
 ---
 
@@ -62,32 +78,33 @@ brew install qt spdlog
 ### Debug 构建（开发期）
 
 ```bash
-cmake -B build \
-      -DCMAKE_BUILD_TYPE=Debug \
-      -DCMAKE_TOOLCHAIN_FILE=/path/to/vcpkg/scripts/buildsystems/vcpkg.cmake
-
-cmake --build build --parallel
+cmake --preset debug
+cmake --build --preset debug --parallel
+ctest --preset debug
 ```
 
 ### Release 构建（发布前）
 
 ```bash
-cmake -B build-release \
-      -DCMAKE_BUILD_TYPE=Release \
-      -DCMAKE_TOOLCHAIN_FILE=/path/to/vcpkg/scripts/buildsystems/vcpkg.cmake
-
-cmake --build build-release --parallel
+cmake --preset release
+cmake --build --preset release --parallel
+ctest --preset release
 ```
 
-### Qt 路径提示
+### 直接配置（仅用于排障）
 
-若 CMake 找不到 Qt6，手动指定：
+日常构建应使用 Presets。需要检查变量展开时，可显式执行等价配置：
 
 ```bash
-cmake -B build -DQt6_DIR=~/Qt/6.8.0/macos/lib/cmake/Qt6 ...
-# 或设置环境变量
-export Qt6_DIR=~/Qt/6.8.0/gcc_64/lib/cmake/Qt6
+cmake -S . -B build \
+      -DCMAKE_BUILD_TYPE=Debug \
+      -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" \
+      -DCMAKE_PREFIX_PATH="$QT_ROOT" \
+      -DQt6_DIR="$QT_ROOT/lib/cmake/Qt6"
 ```
+
+Qt 升级必须在同一变更中同步更新 `CMakeLists.txt` 的 EXACT 版本、CI 的
+aqtinstall 命令、Qt cache key、`QT_ROOT`、`tests/ci_ctest_checks.py` 和本文档。
 
 ---
 
@@ -152,7 +169,7 @@ AppController.reloadConfig()
 ./package.sh
 
 # 指定构建目录和 Qt 路径
-./package.sh ./build-release --qt-dir ~/Qt/6.8.0/macos
+./package.sh ./build-release --qt-dir ~/Qt/6.8.3/macos
 
 # 覆盖版本号
 ./package.sh --skip-build --version 1.2.0

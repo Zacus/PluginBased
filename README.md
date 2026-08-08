@@ -65,14 +65,17 @@ PluginBased/
 
 | 库 | 版本 | 用途 |
 |---|---|---|
-| Qt | 6.8+ | 框架：Core / Gui / Quick / QuickControls2 / Multimedia |
-| spdlog | 1.12+ | 结构化日志 |
-| fmt | 10+ | 格式化（spdlog 依赖） |
-| FFmpeg | 5.0+ | Media SDK demux/decode、重采样、像素转换 |
-| pkgconf/pkg-config | 任意 | CMake 查找 FFmpeg pkg-config 模块 |
+| Qt | 6.8.3 | 官方预编译框架：Core / Gui / Quick / QuickControls2 / Multimedia / ShaderTools |
+| spdlog | 1.17.0#0 | 结构化日志 |
+| fmt | 由固定 baseline 解析 | 格式化（spdlog 依赖） |
+| FFmpeg | 8.0.1#2 | Media SDK demux/decode、重采样、像素转换 |
+| pkgconf/pkg-config | 2.5.1#4 | CMake 查找 FFmpeg pkg-config 模块 |
 | CoreAudio / AudioUnit | macOS 系统框架 | SDK runtime 的 macOS 音频输出 |
 
 项目顶层通过 `FetchContent` 引入相邻目录 `../QtQuickComponents`，构建前请确保该目录存在，或在 `CMakeLists.txt` 中替换为对应的远程仓库来源。
+
+Qt 不由 vcpkg 提供。请通过 Qt 官方安装器安装 Desktop Qt 6.8.3，并选择
+`qtmultimedia` 与 `qtshadertools` 模块；项目会在配置时拒绝其他 Qt 版本。
 
 vcpkg manifest 当前固定在 baseline
 `ea1a7396b05637a53bf23c078647ecc0edee4b80`，直接依赖锁定为
@@ -84,12 +87,13 @@ vcpkg manifest 当前固定在 baseline
 ## 快速构建
 
 ```bash
-# 配置（vcpkg manifest 会自动安装 spdlog、fmt、pkgconf、ffmpeg）
-cmake -B build -DCMAKE_BUILD_TYPE=Debug \
-      -DCMAKE_TOOLCHAIN_FILE=/path/to/vcpkg/scripts/buildsystems/vcpkg.cmake
+# 指向固定 vcpkg checkout 与 Qt 6.8.3 官方 kit
+export VCPKG_ROOT=/path/to/vcpkg
+export QT_ROOT="$HOME/Qt/6.8.3/macos"
 
-# 构建
-cmake --build build --parallel
+# 配置与构建（manifest 会自动安装 spdlog、fmt、pkgconf、ffmpeg）
+cmake --preset debug
+cmake --build --preset debug --parallel
 
 # 运行
 ./build/app/PluginBasedApp
@@ -99,7 +103,7 @@ python3 tests/playplugin_regression_checks.py
 python3 tests/plugin_generator_checks.py
 
 # CTest 汇总验证
-ctest --test-dir build --output-on-failure
+ctest --preset debug
 ```
 
 详细说明、Release 构建、打包步骤见 [BUILD.md](BUILD.md)。
@@ -125,7 +129,7 @@ ctest --test-dir build --output-on-failure
 ctest --test-dir build --output-on-failure
 ```
 
-GitHub Actions workflow 位于 `.github/workflows/ci.yml`。CI 在 macOS 上 checkout 本仓库、相邻 `QtQuickComponents` 仓库和 vcpkg，随后执行 configure、build、CTest。
+GitHub Actions workflow 位于 `.github/workflows/ci.yml`。CI 在 macOS 上 checkout 本仓库、相邻 `QtQuickComponents` 仓库和固定 vcpkg，安装同一份 Qt 6.8.3 官方 kit，然后通过 Debug Presets 执行 configure、build、CTest。
 
 ---
 
