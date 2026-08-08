@@ -4,6 +4,7 @@
 #
 # 用法:
 #   ./package.sh [选项] [构建目录]
+#   默认通过 release Preset 使用 ./build-release；位置参数用于自定义构建目录
 #
 # 选项:
 #   -q, --qt-dir <路径>   Qt 安装根目录（含 bin/macdeployqt 等）
@@ -39,10 +40,25 @@ log_warn()  { echo -e "${_y}[WARN]${_n}  $*"; }
 log_step()  { echo -e "\n${_b}── $* ──${_n}"; }
 die()       { echo -e "${_r}[ERR ]${_n}  $*" >&2; exit 1; }
 
+validate_release_cache() {
+    local cache="${BUILD_DIR}/CMakeCache.txt"
+    [[ -f "${cache}" ]] || die "构建目录未初始化: ${BUILD_DIR}"
+
+    local build_type config_types
+    build_type="$(sed -n 's/^CMAKE_BUILD_TYPE:[^=]*=//p' "${cache}" | head -1)"
+    config_types="$(sed -n 's/^CMAKE_CONFIGURATION_TYPES:[^=]*=//p' "${cache}" | head -1)"
+
+    if [[ "${build_type}" != "Release" && ";${config_types};" != *";Release;"* ]]; then
+        die "打包要求 Release 构建目录: ${BUILD_DIR}"
+    fi
+}
+
 # ── 默认参数 ──────────────────────────────────────────────────────────────────
-BUILD_DIR="${SCRIPT_DIR}/build"
+BUILD_PRESET="release"
+BUILD_DIR="${SCRIPT_DIR}/build-release"
+CUSTOM_BUILD_DIR=false
 DIST_DIR="${SCRIPT_DIR}/dist"
-QT_DIR="${QT_DIR:-}"
+QT_DIR="${QT_DIR:-${QT_ROOT:-}}"
 SKIP_BUILD=false
 BUILD_ONLY=false
 NO_VERIFY=false
@@ -67,7 +83,11 @@ while [[ $# -gt 0 ]]; do
             exit 0
             ;;
         -*)            die "未知选项: $1" ;;
-        *)             BUILD_DIR="$(cd "$1" 2>/dev/null && pwd || echo "$1")"; shift ;;
+        *)
+            BUILD_DIR="$(cd "$1" 2>/dev/null && pwd || echo "$1")"
+            CUSTOM_BUILD_DIR=true
+            shift
+            ;;
     esac
 done
 
@@ -91,14 +111,30 @@ if [[ "${SKIP_BUILD}" == false ]]; then
     log_step "编译"
     command -v cmake &>/dev/null || die "缺少 cmake"
 
-    if [[ ! -f "${BUILD_DIR}/CMakeCache.txt" ]]; then
-        die "构建目录未初始化。请先执行:\n  cmake -B ${BUILD_DIR} -DCMAKE_BUILD_TYPE=Release ."
+    if [[ "${CUSTOM_BUILD_DIR}" == false ]]; then
+        (
+            cd "${SCRIPT_DIR}"
+            cmake --preset "${BUILD_PRESET}"
+        )
+    elif [[ ! -f "${BUILD_DIR}/CMakeCache.txt" ]]; then
+        die "自定义构建目录未初始化: ${BUILD_DIR}"
     fi
 
-    cmake --build "${BUILD_DIR}" \
-          --config Release \
-          --parallel "${JOBS}"
+    validate_release_cache
+
+    if [[ "${CUSTOM_BUILD_DIR}" == false ]]; then
+        (
+            cd "${SCRIPT_DIR}"
+            cmake --build --preset "${BUILD_PRESET}" --parallel "${JOBS}"
+        )
+    else
+        cmake --build "${BUILD_DIR}" \
+              --config Release \
+              --parallel "${JOBS}"
+    fi
     log_ok "编译完成"
+else
+    validate_release_cache
 fi
 
 [[ "${BUILD_ONLY}" == true ]] && { log_ok "仅编译模式，结束"; exit 0; }
