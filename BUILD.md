@@ -162,18 +162,23 @@ AppController.reloadConfig()
 使用项目根目录的 `package.sh`，自动调用平台对应的 Qt 部署工具：
 
 ```bash
-# 确保已完成 Release 构建，直接打包
-./package.sh --skip-build
-
-# 同时触发编译（要求 build/ 已 cmake 初始化）
+# 自动 configure/build release Preset 并打包
 ./package.sh
 
-# 指定构建目录和 Qt 路径
-./package.sh ./build-release --qt-dir ~/Qt/6.8.3/macos
+# 已完成 release Preset 构建，只执行打包
+./package.sh --skip-build
+
+# 打包调用方管理的 Release 构建目录，并显式指定 Qt 路径
+./package.sh --skip-build ./build-release --qt-dir "$QT_ROOT"
 
 # 覆盖版本号
 ./package.sh --skip-build --version 1.2.0
 ```
+
+默认打包入口固定使用 `release` Preset，构建目录为 `build-release/`。传入位置参数时，
+脚本保留自定义构建目录支持，但该目录必须是单配置 Release 构建，或是包含 Release
+配置的多配置构建；`--skip-build` 同样会在部署前执行此检查。部署工具路径优先读取
+`QT_DIR`，未设置时自动使用构建 Preset 已采用的 `QT_ROOT`。
 
 ### 各平台产物
 
