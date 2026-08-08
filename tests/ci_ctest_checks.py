@@ -262,14 +262,28 @@ def main():
             "CI should checkout the same vcpkg commit used as builtin-baseline")
     require("fetch-depth: 0" in vcpkg_checkout,
             "CI should fetch full vcpkg history so manifest overrides can resolve port trees")
-    require("ctest --test-dir build" in workflow,
-            "CI should run CTest")
-    require("cmake --build build --parallel" in workflow,
-            "CI should build the project")
     require("QtQuickComponents" in workflow,
             "CI should checkout or provide QtQuickComponents")
-    require("CMAKE_TOOLCHAIN_FILE" in workflow,
-            "CI should configure with vcpkg manifest dependencies")
+    require("VCPKG_ROOT: ${{ github.workspace }}/vcpkg" in workflow,
+            "CI should expose the fixed vcpkg checkout to CMake Presets")
+    require("QT_ROOT: ${{ runner.temp }}/Qt/6.8.3/macos" in workflow,
+            "CI should expose the exact official Qt kit to CMake Presets")
+    require("actions/setup-python@v5" in workflow and "python-version: '3.12'" in workflow,
+            "CI should provide the pinned Python line used by aqtinstall")
+    require("aqtinstall==3.3.0" in workflow,
+            "CI should pin the Qt installer version")
+    require('aqt install-qt --outputdir "${RUNNER_TEMP}/Qt" mac desktop 6.8.3 clang_64 -m qtmultimedia qtshadertools' in workflow,
+            "CI should install only the required Qt 6.8.3 official modules")
+    require("brew install qt" not in workflow and "brew reinstall qt" not in workflow,
+            "CI should not fall back to Homebrew Qt")
+    require('test -f "${QT_ROOT}/lib/cmake/Qt6/Qt6Config.cmake"' in workflow,
+            "CI should validate restored or installed Qt before configuring")
+    require("cmake --preset debug" in workflow,
+            "CI should configure through the shared Debug preset")
+    require("cmake --build --preset debug --parallel" in workflow,
+            "CI should build through the shared Debug preset")
+    require("ctest --preset debug" in workflow,
+            "CI should test through the shared Debug preset")
 
     main_cpp = read("app/main.cpp")
     require('"/qml"' in main_cpp,

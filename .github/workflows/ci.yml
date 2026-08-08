@@ -12,10 +12,11 @@ jobs:
     runs-on: macos-14
 
     env:
+      VCPKG_ROOT: ${{ github.workspace }}/vcpkg
+      QT_ROOT: ${{ runner.temp }}/Qt/6.8.3/macos
       VCPKG_MAX_RETRIES: 5
       X_VCPKG_DOWNLOAD_RETRY_DELAY_SECONDS: 10
       VCPKG_BINARY_SOURCES: "clear;default,readwrite"
-      HOMEBREW_NO_AUTO_UPDATE: 1
 
     steps:
       - name: Checkout PluginBased
@@ -37,60 +38,27 @@ jobs:
           ref: ea1a7396b05637a53bf23c078647ecc0edee4b80
           fetch-depth: 0
 
-      - name: Install Qt
-        run: |
-          brew install qt || true
-          brew link --overwrite --force qt || true
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
 
-          detect_qt6_dir() {
-            local prefix="$1"
-            if [ ! -d "${prefix}" ]; then
-              return 0
-            fi
+      - name: Install aqtinstall
+        run: python -m pip install --disable-pip-version-check aqtinstall==3.3.0
 
-            local config_file
-            config_file="$(find -L "${prefix}" -name Qt6Config.cmake -print -quit || true)"
-            if [ -n "${config_file}" ]; then
-              dirname "${config_file}"
-            fi
-          }
+      - name: Cache Qt
+        id: qt-cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/Qt/6.8.3
+          key: qt-${{ runner.os }}-6.8.3-clang_64-qtmultimedia-qtshadertools-aqt-3.3.0
 
-          QT_PREFIX="$(brew --prefix qt)"
-          QT6_CMAKE_DIR=""
+      - name: Install Qt 6.8.3
+        if: steps.qt-cache.outputs.cache-hit != 'true'
+        run: aqt install-qt --outputdir "${RUNNER_TEMP}/Qt" mac desktop 6.8.3 clang_64 -m qtmultimedia qtshadertools
 
-          for candidate in \
-            "${QT_PREFIX}" \
-            "$(brew --cellar qt)/$(brew list --versions qt | awk '{print $NF}')"
-          do
-            detected_dir="$(detect_qt6_dir "${candidate}")"
-            if [ -n "${detected_dir}" ]; then
-              QT_PREFIX="${candidate}"
-              QT6_CMAKE_DIR="${detected_dir}"
-              break
-            fi
-          done
-
-          if [ -z "${QT6_CMAKE_DIR}" ]; then
-            echo "::warning title=Qt reinstall::Homebrew reports qt installed, but Qt6Config.cmake was not found. Reinstalling qt."
-            brew reinstall qt
-            brew link --overwrite --force qt || true
-
-            QT_PREFIX="$(brew --prefix qt)"
-            QT6_CMAKE_DIR="$(detect_qt6_dir "${QT_PREFIX}")"
-          fi
-
-          if [ -z "${QT6_CMAKE_DIR}" ]; then
-            echo "::error title=Qt detection failed::Could not find Qt6Config.cmake after brew install/reinstall qt."
-            brew list --versions qt || true
-            find -L "$(brew --cellar qt)" -name Qt6Config.cmake -print || true
-            exit 1
-          fi
-
-          echo "CMAKE_PREFIX_PATH=${QT_PREFIX}" >> "$GITHUB_ENV"
-          echo "Qt6_DIR=${QT6_CMAKE_DIR}" >> "$GITHUB_ENV"
-          echo "Qt prefix: ${QT_PREFIX}"
-          echo "Detected Qt6_DIR: ${QT6_CMAKE_DIR}"
-          find -L "${QT_PREFIX}" -name Qt6Config.cmake -print || true
+      - name: Validate Qt 6.8.3
+        run: test -f "${QT_ROOT}/lib/cmake/Qt6/Qt6Config.cmake"
 
       - name: Cache vcpkg downloads
         uses: actions/cache@v4
@@ -113,16 +81,7 @@ jobs:
         working-directory: PluginBased
         run: |
           set -o pipefail
-          qt_args=()
-          if [ -n "${Qt6_DIR:-}" ]; then
-            qt_args+=("-DQt6_DIR=${Qt6_DIR}")
-          fi
-          cmake -S . -B build \
-            -DCMAKE_BUILD_TYPE=Debug \
-            -DCMAKE_PREFIX_PATH="${CMAKE_PREFIX_PATH}" \
-            "${qt_args[@]}" \
-            -DCMAKE_TOOLCHAIN_FILE="${{ github.workspace }}/vcpkg/scripts/buildsystems/vcpkg.cmake" \
-            2>&1 | tee configure.log || {
+          cmake --preset debug 2>&1 | tee configure.log || {
               emit_error_annotation() {
                 local file="$1"
                 if [ ! -f "${file}" ]; then
@@ -132,8 +91,8 @@ jobs:
                 local excerpt
                 excerpt="$(
                   {
-                    echo "CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}"
-                    echo "Qt6_DIR=${Qt6_DIR:-}"
+                    echo "VCPKG_ROOT=${VCPKG_ROOT}"
+                    echo "QT_ROOT=${QT_ROOT}"
                     echo ""
                     echo "### ${file}: matching error context"
                     grep -Ei -C 3 "error|failed|fatal|not found|could not|unable" "${file}" || true
@@ -156,8 +115,8 @@ jobs:
                 echo ""
                 echo "### Environment"
                 echo '```text'
-                echo "CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}"
-                echo "Qt6_DIR=${Qt6_DIR:-}"
+                echo "VCPKG_ROOT=${VCPKG_ROOT}"
+                echo "QT_ROOT=${QT_ROOT}"
                 echo '```'
                 for log_file in \
                   configure.log \
@@ -193,13 +152,13 @@ jobs:
 
       - name: Build
         working-directory: PluginBased
-        run: cmake --build build --parallel
+        run: cmake --build --preset debug --parallel
 
       - name: Test
         working-directory: PluginBased
         run: |
           set -o pipefail
-          ctest --test-dir build --output-on-failure 2>&1 | tee ctest.log || {
+          ctest --preset debug 2>&1 | tee ctest.log || {
             emit_error_annotation() {
               local file="$1"
               if [ ! -f "${file}" ]; then
