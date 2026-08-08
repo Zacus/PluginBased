@@ -27,6 +27,64 @@ def main():
         "pkgconf": "2.5.1#4",
     }
 
+    presets_path = ROOT / "CMakePresets.json"
+    require(presets_path.exists(),
+            "CMakePresets.json should define the supported build interface")
+    presets = json.loads(presets_path.read_text(encoding="utf-8"))
+    require(presets.get("version") == 3,
+            "CMake presets should use schema version 3 for CMake 3.21")
+    require(presets.get("cmakeMinimumRequired") == {
+                "major": 3, "minor": 21, "patch": 0
+            },
+            "CMake presets should match the project CMake 3.21 floor")
+
+    configure_presets = {
+        preset.get("name"): preset
+        for preset in presets.get("configurePresets", [])
+    }
+    base_preset = configure_presets.get("base", {})
+    require(base_preset.get("hidden") is True,
+            "CMake presets should keep shared configuration in a hidden base preset")
+    require(base_preset.get("toolchainFile") ==
+            "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
+            "CMake presets should obtain the vcpkg toolchain from VCPKG_ROOT")
+    base_cache = base_preset.get("cacheVariables", {})
+    require(base_cache.get("CMAKE_PREFIX_PATH", {}).get("value") == "$env{QT_ROOT}",
+            "CMake presets should obtain the Qt prefix from QT_ROOT")
+    require(base_cache.get("Qt6_DIR", {}).get("value") ==
+            "$env{QT_ROOT}/lib/cmake/Qt6",
+            "CMake presets should bind Qt6 discovery to QT_ROOT")
+    require(base_cache.get("BUILD_TESTING") is True,
+            "CMake presets should enable the project test suite")
+
+    require(configure_presets.get("debug", {}).get("inherits") == "base" and
+            configure_presets["debug"].get("binaryDir") == "${sourceDir}/build" and
+            configure_presets["debug"].get("cacheVariables", {}).get("CMAKE_BUILD_TYPE") == "Debug",
+            "debug configure preset should preserve the existing Debug build directory")
+    require(configure_presets.get("release", {}).get("inherits") == "base" and
+            configure_presets["release"].get("binaryDir") == "${sourceDir}/build-release" and
+            configure_presets["release"].get("cacheVariables", {}).get("CMAKE_BUILD_TYPE") == "Release",
+            "release configure preset should preserve the existing Release build directory")
+
+    for preset_kind in ("buildPresets", "testPresets"):
+        named_presets = {
+            preset.get("name"): preset
+            for preset in presets.get(preset_kind, [])
+        }
+        for name, configuration in (("debug", "Debug"), ("release", "Release")):
+            require(named_presets.get(name, {}).get("configurePreset") == name and
+                    named_presets[name].get("configuration") == configuration,
+                    f"{preset_kind} should connect {name} to its configure preset")
+
+    for test_preset in presets.get("testPresets", []):
+        require(test_preset.get("output", {}).get("outputOnFailure") is True,
+                "CTest presets should print failing test output")
+
+    require("find_package(Qt6 6.8.3 EXACT REQUIRED COMPONENTS" in root_cmake,
+            "top-level CMake should require the approved exact Qt version")
+    require("qt_standard_project_setup(REQUIRES 6.8)" in root_cmake,
+            "top-level CMake should preserve the Qt 6.8 policy baseline")
+
     vcpkg_manifest_path = ROOT / "vcpkg.json"
     require(vcpkg_manifest_path.exists(),
             "vcpkg.json should declare reproducible manifest dependencies")
