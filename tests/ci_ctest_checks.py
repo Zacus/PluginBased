@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 
 import json
+import os
+import subprocess
+import tempfile
 from pathlib import Path
 
 
@@ -14,6 +17,64 @@ def read(path):
 def require(condition, message):
     if not condition:
         raise AssertionError(message)
+
+
+def verify_preset_bootstraps_local_environment(presets):
+    with tempfile.TemporaryDirectory() as temporary_directory:
+        source_dir = Path(temporary_directory) / "source"
+        fake_home = Path(temporary_directory) / "home"
+        source_dir.mkdir()
+        fake_home.mkdir()
+
+        isolated_presets = json.loads(json.dumps(presets))
+        base_preset = next(
+            preset
+            for preset in isolated_presets["configurePresets"]
+            if preset.get("name") == "base"
+        )
+        base_preset.pop("toolchainFile", None)
+        base_preset["cacheVariables"] = {
+            "RESOLVED_VCPKG_ROOT": "$env{VCPKG_ROOT}",
+            "RESOLVED_QT_ROOT": "$env{QT_ROOT}",
+        }
+        isolated_presets["buildPresets"] = []
+        isolated_presets["testPresets"] = []
+
+        (source_dir / "CMakePresets.json").write_text(
+            json.dumps(isolated_presets), encoding="utf-8"
+        )
+        (source_dir / "CMakeLists.txt").write_text(
+            "cmake_minimum_required(VERSION 3.21)\n"
+            "project(PresetEnvironmentCheck NONE)\n"
+            "file(WRITE \"${CMAKE_BINARY_DIR}/resolved-paths.txt\" "
+            "\"${RESOLVED_VCPKG_ROOT}\\n${RESOLVED_QT_ROOT}\\n\")\n",
+            encoding="utf-8",
+        )
+
+        environment = os.environ.copy()
+        environment.pop("VCPKG_ROOT", None)
+        environment.pop("QT_ROOT", None)
+        environment["HOME"] = str(fake_home)
+        result = subprocess.run(
+            ["cmake", "--preset", "debug"],
+            cwd=source_dir,
+            env=environment,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        require(result.returncode == 0,
+                "debug preset should configure without pre-exported dependency roots:\n"
+                + result.stdout + result.stderr)
+
+        resolved_paths = (source_dir / "build" / "resolved-paths.txt").read_text(
+            encoding="utf-8"
+        ).splitlines()
+        require(resolved_paths == [
+                    str(fake_home / "vcpkg" / "vcpkg-git"),
+                    str(fake_home / "Qt" / "6.8.3" / "macos"),
+                ],
+                "debug preset should derive vcpkg and Qt roots from the parent HOME")
 
 
 def main():
@@ -31,6 +92,7 @@ def main():
     require(presets_path.exists(),
             "CMakePresets.json should define the supported build interface")
     presets = json.loads(presets_path.read_text(encoding="utf-8"))
+    verify_preset_bootstraps_local_environment(presets)
     require(presets.get("version") == 3,
             "CMake presets should use schema version 3 for CMake 3.21")
     require(presets.get("cmakeMinimumRequired") == {
