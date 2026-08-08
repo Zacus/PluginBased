@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 
+import os
 import importlib.util
+import shutil
 import subprocess
 import tempfile
 from pathlib import Path
@@ -10,6 +12,7 @@ from unittest import mock
 ROOT = Path(__file__).resolve().parents[1]
 DEPLOY_PATH = ROOT / "tools" / "deploy.py"
 VERIFY_PATH = ROOT / "tools" / "verify.py"
+PACKAGE_SCRIPT = ROOT / "package.sh"
 
 
 def load_deploy_module():
@@ -33,6 +36,109 @@ def load_verify_module():
 def write(path: Path, contents: str = "fixture") -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(contents, encoding="utf-8")
+
+
+def make_package_fixture(root: Path) -> Path:
+    script = root / "package.sh"
+    shutil.copy2(PACKAGE_SCRIPT, script)
+    write(root / "tools" / "package.yml", "{}\n")
+    return script
+
+
+def package_environment(fake_bin=None):
+    environment = os.environ.copy()
+    if fake_bin:
+        environment["PATH"] = f"{fake_bin}{os.pathsep}{environment['PATH']}"
+    environment.pop("QT_DIR", None)
+    return environment
+
+
+def make_fake_cmake(root: Path):
+    fake_bin = root / "fake-bin"
+    log = root / "cmake.log"
+    fake = fake_bin / "cmake"
+    write(fake, """#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\\n' "$*" >> "${PACKAGE_TEST_CMAKE_LOG}"
+if [[ "${1:-}" == "--preset" ]]; then
+    mkdir -p build-release
+    printf 'CMAKE_BUILD_TYPE:STRING=Release\\n' > build-release/CMakeCache.txt
+fi
+""")
+    fake.chmod(0o755)
+    return fake_bin, log
+
+
+def test_package_script_uses_release_preset_by_default() -> None:
+    with tempfile.TemporaryDirectory() as temporary:
+        root = Path(temporary)
+        script = make_package_fixture(root)
+        fake_bin, log = make_fake_cmake(root)
+        environment = package_environment(fake_bin)
+        environment["PACKAGE_TEST_CMAKE_LOG"] = str(log)
+
+        result = subprocess.run(
+            [str(script), "--build-only"], cwd=root,
+            text=True, capture_output=True, env=environment)
+
+        assert result.returncode == 0, result.stderr
+        calls = log.read_text(encoding="utf-8").splitlines()
+        assert calls[0] == "--preset release"
+        assert calls[1].startswith("--build --preset release --parallel ")
+
+
+def test_package_script_rejects_debug_cache_when_skipping_build() -> None:
+    with tempfile.TemporaryDirectory() as temporary:
+        root = Path(temporary)
+        script = make_package_fixture(root)
+        write(root / "build-release" / "CMakeCache.txt",
+              "CMAKE_BUILD_TYPE:STRING=Debug\n")
+
+        result = subprocess.run(
+            [str(script), "--skip-build"], cwd=root,
+            text=True, capture_output=True, env=package_environment())
+
+        assert result.returncode != 0
+        assert "Release" in result.stderr
+
+
+def test_package_script_keeps_custom_multiconfig_build_support() -> None:
+    with tempfile.TemporaryDirectory() as temporary:
+        root = Path(temporary)
+        script = make_package_fixture(root)
+        custom = root / "custom-build"
+        write(custom / "CMakeCache.txt",
+              "CMAKE_CONFIGURATION_TYPES:STRING=Debug;Release\n")
+        fake_bin, log = make_fake_cmake(root)
+        environment = package_environment(fake_bin)
+        environment["PACKAGE_TEST_CMAKE_LOG"] = str(log)
+
+        result = subprocess.run(
+            [str(script), "--build-only", str(custom)], cwd=root,
+            text=True, capture_output=True, env=environment)
+
+        assert result.returncode == 0, result.stderr
+        call = log.read_text(encoding="utf-8").strip()
+        assert call.startswith(f"--build {custom} --config Release --parallel ")
+
+
+def test_package_script_uses_qt_root_as_deployment_fallback() -> None:
+    with tempfile.TemporaryDirectory() as temporary:
+        root = Path(temporary)
+        script = make_package_fixture(root)
+        write(root / "build-release" / "CMakeCache.txt",
+              "CMAKE_BUILD_TYPE:STRING=Release\n")
+        write(root / "tools" / "deploy.py",
+              "import sys\nprint('\\n'.join(sys.argv[1:]))\n")
+        environment = package_environment()
+        environment["QT_ROOT"] = "/opt/Qt/6.8.3/macos"
+
+        result = subprocess.run(
+            [str(script), "--skip-build", "--no-verify"], cwd=root,
+            text=True, capture_output=True, env=environment)
+
+        assert result.returncode == 0, result.stderr
+        assert "--qt-dir\n/opt/Qt/6.8.3/macos" in result.stdout
 
 
 def test_runtime_resources_are_self_contained(deploy) -> None:
@@ -255,6 +361,10 @@ def test_missing_qml_framework_dependencies_are_copied(deploy) -> None:
 def main() -> None:
     deploy = load_deploy_module()
     verifier = load_verify_module()
+    test_package_script_uses_release_preset_by_default()
+    test_package_script_rejects_debug_cache_when_skipping_build()
+    test_package_script_keeps_custom_multiconfig_build_support()
+    test_package_script_uses_qt_root_as_deployment_fallback()
     test_runtime_resources_are_self_contained(deploy)
     test_qt_query_paths_and_plugin_category_are_preserved(deploy)
     test_existing_framework_rpath_is_not_added_twice(deploy)
