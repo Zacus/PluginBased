@@ -53,6 +53,7 @@ qt_add_qml_module(PlayPlugin
     NO_PLUGIN
     URI     PlayPlugin
     VERSION 1.0
+    RESOURCE_PREFIX "/"
     # QML 模块目录（含 qmldir），宿主 addImportPath(CMAKE_BINARY_DIR) 即可找到
     OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/PlayPlugin"
 
@@ -128,15 +129,23 @@ target_link_libraries(PlayPlugin PRIVATE
     Qt6::GuiPrivate
     Qt6::Quick
     Qt6::Multimedia
-    media_sdk_core
     media_sdk::audio_ffmpeg
     media_sdk::playback_session
-    media_sdk::playback_runtime
     PluginBasedPlugin                   # IAppPlugin 接口（INTERFACE）
     PluginBasedLogger                   # spdlog 封装（STATIC）
     FFmpeg::all                         # avformat、avcodec、avutil、swscale、swresample
     # 不链接 PluginBasedCore：PluginManager 符号由主程序 -rdynamic 在运行时提供
 )
+
+# playback_session/audio_ffmpeg 已传递链接 playback_runtime；这里仅声明
+# PlayPlugin 直接使用其头文件接口，避免静态库在最终链接命令中重复出现。
+if(CMAKE_VERSION VERSION_GREATER_EQUAL "3.27")
+    target_link_libraries(PlayPlugin PRIVATE
+        $<COMPILE_ONLY:media_sdk::playback_runtime>
+    )
+else()
+    target_link_libraries(PlayPlugin PRIVATE media_sdk::playback_runtime)
+endif()
 
 if(APPLE)
     target_link_libraries(PlayPlugin PRIVATE

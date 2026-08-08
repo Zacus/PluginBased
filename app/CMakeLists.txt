@@ -27,6 +27,7 @@ set_target_properties(PluginBasedApp PROPERTIES
 qt_add_qml_module(PluginBasedApp
     URI     "PluginBased"
     VERSION 1.0
+    RESOURCE_PREFIX "/"
     OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/PluginBased"
     QML_FILES
         qml/main.qml
@@ -76,7 +77,7 @@ target_compile_definitions(PluginBasedApp PRIVATE
 if(WIN32)
     target_compile_definitions(PluginBasedApp PRIVATE PLATFORM_WINDOWS)
 elseif(UNIX)
-    target_compile_definitions(PluginBasedApp PRIVATE PLATFORM_LINUX)
+    target_compile_definitions(PluginBasedApp PRIVATE PLATFORM_POSIX)
 endif()
 
 # # ── 安装规则 ────────────────────────────────────────────────────────────────

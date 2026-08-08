@@ -9,6 +9,7 @@ set_target_properties(PluginGeneratorApp PROPERTIES
 qt_add_qml_module(PluginGeneratorApp
     URI     PluginGenerator
     VERSION 1.0
+    RESOURCE_PREFIX "/"
     OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/PluginGenerator"
     QML_FILES
         qml/Main.qml
@@ -52,3 +53,7 @@ target_link_libraries(PluginGeneratorBackendSmokeTest PRIVATE
 target_compile_definitions(PluginGeneratorBackendSmokeTest PRIVATE
     PLUGINBASED_SOURCE_DIR="${CMAKE_SOURCE_DIR}"
 )
+
+if(BUILD_TESTING)
+    pluginbased_enable_test_assertions(PluginGeneratorBackendSmokeTest)
+endif()

@@ -125,7 +125,7 @@ if [[ "${NO_VERIFY}" == false ]]; then
     # 找到 staging 目录（DMG 前的 .app 或 staging 文件夹）
     case "$(uname -s)" in
         Darwin)
-            STAGE="${BUILD_DIR}/app/PluginBasedApp.app"
+            STAGE="${BUILD_DIR}/_package_macos/PluginBasedApp.app"
             ;;
         Linux)
             # 找 _staging_linux 临时目录（若已清理则跳过）
@@ -140,7 +140,7 @@ if [[ "${NO_VERIFY}" == false ]]; then
     if [[ -n "${STAGE}" && -d "${STAGE}" ]]; then
         python3 "${TOOLS_DIR}/verify.py" --stage-dir "${STAGE}" \
             && log_ok "验证通过" \
-            || { log_warn "发现依赖问题（见上方报告），建议更新 tools/package.yml 白名单"; }
+            || die "完整性验证失败，未生成可发布的成功结果"
     else
         log_warn "未找到 staging 目录，跳过验证（staging 在打包时已清理属正常）"
         log_info "可手动验证: python3 tools/verify.py --stage-dir <发布包目录>"

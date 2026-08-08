@@ -15,6 +15,7 @@ qt_add_qml_module(DummyPlugin
     NO_PLUGIN
     URI     DummyPlugin
     VERSION 1.0
+    RESOURCE_PREFIX "/"
     OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/DummyPlugin"
     QML_FILES
         qml/DummyPluginView.qml

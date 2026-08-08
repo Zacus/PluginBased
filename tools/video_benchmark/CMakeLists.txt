@@ -112,6 +112,7 @@ if(BUILD_TESTING)
     add_test(NAME media_sdk_experimental_decoder_buffer_pool
         COMMAND $<TARGET_FILE:MediaSdkExperimentalDecoderBufferPoolTest>
     )
+    pluginbased_enable_test_assertions(MediaSdkExperimentalDecoderBufferPoolTest)
 endif()
 
 add_executable(MediaSdkBenchmarkMediaGenerator

@@ -210,4 +210,15 @@ if(BUILD_TESTING)
     add_test(NAME media_sdk_core_seek_audio_trimmer
         COMMAND $<TARGET_FILE:MediaSdkCoreSeekAudioTrimmerTest>
     )
+    pluginbased_enable_test_assertions(
+        MediaSdkCoreDecoderBufferPoolTest
+        MediaSdkCoreVideoPicturePoolTest
+        MediaSdkCorePrimitivesTest
+        MediaSdkCoreFrameContractTest
+        MediaSdkCoreFfmpegIntegrationTest
+        MediaSdkCoreVideoFrameProcessorTest
+        MediaSdkCorePlaybackWorkerTest
+        MediaSdkCoreSeekPrerollGateTest
+        MediaSdkCoreSeekAudioTrimmerTest
+    )
 endif()

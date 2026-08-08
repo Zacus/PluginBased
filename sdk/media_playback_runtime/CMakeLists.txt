@@ -199,4 +199,15 @@ if(BUILD_TESTING)
     add_test(NAME media_sdk_playback_runtime_player_mock
         COMMAND $<TARGET_FILE:MediaSdkPlaybackRuntimePlayerMockTest>
     )
+    pluginbased_enable_test_assertions(
+        MediaSdkPlaybackRuntimeInterfaceContractTest
+        MediaSdkPlaybackRuntimePlaybackRateTest
+        MediaSdkPlaybackRuntimeFrameQueueTest
+        MediaSdkPlaybackRuntimeAvSyncSchedulerTest
+        MediaSdkPlaybackRuntimePresentTrackerTest
+        MediaSdkPlaybackRuntimeNativeFallbackControllerTest
+        MediaSdkPlaybackRuntimeAudioSilenceTest
+        MediaSdkPlaybackRuntimeSeekClockAnchorTest
+        MediaSdkPlaybackRuntimePlayerMockTest
+    )
 endif()

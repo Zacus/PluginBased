@@ -183,7 +183,7 @@ void CoreAudioOutputEngine::renderCallback(void* context, std::span<std::byte> d
 
 void CoreAudioOutputEngine::render(std::span<std::byte> destination) noexcept
 {
-    m_ringBuffer.read(destination);
+    (void)m_ringBuffer.read(destination);
 }
 
 } // namespace media_sdk::platform::macos

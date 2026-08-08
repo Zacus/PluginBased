@@ -85,9 +85,9 @@ void CrashHandler::writeMiniDump(void* exceptionInfo, const std::string& path)
 }
 
 // ══════════════════════════════════════════════════════════════════════════
-//  Linux 实现
+//  POSIX 实现（Linux / macOS）
 // ══════════════════════════════════════════════════════════════════════════
-#elif defined(PLATFORM_LINUX)
+#elif defined(PLATFORM_POSIX)
 #include <signal.h>
 #include <execinfo.h>
 #include <unistd.h>
@@ -144,7 +144,7 @@ void CrashHandler::install(const std::string& dumpDir)
     for (int sig : {SIGSEGV, SIGABRT, SIGFPE, SIGILL, SIGBUS}) {
         sigaction(sig, &sa, &s_oldSigActions[sig]);
     }
-    LOG_INFO("CrashHandler installed (Linux signal+backtrace) → {}", dumpDir);
+    LOG_INFO("CrashHandler installed (POSIX signal+backtrace) → {}", dumpDir);
 }
 
 #else

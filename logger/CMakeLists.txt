@@ -17,6 +17,7 @@
 qt_add_qml_module(PluginBasedLogger
     URI     AppLog
     VERSION 1.0
+    RESOURCE_PREFIX "/"
     OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/AppLog"
     SOURCES
         QmlLogger.h

@@ -15,12 +15,14 @@ verify.py — 发布包完整性验证
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import platform
 import re
 import subprocess
 import sys
 from pathlib import Path
+from typing import Optional
 
 # ── 日志 ─────────────────────────────────────────────────────────────────────
 _USE_COLOR = sys.stdout.isatty() and os.environ.get("NO_COLOR") != "1"
@@ -118,7 +120,7 @@ def find_in_bundle(dep_name: str, bundle_files: dict[str, Path]) -> Optional[Pat
     return bundle_files.get(name)
 
 
-def scan_bundle(stage_dir: Path) -> tuple[int, int]:
+def scan_bundle(stage_dir: Path) -> tuple[list[str], int]:
     """
     扫描 staging 目录内所有二进制，验证依赖完整性。
     返回 (问题数, 已检查二进制数)。
@@ -177,6 +179,57 @@ def scan_bundle(stage_dir: Path) -> tuple[int, int]:
     return issues, checked
 
 
+def scan_runtime_resources(stage_dir: Path) -> list[str]:
+    """验证运行时插件清单、元数据、插件二进制和主题资源。"""
+    if (stage_dir / "Contents").is_dir():
+        runtime_root = stage_dir / "Contents"
+        plugin_dir = runtime_root / "PlugIns"
+        theme_dir = runtime_root / "Resources" / "themes"
+    elif (stage_dir / "bin").is_dir():
+        runtime_root = stage_dir / "bin"
+        plugin_dir = runtime_root / "plugins"
+        theme_dir = runtime_root / "themes"
+    else:
+        runtime_root = stage_dir
+        plugin_dir = runtime_root / "plugins"
+        theme_dir = runtime_root / "themes"
+
+    issues: list[str] = []
+    manifest = runtime_root / "plugins.json"
+    if not manifest.is_file():
+        return [f"  缺失运行时插件清单: {manifest.relative_to(stage_dir)}"]
+
+    try:
+        document = json.loads(manifest.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
+        return [f"  无效运行时插件清单: {manifest.relative_to(stage_dir)} ({error})"]
+
+    plugin_names = document.get("plugins") if isinstance(document, dict) else None
+    if (not isinstance(plugin_names, list)
+            or not all(isinstance(name, str) and name for name in plugin_names)):
+        return [f"  无效运行时插件列表: {manifest.relative_to(stage_dir)}"]
+
+    for plugin_name in plugin_names:
+        metadata = plugin_dir / f"{plugin_name}.json"
+        if not metadata.is_file():
+            issues.append(f"  缺失插件元数据: {metadata.relative_to(stage_dir)}")
+
+        library_names = (
+            f"lib{plugin_name}.so",
+            f"lib{plugin_name}.dylib",
+            f"{plugin_name}.dll",
+        )
+        if not any((plugin_dir / name).is_file() for name in library_names):
+            issues.append(
+                f"  缺失插件二进制: {plugin_dir.relative_to(stage_dir)}/{plugin_name}"
+            )
+
+    if not theme_dir.is_dir() or not any(theme_dir.glob("*.json")):
+        issues.append(f"  缺失主题资源: {theme_dir.relative_to(stage_dir)}/*.json")
+
+    return issues
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="发布包完整性验证")
     parser.add_argument("--stage-dir", type=Path, required=True, help="staging 目录或 .app bundle")
@@ -191,7 +244,9 @@ def main() -> None:
     step("扫描发布包依赖")
     info(f"目录: {stage}")
 
-    issues, checked = scan_bundle(stage)
+    dependency_issues, checked = scan_bundle(stage)
+    resource_issues = scan_runtime_resources(stage)
+    issues = dependency_issues + resource_issues
 
     print()
     info(f"已检查二进制: {checked}")
@@ -204,12 +259,9 @@ def main() -> None:
         for issue in issues:
             print(issue)
         print()
-        fail("发布包不完整，请将缺失库加入 tools/package.yml 的 qt_runtime_plugins 白名单")
+        fail("发布包不完整，请根据上述路径补齐依赖或运行时资源")
         sys.exit(1)
 
-
-# Optional 需要在 Python 3.8 上兼容
-from typing import Optional
 
 if __name__ == "__main__":
     main()

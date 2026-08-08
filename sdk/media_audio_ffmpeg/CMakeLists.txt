@@ -39,4 +39,5 @@ if(BUILD_TESTING)
     add_test(NAME media_sdk_audio_ffmpeg_tempo_processor
         COMMAND $<TARGET_FILE:MediaSdkAudioFfmpegTempoProcessorTest>
     )
+    pluginbased_enable_test_assertions(MediaSdkAudioFfmpegTempoProcessorTest)
 endif()

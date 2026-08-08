@@ -145,4 +145,12 @@ if(BUILD_TESTING)
     add_test(NAME media_sdk_playback_session_fallback
         COMMAND $<TARGET_FILE:MediaSdkPlaybackSessionFallbackTest>
     )
+    pluginbased_enable_test_assertions(
+        MediaSdkPlaybackSessionContractTest
+        MediaSdkPlaybackSessionTimelineTest
+        MediaSdkPlaybackSessionAudioConverterTest
+        MediaSdkPlaybackSessionFrameRouterTest
+        MediaSdkPlaybackSessionEventRouterTest
+        MediaSdkPlaybackSessionFallbackTest
+    )
 endif()

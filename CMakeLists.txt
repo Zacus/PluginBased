@@ -6,12 +6,26 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 
-find_package(Qt6 REQUIRED COMPONENTS Core Gui GuiPrivate Quick QuickControls2 Multimedia ShaderTools Test LinguistTools)
-qt_standard_project_setup()
+find_package(Qt6 6.8 REQUIRED COMPONENTS Core Gui GuiPrivate Quick QuickControls2 Multimedia ShaderTools Test LinguistTools)
+qt_standard_project_setup(REQUIRES 6.8)
 
 find_package(spdlog REQUIRED)   # 可来自 vcpkg、conan 或系统安装
 
 include(CTest)
+
+if(BUILD_TESTING)
+    add_library(PluginBasedTestConfig INTERFACE)
+    target_compile_options(PluginBasedTestConfig INTERFACE
+        $<$<CXX_COMPILER_ID:MSVC>:/UNDEBUG>
+        $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-UNDEBUG>
+    )
+
+    function(pluginbased_enable_test_assertions)
+        foreach(_test_target ${ARGN})
+            target_link_libraries(${_test_target} PRIVATE PluginBasedTestConfig)
+        endforeach()
+    endfunction()
+endif()
 
 # ── FFmpeg（通过 vcpkg + pkg-config）─────────────────────────────────────────
 # 安装：vcpkg install ffmpeg[avcodec,avformat,avutil,swresample,swscale] pkgconf
@@ -125,7 +139,11 @@ FetchContent_Declare(
     QtQuickComponents
     SOURCE_DIR "${CMAKE_SOURCE_DIR}/../QtQuickComponents"
 )
+# The host owns the Qt version/policy baseline. Prevent the embedded project
+# from replacing it with qt_standard_project_setup()'s version-agnostic default.
+set(QT_NO_STANDARD_PROJECT_SETUP ON)
 FetchContent_MakeAvailable(QtQuickComponents)
+unset(QT_NO_STANDARD_PROJECT_SETUP)
 FetchContent_GetProperties(QtQuickComponents SOURCE_DIR PLUGINBASED_QTC_SOURCE_DIR)
 
 set(PLUGINBASED_THEME_SOURCE_DIR "${PLUGINBASED_QTC_SOURCE_DIR}/themes")
@@ -267,6 +285,10 @@ if(BUILD_TESTING)
         COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tests/i18n_architecture_checks.py"
         WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
     )
+    add_test(NAME deploy_packaging_checks
+        COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tests/deploy_packaging_checks.py"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+    )
     add_executable(PluginMetadataValidatorTest
         tests/tst_plugin_metadata_validator.cpp
         core/PluginMetadataValidator.cpp
@@ -378,5 +400,13 @@ if(BUILD_TESTING)
     add_test(NAME plugin_generator_backend_smoke
         COMMAND $<TARGET_FILE:PluginGeneratorBackendSmokeTest>
         WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+    )
+    pluginbased_enable_test_assertions(
+        PluginMetadataValidatorTest
+        PluginDiscoveryTest
+        PlayPluginPlaybackCompletionTest
+        PlayPluginPendingSeekRequestsTest
+        PlayPluginSdkPlaybackAdapterTest
+        PlayPluginVideoFrameBridgeTest
     )
 endif()

@@ -24,7 +24,7 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
-from typing import Optional
+from typing import NamedTuple, Optional
 
 try:
     import yaml
@@ -115,6 +115,70 @@ def detect_qt_dir(build_dir: Path) -> Optional[Path]:
             # 安装根目录上溯三级：lib/cmake/Qt6 → lib/cmake → lib → 安装根
             return qt6_dir.parent.parent.parent
     return None
+
+
+class QtInstallPaths(NamedTuple):
+    root: Path
+    prefix: Path
+    plugins: Path
+    qml: Path
+    libraries: Path
+
+
+def _first_existing_path(candidates: list[Path]) -> Path:
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    return candidates[0]
+
+
+def detect_qt_install_paths(
+    build_dir: Path,
+    qt_dir: Optional[Path] = None,
+) -> Optional[QtInstallPaths]:
+    """Resolve Qt runtime locations using qtpaths, with layout fallbacks."""
+    root = detect_qt_dir(build_dir) or qt_dir
+    query_tool = find_qt_tool("qtpaths", qt_dir)
+    queried: dict[str, Path] = {}
+    if query_tool:
+        result = run([
+            str(query_tool),
+            "--query",
+            "QT_INSTALL_PREFIX",
+            "QT_INSTALL_PLUGINS",
+            "QT_INSTALL_QML",
+            "QT_INSTALL_LIBS",
+        ], capture=True, check=False)
+        if result.returncode == 0:
+            for line in result.stdout.splitlines():
+                key, separator, value = line.partition(":")
+                if separator and value:
+                    queried[key] = Path(value)
+
+    prefix = queried.get("QT_INSTALL_PREFIX") or root
+    if not prefix:
+        return None
+    if not root:
+        root = prefix
+
+    plugins = queried.get("QT_INSTALL_PLUGINS") or _first_existing_path([
+        root / "plugins",
+        root / "share" / "qt" / "plugins",
+        prefix / "plugins",
+        prefix / "share" / "qt" / "plugins",
+    ])
+    qml = queried.get("QT_INSTALL_QML") or _first_existing_path([
+        root / "qml",
+        root / "share" / "qt" / "qml",
+        prefix / "qml",
+        prefix / "share" / "qt" / "qml",
+    ])
+    libraries = queried.get("QT_INSTALL_LIBS") or _first_existing_path([
+        root / "lib",
+        root / "frameworks",
+        prefix / "lib",
+    ])
+    return QtInstallPaths(root, prefix, plugins, qml, libraries)
 
 
 # =============================================================================
@@ -214,9 +278,9 @@ def fix_rpath_macos(binary: Path, frameworks_rpath: str = "@executable_path/../F
         run(["install_name_tool", "-delete_rpath", rp, str(binary)], check=False)
         info(f"  删除 rpath: {rp}")
 
-    # 添加发布期 rpath（若已存在则忽略错误）
-    run(["install_name_tool", "-add_rpath", frameworks_rpath, str(binary)], check=False)
-    info(f"  添加 rpath: {frameworks_rpath}")
+    if frameworks_rpath not in rpaths:
+        run(["install_name_tool", "-add_rpath", frameworks_rpath, str(binary)])
+        info(f"  添加 rpath: {frameworks_rpath}")
 
 def collect_framework_binaries(root: Path) -> list[Path]:
     """收集 bundle 内所有 framework 的真实二进制"""
@@ -367,7 +431,7 @@ def fix_rpath_linux(binary: Path, lib_rpath: str = "$ORIGIN/../lib") -> None:
 # windows和linux暂时没发现有frameworks相关的文件，所以先不处理frameworks目录
 # =============================================================================
 def copy_qt_runtime_plugins(
-    qt_root: Path,
+    qt_paths: QtInstallPaths,
     stage_dir: Path,
     layout: dict,
     plugin_list: list[str],
@@ -377,12 +441,6 @@ def copy_qt_runtime_plugins(
     按白名单将 Qt 运行时插件从 Qt 安装目录复制到 staging 目录。
     返回成功拷贝的插件数量。
     """
-    # macOS 上 Qt 插件在 qt_root/lib/  （framework 内）或 qt_root/plugins/
-    # 其他平台在 qt_root/plugins/
-    plugin_base = qt_root / "plugins"
-    qml_base    = qt_root / "qml"
-    frameworks_base = qt_root / "frameworks"
-
     # staging 内的目标目录
     if platform == "macos":
         dst_frameworks = stage_dir / layout.get("frameworks", "Contents/Frameworks")
@@ -397,32 +455,32 @@ def copy_qt_runtime_plugins(
 
     copied = 0
     for rel_path in plugin_list:
-        srctmp = qt_root / rel_path
-        strsrc = os.path.abspath(srctmp)
-        src = Path(strsrc)
+        relative = Path(rel_path)
+        if rel_path.startswith("plugins/"):
+            source_relative = Path(*relative.parts[1:])
+            src = qt_paths.plugins / source_relative
+            dst = dst_plugins / source_relative
+        elif rel_path.startswith("qml/"):
+            source_relative = Path(*relative.parts[1:])
+            src = qt_paths.qml / source_relative
+            dst = dst_qml / source_relative
+        elif rel_path.startswith("frameworks/"):
+            source_relative = Path(*relative.parts[1:])
+            src = qt_paths.libraries / source_relative
+            dst = dst_frameworks / source_relative
+        elif rel_path.startswith("../"):
+            src = qt_paths.root / relative
+            dst = dst_frameworks / relative.name
+        else:
+            src = qt_paths.root / relative
+            dst = dst_plugins / relative
+
+        src = Path(os.path.abspath(src))
         info(f" 路径为: {src}")
-        if not src.exists():
-            # 尝试 plugins/ 或 qml/ 子目录
-            if rel_path.startswith("qml/"):
-                src = qml_base / rel_path[4:]
-            else:
-                src = plugin_base / rel_path.lstrip("plugins/")
 
         if not src.exists():
             warn(f"  Qt 插件不存在，跳过: {rel_path}，src为 {src}")
             continue
-        
-        
-        # 确定目标路径
-        if rel_path.startswith("qml/"):
-            dst = dst_qml / rel_path[4:]
-        elif rel_path.startswith("frameworks/"):
-            dst = dst_frameworks / rel_path[11:]
-        elif rel_path.endswith(".dylib"):
-            filename = os.path.basename(rel_path)
-            dst =  dst_frameworks / filename if platform == "macos" else dst_plugins / filename
-        else:
-            dst = dst_plugins / Path(rel_path).relative_to(Path(rel_path).parts[0])
 
  
         dst.parent.mkdir(parents=True, exist_ok=True)
@@ -454,6 +512,190 @@ def copy_qt_runtime_plugins(
     return copied
 
 
+def copy_runtime_resources(
+    build_dir: Path,
+    stage_dir: Path,
+    layout: dict,
+    platform: str,
+) -> int:
+    """Copy runtime manifests, plugin metadata, and themes into a package."""
+    plugin_dir = stage_dir / layout.get("plugins", "plugins")
+    runtime_root = plugin_dir.parent
+    theme_dir = (stage_dir / "Contents" / "Resources" / "themes"
+                 if platform == "macos" else runtime_root / "themes")
+
+    manifest = build_dir / "plugins.json"
+    metadata_files = sorted((build_dir / "plugins").glob("*.json"))
+    theme_files = sorted((build_dir / "themes").glob("*.json"))
+    if not manifest.is_file():
+        raise FileNotFoundError(f"runtime plugin manifest not found: {manifest}")
+    if not metadata_files:
+        raise FileNotFoundError(f"runtime plugin metadata not found: {build_dir / 'plugins'}")
+    if not theme_files:
+        raise FileNotFoundError(f"runtime themes not found: {build_dir / 'themes'}")
+
+    runtime_root.mkdir(parents=True, exist_ok=True)
+    plugin_dir.mkdir(parents=True, exist_ok=True)
+    theme_dir.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(manifest, runtime_root / manifest.name)
+    for metadata in metadata_files:
+        shutil.copy2(metadata, plugin_dir / metadata.name)
+    for theme in theme_files:
+        shutil.copy2(theme, theme_dir / theme.name)
+    return 1 + len(metadata_files) + len(theme_files)
+
+
+def clean_macos_deployment(bundle: Path, layout: dict) -> None:
+    """Remove stale deployment output while preserving the CMake-built app."""
+    directories = [
+        bundle / layout["frameworks"],
+        bundle / layout["plugins"],
+        bundle / layout["qml"],
+        bundle / "Contents" / "_CodeSignature",
+    ]
+    for directory in directories:
+        if directory.is_symlink() or directory.is_file():
+            directory.unlink()
+        elif directory.is_dir():
+            shutil.rmtree(directory)
+
+    qt_conf = bundle / "Contents" / "Resources" / "qt.conf"
+    if qt_conf.exists() or qt_conf.is_symlink():
+        qt_conf.unlink()
+
+
+def prepare_macos_bundle(
+    build_dir: Path,
+    app_binary: str,
+    layout: dict,
+) -> Path:
+    """Copy the CMake app into an isolated, clean deployment directory."""
+    source_bundle = build_dir / "app" / f"{app_binary}.app"
+    if not source_bundle.is_dir():
+        raise FileNotFoundError(f".app bundle not found: {source_bundle}")
+
+    staging_root = build_dir / "_package_macos"
+    if staging_root.is_dir():
+        shutil.rmtree(staging_root)
+    elif staging_root.exists() or staging_root.is_symlink():
+        staging_root.unlink()
+    staging_root.mkdir(parents=True)
+
+    staged_bundle = staging_root / source_bundle.name
+    shutil.copytree(source_bundle, staged_bundle)
+    clean_macos_deployment(staged_bundle, layout)
+    return staged_bundle
+
+
+def macdeployqt_command(
+    macdeployqt: Path,
+    bundle: Path,
+    build_dir: Path,
+    qml_scan_dirs: list[Path],
+) -> list[str]:
+    """Build a bounded macdeployqt invocation for project-owned QML only."""
+    command = [
+        str(macdeployqt),
+        str(bundle),
+        f"-qmlimport={build_dir}",
+        "-always-overwrite",
+        "-no-plugins",
+        "-verbose=0",
+    ]
+    command.extend(f"-qmldir={path}" for path in qml_scan_dirs)
+    return command
+
+
+def _macos_binary_candidates(bundle: Path) -> list[Path]:
+    candidates: list[Path] = []
+    for path in (bundle / "Contents").rglob("*"):
+        if not path.is_file():
+            continue
+        if path.suffix in (".dylib", ".so") or "MacOS" in path.parts:
+            candidates.append(path)
+            continue
+        framework = next(
+            (part for part in path.parts if part.endswith(".framework")), None)
+        if framework and path.name == Path(framework).stem:
+            candidates.append(path)
+    return candidates
+
+
+def copy_missing_macos_runtime_dependencies(
+    bundle: Path,
+    qt_library_dir: Path,
+) -> int:
+    """Complete the @rpath dependency closure omitted by macdeployqt."""
+    frameworks_dir = bundle / "Contents" / "Frameworks"
+    frameworks_dir.mkdir(parents=True, exist_ok=True)
+    queue = _macos_binary_candidates(bundle)
+    inspected: set[Path] = set()
+    copied = 0
+
+    while queue:
+        binary = queue.pop()
+        if binary in inspected or not binary.is_file():
+            continue
+        inspected.add(binary)
+        result = run(["otool", "-L", str(binary)], capture=True, check=False)
+        if result.returncode != 0:
+            continue
+
+        for line in result.stdout.splitlines()[1:]:
+            dependency = line.strip().split("(")[0].strip()
+            if dependency.startswith("@rpath/"):
+                relative = Path(dependency.removeprefix("@rpath/"))
+                absolute_source: Optional[Path] = None
+            else:
+                absolute_source = Path(dependency)
+                if (not absolute_source.is_absolute()
+                        or dependency.startswith("/System/")
+                        or dependency.startswith("/usr/lib/")):
+                    continue
+                framework_index = next(
+                    (index for index, part in enumerate(absolute_source.parts)
+                     if part.endswith(".framework")),
+                    None,
+                )
+                if framework_index is not None:
+                    relative = Path(*absolute_source.parts[framework_index:])
+                elif absolute_source.name.endswith(".dylib"):
+                    relative = Path(absolute_source.name)
+                else:
+                    continue
+
+            framework_part = next(
+                (part for part in relative.parts if part.endswith(".framework")),
+                None,
+            )
+            if framework_part:
+                destination = frameworks_dir / framework_part
+                if not destination.exists():
+                    source = qt_library_dir / framework_part
+                    if not source.is_dir():
+                        continue
+                    shutil.copytree(source, destination, symlinks=True)
+                    copied += 1
+                    info(f"  补齐 Qt framework: {framework_part}")
+                framework_binary = frameworks_dir / relative
+                if framework_binary.is_file():
+                    queue.append(framework_binary)
+                continue
+
+            if relative.name.endswith(".dylib"):
+                destination = frameworks_dir / relative.name
+                if not destination.exists():
+                    source = absolute_source or (qt_library_dir / relative.name)
+                    if not source.is_file():
+                        continue
+                    shutil.copy2(source, destination)
+                    copied += 1
+                    info(f"  补齐 Qt dylib: {relative.name}")
+                queue.append(destination)
+
+    return copied
+
+
 # =============================================================================
 # macOS 打包
 # =============================================================================
@@ -464,18 +706,20 @@ def package_macos(build_dir: Path, dist_dir: Path, cfg: dict, qt_dir: Optional[P
     app_binary = cfg["app"]["binary"]
     layout     = cfg["layout"]["macos"]
 
-    bundle = build_dir / "app" / f"{app_binary}.app"
-    if not bundle.exists():
-        die(f".app bundle 不存在: {bundle}")
+    source_bundle = build_dir / "app" / f"{app_binary}.app"
+    if not source_bundle.exists():
+        die(f".app bundle 不存在: {source_bundle}")
 
     mdqt = find_qt_tool("macdeployqt", qt_dir)
     if not mdqt:
         die("找不到 macdeployqt。请设置 QT_DIR 环境变量或使用 --qt-dir 参数。")
 
-    qt_root = detect_qt_dir(build_dir) or (qt_dir.parent.parent if qt_dir else None)
-    if not qt_root:
+    qt_paths = detect_qt_install_paths(build_dir, qt_dir)
+    if not qt_paths:
         die("无法确定 Qt 安装根目录，请通过 --qt-dir 指定")
-    info(f"Qt 安装目录: {qt_root}")
+    info(f"Qt 安装目录: {qt_paths.root}")
+
+    bundle = prepare_macos_bundle(build_dir, app_binary, layout)
 
     # ── 1. 拷贝业务插件 .so → Contents/PlugIns/ ──────────────────────────────
     step("拷贝业务插件")
@@ -487,6 +731,8 @@ def package_macos(build_dir: Path, dist_dir: Path, cfg: dict, qt_dir: Optional[P
             if f.suffix in (".so", ".dylib"):
                 shutil.copy2(f, plug_dst / f.name)
                 info(f"  业务插件: {f.name}")
+    resource_count = copy_runtime_resources(build_dir, bundle, layout, "macos")
+    info(f"  运行时清单/元数据/主题: {resource_count} 个文件")
 
     # ── 2. 拷贝 QML 模块目录 → Contents/Resources/qml/ ──────────────────────
     step("拷贝 QML 模块")
@@ -508,12 +754,13 @@ def package_macos(build_dir: Path, dist_dir: Path, cfg: dict, qt_dir: Optional[P
     source_qml = build_dir.parent / "app" / "qml"
     if not source_qml.exists():
         source_qml = build_dir / ".." / "app" / "qml"
-    run([
-        str(mdqt), str(bundle),
-        f"-qmldir={source_qml}",
-        f"-qmldir={qml_dst}",
-        "-verbose=1",
-    ])
+    qml_scan_dirs = [source_qml]
+    qml_scan_dirs.extend(
+        module_dir
+        for module in cfg.get("qml_modules", [])
+        if (module_dir := build_dir / module).is_dir()
+    )
+    run(macdeployqt_command(mdqt, bundle, build_dir, qml_scan_dirs))
     ok("macdeployqt 完成")
 
     # ── 4. 补全 macdeployqt 遗漏的 Qt 运行时插件 ────────────────────────────
@@ -523,8 +770,12 @@ def package_macos(build_dir: Path, dist_dir: Path, cfg: dict, qt_dir: Optional[P
     for category, paths in rt_cfg.items():
         rt_plugins.extend(paths)
 
-    n = copy_qt_runtime_plugins(qt_root, bundle, layout, rt_plugins, "macos")
+    n = copy_qt_runtime_plugins(qt_paths, bundle, layout, rt_plugins, "macos")
     ok(f"补全 {n} 个 Qt 运行时插件")
+
+    dependency_count = copy_missing_macos_runtime_dependencies(
+        bundle, qt_paths.libraries)
+    ok(f"补全 {dependency_count} 个 QML/插件传递运行时依赖")
 
     # ── 5. 修正 bundle 内所有 .so/.dylib 的 rpath ────────────────────────────
     # step("修正 rpath")
@@ -617,6 +868,8 @@ def package_linux(build_dir: Path, dist_dir: Path, cfg: dict, qt_dir: Optional[P
         for f in (build_dir / "plugins").glob("*.so"):
             shutil.copy2(f, plug_dir / f.name)
             info(f"  业务插件: {f.name}")
+        resource_count = copy_runtime_resources(build_dir, stage, layout, "linux")
+        info(f"  运行时清单/元数据/主题: {resource_count} 个文件")
 
         # QML 模块
         for mod in cfg.get("qml_modules", []):
@@ -628,12 +881,12 @@ def package_linux(build_dir: Path, dist_dir: Path, cfg: dict, qt_dir: Optional[P
                 info(f"  QML: {mod}/")
 
         # Qt 运行时插件补全
-        qt_root = detect_qt_dir(build_dir) or (qt_dir.parent.parent if qt_dir else None)
-        if qt_root:
+        qt_paths = detect_qt_install_paths(build_dir, qt_dir)
+        if qt_paths:
             rt_plugins = []
             for paths in cfg.get("qt_runtime_plugins", {}).get("linux", {}).values():
                 rt_plugins.extend(paths)
-            n = copy_qt_runtime_plugins(qt_root, stage, layout, rt_plugins, "linux")
+            n = copy_qt_runtime_plugins(qt_paths, stage, layout, rt_plugins, "linux")
             ok(f"补全 {n} 个 Qt 运行时插件")
 
         # Qt 依赖库：优先 linuxdeployqt，否则 ldd 收集
@@ -729,6 +982,8 @@ def package_windows(build_dir: Path, dist_dir: Path, cfg: dict, qt_dir: Optional
 
         for f in (build_dir / "plugins").glob("*.dll"):
             shutil.copy2(f, plug_dir / f.name)
+        resource_count = copy_runtime_resources(build_dir, stage, layout, "windows")
+        info(f"  运行时清单/元数据/主题: {resource_count} 个文件")
 
         for mod in cfg.get("qml_modules", []):
             src = build_dir / mod
@@ -750,12 +1005,12 @@ def package_windows(build_dir: Path, dist_dir: Path, cfg: dict, qt_dir: Optional
             warn("未找到 windeployqt，Qt DLL 需手动拷贝")
 
         # 补全运行时插件
-        qt_root = detect_qt_dir(build_dir) or (qt_dir.parent.parent if qt_dir else None)
-        if qt_root:
+        qt_paths = detect_qt_install_paths(build_dir, qt_dir)
+        if qt_paths:
             rt_plugins = []
             for paths in cfg.get("qt_runtime_plugins", {}).get("windows", {}).values():
                 rt_plugins.extend(paths)
-            n = copy_qt_runtime_plugins(qt_root, stage, layout, rt_plugins, "windows")
+            n = copy_qt_runtime_plugins(qt_paths, stage, layout, rt_plugins, "windows")
             ok(f"补全 {n} 个 Qt 运行时插件")
 
         # ZIP

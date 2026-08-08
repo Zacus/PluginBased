@@ -89,4 +89,9 @@ if(BUILD_TESTING)
     add_test(NAME media_sdk_platform_audio_macos_ring_buffer
         COMMAND $<TARGET_FILE:MediaSdkPlatformAudioMacosRingBufferTest>
     )
+    pluginbased_enable_test_assertions(
+        MediaSdkPlatformAudioMacosEngineTest
+        MediaSdkPlatformAudioMacosContractTest
+        MediaSdkPlatformAudioMacosRingBufferTest
+    )
 endif()
