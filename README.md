@@ -65,7 +65,7 @@ PluginBased/
 
 | 库 | 版本 | 用途 |
 |---|---|---|
-| Qt | 6.5+ | 框架：Core / Gui / Quick / QuickControls2 / Multimedia |
+| Qt | 6.8+ | 框架：Core / Gui / Quick / QuickControls2 / Multimedia |
 | spdlog | 1.12+ | 结构化日志 |
 | fmt | 10+ | 格式化（spdlog 依赖） |
 | FFmpeg | 5.0+ | Media SDK demux/decode、重采样、像素转换 |
@@ -73,6 +73,11 @@ PluginBased/
 | CoreAudio / AudioUnit | macOS 系统框架 | SDK runtime 的 macOS 音频输出 |
 
 项目顶层通过 `FetchContent` 引入相邻目录 `../QtQuickComponents`，构建前请确保该目录存在，或在 `CMakeLists.txt` 中替换为对应的远程仓库来源。
+
+vcpkg manifest 当前固定在 baseline
+`ea1a7396b05637a53bf23c078647ecc0edee4b80`，直接依赖锁定为
+`spdlog 1.17.0#0`、`ffmpeg 8.0.1#2` 和 `pkgconf 2.5.1#4`。本地 vcpkg checkout
+应使用同一提交；升级流程见 [BUILD.md](BUILD.md)。
 
 ---
 

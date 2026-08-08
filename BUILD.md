@@ -6,9 +6,9 @@
 |---|---|---|
 | CMake | 3.21 | 构建系统 |
 | C++ 编译器 | C++17 | GCC 11 / Clang 14 / MSVC 2022 |
-| Qt | 6.5 | 通过 Qt Installer 或 vcpkg 安装 |
-| spdlog | 1.12 | 通过 vcpkg 安装 |
-| vcpkg | 任意 | 推荐依赖管理方式 |
+| Qt | 6.8 | 通过 Qt Installer 或系统包管理器安装，不由此 vcpkg manifest 提供 |
+| spdlog | 1.17.0#0 | 通过 vcpkg 安装 |
+| vcpkg | ea1a7396 | 必须与 `builtin-baseline` 保持一致 |
 
 ---
 
@@ -19,12 +19,24 @@
 ```bash
 # 安装 vcpkg（如未安装）
 git clone https://github.com/microsoft/vcpkg
+git -C vcpkg checkout ea1a7396b05637a53bf23c078647ecc0edee4b80
 ./vcpkg/bootstrap-vcpkg.sh   # Windows: bootstrap-vcpkg.bat
-
-# 项目根目录已有 vcpkg.json（manifest 模式），
-# cmake 配置时会自动安装所有依赖：spdlog、pkgconf、ffmpeg
-# 无需手动执行 vcpkg install
 ```
+
+项目通过 `vcpkg.json` 精确锁定直接依赖：`spdlog 1.17.0#0`、
+`ffmpeg 8.0.1#2`、`pkgconf 2.5.1#4`。`builtin-baseline` 同时固定传递依赖的
+版本解析快照。
+
+| 依赖 | 版本 | 用途 |
+|---|---|---|
+| spdlog | 1.17.0#0 | 结构化日志 |
+| fmt | 由固定 baseline 解析 | spdlog 的格式化依赖 |
+| FFmpeg | 8.0.1#2 | Media SDK demux/decode、重采样、像素转换 |
+| pkgconf/pkg-config | 2.5.1#4 | CMake 查找 FFmpeg pkg-config 模块 |
+
+升级 vcpkg 依赖时，必须在同一个变更中同步更新 `vcpkg.json` 的
+`builtin-baseline`/`overrides` 与 `.github/workflows/ci.yml` 的 vcpkg checkout
+`ref`，然后重新执行配置、构建和 CTest。不要只更新其中一处。
 
 ### 方式二：系统包管理器（Linux）
 
