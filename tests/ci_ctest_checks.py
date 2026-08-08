@@ -114,8 +114,14 @@ def main():
 
     require("include(CTest)" in root_cmake,
             "top-level CMake should include CTest")
-    require("GuiPrivate" in root_cmake,
-            "top-level CMake should explicitly find Qt GuiPrivate because PlayPlugin links Qt6::GuiPrivate")
+    qt_find_package_start = root_cmake.index("find_package(Qt6")
+    qt_find_package_end = root_cmake.index(")", qt_find_package_start)
+    qt_find_package = root_cmake[qt_find_package_start:qt_find_package_end]
+    require("GuiPrivate" not in qt_find_package,
+            "Qt6::GuiPrivate comes from the Gui package and must not be requested as a standalone Qt component")
+    play_plugin_cmake = read("plugins/PlayPlugin/CMakeLists.txt")
+    require("Qt6::GuiPrivate" in play_plugin_cmake,
+            "PlayPlugin should keep linking the Gui private target supplied by the Qt Gui package")
     require("BUILD_TESTING" in root_cmake,
             "top-level CMake should gate tests behind BUILD_TESTING")
     require("add_test(NAME playplugin_regression_checks" in root_cmake,

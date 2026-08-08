@@ -6,7 +6,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 
-find_package(Qt6 6.8.3 EXACT REQUIRED COMPONENTS Core Gui GuiPrivate Quick QuickControls2 Multimedia ShaderTools Test LinguistTools)
+find_package(Qt6 6.8.3 EXACT REQUIRED COMPONENTS Core Gui Quick QuickControls2 Multimedia ShaderTools Test LinguistTools)
 qt_standard_project_setup(REQUIRES 6.8)
 
 find_package(spdlog REQUIRED)   # 可来自 vcpkg、conan 或系统安装
