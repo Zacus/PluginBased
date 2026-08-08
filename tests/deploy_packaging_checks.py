@@ -87,6 +87,33 @@ def test_package_script_uses_release_preset_by_default() -> None:
         assert calls[1].startswith("--build --preset release --parallel ")
 
 
+def test_package_script_freshens_cache_when_qt_root_changes() -> None:
+    with tempfile.TemporaryDirectory() as temporary:
+        root = Path(temporary)
+        script = make_package_fixture(root)
+        write(root / "build-release" / "CMakeCache.txt", "\n".join([
+            "CMAKE_BUILD_TYPE:STRING=Release",
+            "Qt6_DIR:PATH=/opt/homebrew/opt/qt/lib/cmake/Qt6",
+            "VCPKG_MANIFEST_INSTALL:BOOL=OFF",
+            "",
+        ]))
+        fake_bin, log = make_fake_cmake(root)
+        environment = package_environment(fake_bin)
+        environment["PACKAGE_TEST_CMAKE_LOG"] = str(log)
+        environment["QT_ROOT"] = "/opt/Qt/6.8.3/macos"
+
+        result = subprocess.run(
+            [str(script), "--build-only"], cwd=root,
+            text=True, capture_output=True, env=environment)
+
+        assert result.returncode == 0, result.stderr
+        calls = log.read_text(encoding="utf-8").splitlines()
+        assert calls[0] == (
+            "--preset release --fresh -DVCPKG_MANIFEST_INSTALL=OFF")
+        assert calls[1] == "--build --preset release --target clean"
+        assert calls[2].startswith("--build --preset release --parallel ")
+
+
 def test_package_script_rejects_debug_cache_when_skipping_build() -> None:
     with tempfile.TemporaryDirectory() as temporary:
         root = Path(temporary)
@@ -362,6 +389,7 @@ def main() -> None:
     deploy = load_deploy_module()
     verifier = load_verify_module()
     test_package_script_uses_release_preset_by_default()
+    test_package_script_freshens_cache_when_qt_root_changes()
     test_package_script_rejects_debug_cache_when_skipping_build()
     test_package_script_keeps_custom_multiconfig_build_support()
     test_package_script_uses_qt_root_as_deployment_fallback()
