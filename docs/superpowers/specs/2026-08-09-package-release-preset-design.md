@@ -13,7 +13,7 @@ cmake --preset release
 cmake --build --preset release --parallel <jobs>
 ```
 
-Keep the existing positional custom-build-directory interface for compatibility. A custom directory remains caller-managed: the script builds it with `cmake --build <dir> --parallel <jobs>` and rejects a non-Release CMake cache before packaging. `--skip-build` also validates that the selected tree is configured as Release, preventing accidental Debug packages.
+Keep the existing positional custom-build-directory interface for compatibility. A custom directory remains caller-managed: the script builds it with `cmake --build <dir> --config Release --parallel <jobs>` and rejects a cache that neither has `CMAKE_BUILD_TYPE=Release` nor exposes `Release` through `CMAKE_CONFIGURATION_TYPES`. `--skip-build` performs the same validation before packaging, preventing accidental Debug packages while retaining multi-config generator support.
 
 `QT_DIR` remains the explicit deployment-tool override, but defaults to `QT_ROOT` when `QT_DIR` is unset. `tools/deploy.py` continues receiving an explicit build directory and does not need a Preset-specific interface.
 
