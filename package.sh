@@ -40,13 +40,19 @@ log_warn()  { echo -e "${_y}[WARN]${_n}  $*"; }
 log_step()  { echo -e "\n${_b}── $* ──${_n}"; }
 die()       { echo -e "${_r}[ERR ]${_n}  $*" >&2; exit 1; }
 
+cmake_cache_value() {
+    local key="$1"
+    local cache="$2"
+    sed -n "s/^${key}:[^=]*=//p" "${cache}" | head -1
+}
+
 validate_release_cache() {
     local cache="${BUILD_DIR}/CMakeCache.txt"
     [[ -f "${cache}" ]] || die "构建目录未初始化: ${BUILD_DIR}"
 
     local build_type config_types
-    build_type="$(sed -n 's/^CMAKE_BUILD_TYPE:[^=]*=//p' "${cache}" | head -1)"
-    config_types="$(sed -n 's/^CMAKE_CONFIGURATION_TYPES:[^=]*=//p' "${cache}" | head -1)"
+    build_type="$(cmake_cache_value CMAKE_BUILD_TYPE "${cache}")"
+    config_types="$(cmake_cache_value CMAKE_CONFIGURATION_TYPES "${cache}")"
 
     if [[ "${build_type}" != "Release" && ";${config_types};" != *";Release;"* ]]; then
         die "打包要求 Release 构建目录: ${BUILD_DIR}"
@@ -112,9 +118,27 @@ if [[ "${SKIP_BUILD}" == false ]]; then
     command -v cmake &>/dev/null || die "缺少 cmake"
 
     if [[ "${CUSTOM_BUILD_DIR}" == false ]]; then
+        CONFIGURE_ARGS=(--preset "${BUILD_PRESET}")
+        CLEAN_AFTER_CONFIGURE=false
+        CACHE_FILE="${BUILD_DIR}/CMakeCache.txt"
+
+        if [[ -f "${CACHE_FILE}" && -n "${QT_ROOT:-}" ]]; then
+            CACHED_QT_DIR="$(cmake_cache_value Qt6_DIR "${CACHE_FILE}")"
+            EXPECTED_QT_DIR="${QT_ROOT%/}/lib/cmake/Qt6"
+            if [[ -n "${CACHED_QT_DIR}" && "${CACHED_QT_DIR}" != "${EXPECTED_QT_DIR}" ]]; then
+                log_info "检测到 Qt kit 变化，将 fresh configure 并清理旧生成物"
+                CONFIGURE_ARGS+=(--fresh)
+                MANIFEST_INSTALL="$(cmake_cache_value VCPKG_MANIFEST_INSTALL "${CACHE_FILE}")"
+                if [[ -n "${MANIFEST_INSTALL}" ]]; then
+                    CONFIGURE_ARGS+=("-DVCPKG_MANIFEST_INSTALL=${MANIFEST_INSTALL}")
+                fi
+                CLEAN_AFTER_CONFIGURE=true
+            fi
+        fi
+
         (
             cd "${SCRIPT_DIR}"
-            cmake --preset "${BUILD_PRESET}"
+            cmake "${CONFIGURE_ARGS[@]}"
         )
     elif [[ ! -f "${BUILD_DIR}/CMakeCache.txt" ]]; then
         die "自定义构建目录未初始化: ${BUILD_DIR}"
@@ -123,6 +147,12 @@ if [[ "${SKIP_BUILD}" == false ]]; then
     validate_release_cache
 
     if [[ "${CUSTOM_BUILD_DIR}" == false ]]; then
+        if [[ "${CLEAN_AFTER_CONFIGURE}" == true ]]; then
+            (
+                cd "${SCRIPT_DIR}"
+                cmake --build --preset "${BUILD_PRESET}" --target clean
+            )
+        fi
         (
             cd "${SCRIPT_DIR}"
             cmake --build --preset "${BUILD_PRESET}" --parallel "${JOBS}"
