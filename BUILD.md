@@ -84,9 +84,9 @@ cmake --build build-release --parallel
 若 CMake 找不到 Qt6，手动指定：
 
 ```bash
-cmake -B build -DQt6_DIR=~/Qt/6.7.2/macos/lib/cmake/Qt6 ...
+cmake -B build -DQt6_DIR=~/Qt/6.8.0/macos/lib/cmake/Qt6 ...
 # 或设置环境变量
-export Qt6_DIR=~/Qt/6.7.2/gcc_64/lib/cmake/Qt6
+export Qt6_DIR=~/Qt/6.8.0/gcc_64/lib/cmake/Qt6
 ```
 
 ---
@@ -152,7 +152,7 @@ AppController.reloadConfig()
 ./package.sh
 
 # 指定构建目录和 Qt 路径
-./package.sh ./build-release --qt-dir ~/Qt/6.7.2/macos
+./package.sh ./build-release --qt-dir ~/Qt/6.8.0/macos
 
 # 覆盖版本号
 ./package.sh --skip-build --version 1.2.0
