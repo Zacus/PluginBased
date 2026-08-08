@@ -202,6 +202,8 @@ def main():
     vcpkg_checkout = workflow[vcpkg_checkout_start:install_qt_start]
     require(f"ref: {expected_vcpkg_baseline}" in vcpkg_checkout,
             "CI should checkout the same vcpkg commit used as builtin-baseline")
+    require("fetch-depth: 0" in vcpkg_checkout,
+            "CI should fetch full vcpkg history so manifest overrides can resolve port trees")
     require("ctest --test-dir build" in workflow,
             "CI should run CTest")
     require("cmake --build build --parallel" in workflow,

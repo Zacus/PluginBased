@@ -35,6 +35,7 @@ jobs:
           repository: microsoft/vcpkg
           path: vcpkg
           ref: ea1a7396b05637a53bf23c078647ecc0edee4b80
+          fetch-depth: 0
 
       - name: Install Qt
         run: |
