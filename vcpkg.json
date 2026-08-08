@@ -2,6 +2,7 @@
   "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg/master/scripts/vcpkg.schema.json",
   "name": "pluginbased",
   "version": "1.0.0",
+  "builtin-baseline": "ea1a7396b05637a53bf23c078647ecc0edee4b80",
   "dependencies": [
     {
       "name": "spdlog",
@@ -17,6 +18,20 @@
         "swresample",
         "swscale"
       ]
+    }
+  ],
+  "overrides": [
+    {
+      "name": "spdlog",
+      "version": "1.17.0"
+    },
+    {
+      "name": "ffmpeg",
+      "version": "8.0.1#2"
+    },
+    {
+      "name": "pkgconf",
+      "version": "2.5.1#4"
     }
   ]
 }

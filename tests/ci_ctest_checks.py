@@ -20,6 +20,39 @@ def main():
     root_cmake = read("CMakeLists.txt")
     workflow_path = ROOT / ".github" / "workflows" / "ci.yml"
     plugin_manifest_path = ROOT / "plugins.json"
+    expected_vcpkg_baseline = "ea1a7396b05637a53bf23c078647ecc0edee4b80"
+    expected_vcpkg_overrides = {
+        "spdlog": "1.17.0",
+        "ffmpeg": "8.0.1#2",
+        "pkgconf": "2.5.1#4",
+    }
+
+    vcpkg_manifest_path = ROOT / "vcpkg.json"
+    require(vcpkg_manifest_path.exists(),
+            "vcpkg.json should declare reproducible manifest dependencies")
+    vcpkg_manifest = json.loads(vcpkg_manifest_path.read_text(encoding="utf-8"))
+    require(vcpkg_manifest.get("builtin-baseline") == expected_vcpkg_baseline,
+            "vcpkg manifest should pin the approved builtin baseline")
+
+    dependencies_by_name = {
+        dependency if isinstance(dependency, str) else dependency.get("name"): dependency
+        for dependency in vcpkg_manifest.get("dependencies", [])
+    }
+    require(set(dependencies_by_name) == {"spdlog", "ffmpeg", "pkgconf"},
+            "vcpkg manifest should keep the approved direct dependency set")
+    require(dependencies_by_name["spdlog"].get("features") == ["fmt"],
+            "spdlog should keep the fmt feature")
+    require(dependencies_by_name["ffmpeg"].get("features") == [
+                "avcodec", "avfilter", "avformat", "swresample", "swscale"
+            ],
+            "ffmpeg should keep the approved feature set")
+
+    overrides_by_name = {
+        override.get("name"): override.get("version")
+        for override in vcpkg_manifest.get("overrides", [])
+    }
+    require(overrides_by_name == expected_vcpkg_overrides,
+            "vcpkg manifest should pin the approved exact direct dependency versions")
 
     require("include(CTest)" in root_cmake,
             "top-level CMake should include CTest")
@@ -164,6 +197,11 @@ def main():
 
     require(workflow_path.exists(), "GitHub Actions CI workflow should exist")
     workflow = workflow_path.read_text(encoding="utf-8")
+    vcpkg_checkout_start = workflow.index("- name: Checkout vcpkg")
+    install_qt_start = workflow.index("- name: Install Qt", vcpkg_checkout_start)
+    vcpkg_checkout = workflow[vcpkg_checkout_start:install_qt_start]
+    require(f"ref: {expected_vcpkg_baseline}" in vcpkg_checkout,
+            "CI should checkout the same vcpkg commit used as builtin-baseline")
     require("ctest --test-dir build" in workflow,
             "CI should run CTest")
     require("cmake --build build --parallel" in workflow,
