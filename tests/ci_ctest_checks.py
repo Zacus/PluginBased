@@ -56,6 +56,8 @@ def main():
             "CMake presets should bind Qt6 discovery to QT_ROOT")
     require(base_cache.get("BUILD_TESTING") is True,
             "CMake presets should enable the project test suite")
+    require(base_cache.get("CMAKE_EXPORT_COMPILE_COMMANDS") is True,
+            "CMake presets should generate compile_commands.json for editor tooling")
 
     require(configure_presets.get("debug", {}).get("inherits") == "base" and
             configure_presets["debug"].get("binaryDir") == "${sourceDir}/build" and
