@@ -3,14 +3,32 @@
 #include "AppConfig.h"
 #include "AppLanguageService.h"
 #include "AppThemeService.h"
+#include "BuildInfo.h"
 #include "PluginPathResolver.h"
 #include "PluginManager.h"
 
 #include <QCoreApplication>
+#include <QClipboard>
+#include <QGuiApplication>
 
 using PluginBased::App::AppConfig;
 
 namespace PluginBased::App {
+
+QString AppController::appVersion() const
+{
+    return BuildInfo::productVersion();
+}
+
+QString AppController::appName() const
+{
+    return BuildInfo::productName();
+}
+
+QString AppController::buildNumber() const
+{
+    return BuildInfo::buildNumber();
+}
 
 QString AppController::currentLanguage() const
 {
@@ -85,6 +103,11 @@ bool AppController::setLanguage(const QString& languageName)
 void AppController::logInfo(const QString& msg)  { LOG_INFO("[QML] {}",  msg.toStdString()); }
 void AppController::logWarn(const QString& msg)  { LOG_WARN("[QML] {}",  msg.toStdString()); }
 void AppController::logError(const QString& msg) { LOG_ERROR("[QML] {}", msg.toStdString()); }
+
+void AppController::copyBuildDiagnosticInfo()
+{
+    QGuiApplication::clipboard()->setText(BuildInfo::diagnosticSummary());
+}
 
 void AppController::reloadConfig()
 {

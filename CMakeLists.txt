@@ -320,6 +320,15 @@ if(BUILD_TESTING)
                 --version "${PROJECT_VERSION}"
         WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
     )
+    if(APPLE)
+        add_test(NAME native_version_metadata
+            COMMAND "${Python3_EXECUTABLE}"
+                    "${CMAKE_SOURCE_DIR}/tests/native_version_metadata_checks.py"
+                    --app-bundle $<TARGET_BUNDLE_DIR:PluginBasedApp>
+                    --version "${PROJECT_VERSION}"
+            WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        )
+    endif()
     add_executable(PluginMetadataValidatorTest
         tests/tst_plugin_metadata_validator.cpp
         core/PluginMetadataValidator.cpp

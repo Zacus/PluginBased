@@ -22,6 +22,11 @@ qt_add_executable(PluginBasedApp
     CrashHandler.cpp
 )
 
+if(WIN32)
+    configure_file(version.rc.in "${CMAKE_CURRENT_BINARY_DIR}/version.rc" @ONLY)
+    target_sources(PluginBasedApp PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/version.rc")
+endif()
+
 # ENABLE_EXPORTS 会在链接时加入 -rdynamic（Linux）/ -Wl,-export_dynamic（macOS）
 # 将主程序所有非 static 符号导出到动态符号表，
 # 使运行时 dlopen 的插件 .so 能直接解析 PluginManager 等宿主符号。
@@ -29,6 +34,10 @@ set_target_properties(PluginBasedApp PROPERTIES
     ENABLE_EXPORTS    ON
     WIN32_EXECUTABLE  TRUE
     MACOSX_BUNDLE     TRUE
+    MACOSX_BUNDLE_GUI_IDENTIFIER "com.pluginbased.app"
+    MACOSX_BUNDLE_BUNDLE_NAME "PluginBased"
+    MACOSX_BUNDLE_SHORT_VERSION_STRING "${PROJECT_VERSION}"
+    MACOSX_BUNDLE_BUNDLE_VERSION "${PROJECT_VERSION}"
 )
 
 # ── PluginBased 1.0 QML 模块（宿主基础设施层）────────────────────
@@ -42,6 +51,7 @@ qt_add_qml_module(PluginBasedApp
     QML_FILES
         qml/main.qml
         qml/HomePanel.qml
+        qml/AboutDialog.qml
     SOURCES
         AppController.h     AppController.cpp
         PluginPathResolver.h PluginPathResolver.cpp

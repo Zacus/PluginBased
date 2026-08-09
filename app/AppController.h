@@ -15,6 +15,7 @@ class AppController : public QObject
 
     Q_PROPERTY(QString appVersion   READ appVersion   CONSTANT)
     Q_PROPERTY(QString appName      READ appName      CONSTANT)
+    Q_PROPERTY(QString buildNumber  READ buildNumber  CONSTANT)
     Q_PROPERTY(bool    pluginsReady READ pluginsReady NOTIFY pluginsReadyChanged)
     Q_PROPERTY(QString currentTheme READ currentTheme NOTIFY currentThemeChanged)
     Q_PROPERTY(QString currentLanguage READ currentLanguage NOTIFY currentLanguageChanged)
@@ -34,8 +35,9 @@ public:
         return s;
     }
 
-    QString appVersion()   const { return QStringLiteral("1.0.0"); }
-    QString appName()      const { return QStringLiteral("PluginBased"); }
+    QString appVersion() const;
+    QString appName() const;
+    QString buildNumber() const;
     bool    pluginsReady() const { return m_pluginsReady; }
     QString currentTheme() const { return m_currentTheme; }
     QString currentLanguage() const;
@@ -50,6 +52,7 @@ public slots:
     Q_INVOKABLE void logInfo(const QString& msg);
     Q_INVOKABLE void logWarn(const QString& msg);
     Q_INVOKABLE void logError(const QString& msg);
+    Q_INVOKABLE void copyBuildDiagnosticInfo();
     /** 热重载配置文件（运行时修改 INI 后调用，无需重启即可生效） */
     Q_INVOKABLE void reloadConfig();
 

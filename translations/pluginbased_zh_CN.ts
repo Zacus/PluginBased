@@ -28,12 +28,39 @@
         <translation>退出</translation>
     </message>
     <message>
+        <source>About</source>
+        <translation>关于</translation>
+    </message>
+    <message>
         <source>Loading plugin UI...</source>
         <translation>正在加载插件界面...</translation>
     </message>
     <message>
         <source>Failed to load plugin UI</source>
         <translation>插件界面加载失败</translation>
+    </message>
+</context>
+<context>
+    <name>AboutDialog</name>
+    <message>
+        <source>About</source>
+        <translation>关于</translation>
+    </message>
+    <message>
+        <source>Version %1</source>
+        <translation>版本 %1</translation>
+    </message>
+    <message>
+        <source>Build %1</source>
+        <translation>构建 %1</translation>
+    </message>
+    <message>
+        <source>Copy diagnostic information</source>
+        <translation>复制诊断信息</translation>
+    </message>
+    <message>
+        <source>Close</source>
+        <translation>关闭</translation>
     </message>
 </context>
 <context>

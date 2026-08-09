@@ -84,6 +84,12 @@ ApplicationWindow {
                     onClicked: AppController.toggleTheme()
                 }
 
+                IconButton {
+                    iconText: "ⓘ"
+                    tooltip: AppController.currentLanguage, qsTr("About")
+                    onClicked: aboutDialog.open()
+                }
+
                 // 插件状态徽章
                 Rectangle {
                     width: badgeRow.implicitWidth + 20; height: 24; radius: 12
@@ -166,6 +172,10 @@ ApplicationWindow {
                 }
             }
         }
+    }
+
+    AboutDialog {
+        id: aboutDialog
     }
 
     // ── 插件页面（通用 Loader 容器，供 pluginCardClicked 使用）─────────────
