@@ -356,6 +356,10 @@ def main():
             "CI should test through the shared Debug preset")
 
     main_cpp = read("app/main.cpp")
+    app_controller_h = read("app/AppController.h")
+    require('setApplicationVersion("1.0.0")' not in main_cpp and
+            'QStringLiteral("1.0.0")' not in app_controller_h,
+            "runtime application version should come from BuildInfo")
     require('"/qml"' in main_cpp,
             "main.cpp should add appDir/qml as a runtime QML import path")
     require("../Resources/qml" in main_cpp,

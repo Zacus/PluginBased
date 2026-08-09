@@ -168,17 +168,52 @@ AppController.reloadConfig()
 # 已完成 release Preset 构建，只执行打包
 ./package.sh --skip-build
 
-# 打包调用方管理的 Release 构建目录，并显式指定 Qt 路径
-./package.sh --skip-build ./build-release --qt-dir "$QT_ROOT"
+# 查看 CMake 定义的应用版本
+./package.sh --version
 
-# 覆盖版本号
-./package.sh --skip-build --version 1.2.0
+# 打包调用方管理的 Release 构建目录
+./package.sh --skip-build /path/to/release-build
 ```
 
-默认打包入口固定使用 `release` Preset，构建目录为 `build-release/`。传入位置参数时，
-脚本保留自定义构建目录支持，但该目录必须是单配置 Release 构建，或是包含 Release
-配置的多配置构建；`--skip-build` 同样会在部署前执行此检查。部署工具路径优先读取
-`QT_DIR`，未设置时自动使用构建 Preset 已采用的 `QT_ROOT`。
+默认打包入口始终使用仓库的 `release` Preset，构建目录为
+`build-release/`，每次先清理整个默认 Release 生成目录（包括 FetchContent 子构建），
+再使用 `cmake --preset release --fresh` 配置，消除旧生成器、旧工具链和旧 Qt cache 带来的
+不确定性。传入位置参数时，脚本保留调用方
+管理的构建目录支持，但该目录必须包含 Release 配置。
+
+打包使用 `CMakeCache.txt` 中的 `PLUGINBASED_QT_ROOT`/`Qt6_DIR` 作为 Qt 唯一
+真实来源。`QT_DIR` 或 `--qt-dir` 只用于显式校验，与构建 Qt 不一致时立即失败，
+不会混用 Homebrew Qt 的部署工具或插件。发布版本只来自 CMake `project(VERSION)`；
+`--version` 仅查询版本，不接受覆盖值。打包配置为 `tools/package.json`，仅依赖
+Python 标准库。
+
+归档前，打包器会在持久化 staging 目录上执行 `tools/verify.py`，任何缺失依赖或
+非系统绝对路径都会阻止归档。`--no-verify` 只用于本地诊断，不应用于发布。
+
+### 产品版本与构建身份
+
+产品版本只有一个人工维护来源：根目录 `CMakeLists.txt` 中的
+`project(PluginBased VERSION 1.0.0)`。发布下一版本时只修改这里；
+`./package.sh --version`、平台原生版本字段、应用“关于”窗口和包名都会读取该值。
+
+配置和构建会生成以下文件，它们属于构建输出，不应提交：
+
+- `<build>/generated/BuildInfoData.h`：编译进应用的只读构建身份；
+- `<build>/build-info.json`：供打包、校验和问题诊断使用的同源数据。
+
+普通本地构建允许工作树为 dirty；缺少 Git 元数据时会明确标记为 `unknown`。
+正式发布必须使用干净、已知且与产品版本匹配的 `vMAJOR.MINOR.PATCH` tag：
+
+```bash
+cmake --preset release --fresh \
+  -DPLUGINBASED_OFFICIAL_BUILD=ON \
+  -DPLUGINBASED_EXPECTED_TAG=v1.0.0
+```
+
+严格校验会拒绝未知提交、dirty 工作树、错误 tag 或 tag/产品版本不一致。构建身份
+只保存产品版本、提交、源码状态和构建工具信息；分支名、用户名、主机名、源码路径
+及远程仓库地址永远不会写入头文件、JSON、日志或复制到剪贴板。GitHub tag 发布使用
+同一套正式构建校验，校验通过后才允许归档和上传。
 
 ### 各平台产物
 

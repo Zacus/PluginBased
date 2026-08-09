@@ -129,7 +129,16 @@ ctest --preset debug
 ctest --test-dir build --output-on-failure
 ```
 
-GitHub Actions workflow 位于 `.github/workflows/ci.yml`。CI 在 macOS 上 checkout 本仓库、相邻 `QtQuickComponents` 仓库和固定 vcpkg，安装同一份 Qt 6.8.3 官方 kit，然后通过 Debug Presets 执行 configure、build、CTest。
+GitHub Actions workflow 位于 `.github/workflows/ci.yml`。CI 在 macOS 上 checkout 本仓库和固定 vcpkg，安装同一份 Qt 6.8.3 官方 kit，`QtQuickComponents` 由 CMake 按锁定提交获取；先通过 Debug Preset 执行 configure、build 和 CTest，再对全新 Release Preset 重复构建/测试，调用 `package.sh` 生成经完整性验证的 DMG 并上传产物。
+
+---
+
+## 版本与问题诊断
+
+“关于”窗口只显示产品版本和八位构建号，不暴露编译器、源码状态或机器信息。
+报告问题时可点击“复制诊断信息”；也可以运行 `PluginBasedApp --version` 查看简要
+版本，运行 `PluginBasedApp --build-info` 或读取发布包内的 `build-info.json` 获取
+完整且经过隐私约束的构建身份。
 
 ---
 
