@@ -4,7 +4,7 @@
 #
 # 用法:
 #   ./package.sh [选项] [构建目录]
-#   默认通过 release Preset 使用 ./build-release；位置参数用于自定义构建目录
+#   默认通过 release Preset 使用 ./build-release
 #
 # 选项:
 #   -q, --qt-dir <路径>   Qt 安装根目录（含 bin/macdeployqt 等）
@@ -13,16 +13,15 @@
 #   -s, --skip-build      跳过编译，直接打包
 #   -b, --build-only      只编译，不打包
 #       --no-verify       跳过发布包完整性验证
-#       --config <文件>   指定配置文件（默认 tools/package.yml）
+#       --config <文件>   指定配置文件（默认 tools/package.json）
 #   -h, --help            显示帮助
 #
 # 依赖:
 #   cmake               编译
-#   python3 + pyyaml    核心打包逻辑（pip3 install pyyaml）
+#   python3             核心打包逻辑
 #   macdeployqt         macOS Qt 框架部署
-#   linuxdeployqt       Linux Qt 库部署（可选，降级为 ldd）
 #   windeployqt         Windows Qt DLL 部署
-#   patchelf            Linux rpath 修正（可选）
+#   ldd / patchelf      Linux 依赖闭包与 rpath 修正
 #   hdiutil             macOS DMG 生成（系统内置）
 #
 # 输出: ./dist/
@@ -46,6 +45,17 @@ cmake_cache_value() {
     sed -n "s/^${key}:[^=]*=//p" "${cache}" | head -1
 }
 
+normalize_path() {
+    local value="${1%/}"
+    if [[ -z "${value}" ]]; then
+        printf '\n'
+    elif command -v cygpath &>/dev/null; then
+        cygpath -m "${value}"
+    else
+        printf '%s\n' "${value}"
+    fi
+}
+
 validate_release_cache() {
     local cache="${BUILD_DIR}/CMakeCache.txt"
     [[ -f "${cache}" ]] || die "构建目录未初始化: ${BUILD_DIR}"
@@ -57,6 +67,38 @@ validate_release_cache() {
     if [[ "${build_type}" != "Release" && ";${config_types};" != *";Release;"* ]]; then
         die "打包要求 Release 构建目录: ${BUILD_DIR}"
     fi
+
+    if [[ "${CUSTOM_BUILD_DIR}" == false ]]; then
+        local generator toolchain expected_toolchain
+        generator="$(cmake_cache_value CMAKE_GENERATOR "${cache}")"
+        toolchain="$(normalize_path "$(cmake_cache_value CMAKE_TOOLCHAIN_FILE "${cache}")")"
+        expected_toolchain="$(normalize_path "${SCRIPT_DIR}/cmake/PluginBasedToolchain.cmake")"
+
+        [[ "${generator}" == "Ninja" ]] ||
+            die "Release 构建目录必须使用 Ninja；请不带 --skip-build 重新打包"
+        [[ "${toolchain}" == "${expected_toolchain}" ]] ||
+            die "Release 构建目录未使用仓库工具链；请不带 --skip-build 重新打包"
+    fi
+}
+
+resolve_packaging_qt_root() {
+    local cache="${BUILD_DIR}/CMakeCache.txt"
+    local cached_qt_root cached_qt_dir requested_qt_root
+    cached_qt_root="$(normalize_path "$(cmake_cache_value PLUGINBASED_QT_ROOT "${cache}")")"
+    cached_qt_dir="$(normalize_path "$(cmake_cache_value Qt6_DIR "${cache}")")"
+    requested_qt_root="$(normalize_path "${QT_DIR}")"
+
+    if [[ -z "${cached_qt_root}" && "${cached_qt_dir}" == */lib/cmake/Qt6 ]]; then
+        cached_qt_root="${cached_qt_dir%/lib/cmake/Qt6}"
+    fi
+    [[ -n "${cached_qt_root}" ]] ||
+        die "无法从 ${cache} 解析构建使用的 Qt 根目录"
+    cached_qt_root="${cached_qt_root%/}"
+
+    if [[ -n "${requested_qt_root}" && "${requested_qt_root}" != "${cached_qt_root}" ]]; then
+        die "打包 Qt 与构建 Qt 不一致: ${requested_qt_root} != ${cached_qt_root}"
+    fi
+    QT_DIR="${cached_qt_root}"
 }
 
 # ── 默认参数 ──────────────────────────────────────────────────────────────────
@@ -68,7 +110,7 @@ QT_DIR="${QT_DIR:-${QT_ROOT:-}}"
 SKIP_BUILD=false
 BUILD_ONLY=false
 NO_VERIFY=false
-CONFIG_FILE="${TOOLS_DIR}/package.yml"
+CONFIG_FILE="${TOOLS_DIR}/package.json"
 JOBS="$(nproc 2>/dev/null || sysctl -n hw.logicalcpu 2>/dev/null || echo 4)"
 
 # ── 参数解析 ──────────────────────────────────────────────────────────────────
@@ -101,11 +143,6 @@ done
 log_step "环境检查"
 
 command -v python3 &>/dev/null || die "缺少 python3"
-python3 -c "import yaml" 2>/dev/null || {
-    log_warn "缺少 PyYAML，正在安装..."
-    pip3 install --quiet pyyaml || die "PyYAML 安装失败，请手动执行: pip3 install pyyaml"
-}
-
 [[ -f "${CONFIG_FILE}" ]] || die "配置文件不存在: ${CONFIG_FILE}"
 
 log_info "构建目录: ${BUILD_DIR}"
@@ -118,27 +155,11 @@ if [[ "${SKIP_BUILD}" == false ]]; then
     command -v cmake &>/dev/null || die "缺少 cmake"
 
     if [[ "${CUSTOM_BUILD_DIR}" == false ]]; then
-        CONFIGURE_ARGS=(--preset "${BUILD_PRESET}")
-        CLEAN_AFTER_CONFIGURE=false
-        CACHE_FILE="${BUILD_DIR}/CMakeCache.txt"
-
-        if [[ -f "${CACHE_FILE}" && -n "${QT_ROOT:-}" ]]; then
-            CACHED_QT_DIR="$(cmake_cache_value Qt6_DIR "${CACHE_FILE}")"
-            EXPECTED_QT_DIR="${QT_ROOT%/}/lib/cmake/Qt6"
-            if [[ -n "${CACHED_QT_DIR}" && "${CACHED_QT_DIR}" != "${EXPECTED_QT_DIR}" ]]; then
-                log_info "检测到 Qt kit 变化，将 fresh configure 并清理旧生成物"
-                CONFIGURE_ARGS+=(--fresh)
-                MANIFEST_INSTALL="$(cmake_cache_value VCPKG_MANIFEST_INSTALL "${CACHE_FILE}")"
-                if [[ -n "${MANIFEST_INSTALL}" ]]; then
-                    CONFIGURE_ARGS+=("-DVCPKG_MANIFEST_INSTALL=${MANIFEST_INSTALL}")
-                fi
-                CLEAN_AFTER_CONFIGURE=true
-            fi
-        fi
-
+        log_info "清理默认 Release 生成目录（包含 FetchContent 子构建）"
+        cmake -E remove_directory "${BUILD_DIR}"
         (
             cd "${SCRIPT_DIR}"
-            cmake "${CONFIGURE_ARGS[@]}"
+            cmake --preset "${BUILD_PRESET}" --fresh
         )
     elif [[ ! -f "${BUILD_DIR}/CMakeCache.txt" ]]; then
         die "自定义构建目录未初始化: ${BUILD_DIR}"
@@ -147,12 +168,6 @@ if [[ "${SKIP_BUILD}" == false ]]; then
     validate_release_cache
 
     if [[ "${CUSTOM_BUILD_DIR}" == false ]]; then
-        if [[ "${CLEAN_AFTER_CONFIGURE}" == true ]]; then
-            (
-                cd "${SCRIPT_DIR}"
-                cmake --build --preset "${BUILD_PRESET}" --target clean
-            )
-        fi
         (
             cd "${SCRIPT_DIR}"
             cmake --build --preset "${BUILD_PRESET}" --parallel "${JOBS}"
@@ -169,6 +184,8 @@ fi
 
 [[ "${BUILD_ONLY}" == true ]] && { log_ok "仅编译模式，结束"; exit 0; }
 
+resolve_packaging_qt_root
+
 # ── 打包（委托给 Python）──────────────────────────────────────────────────────
 log_step "打包"
 
@@ -181,37 +198,14 @@ ARGS=(
 if [[ -n "${QT_DIR:-}" ]]; then
   ARGS+=(--qt-dir "${QT_DIR}")
 fi
+if [[ "${NO_VERIFY}" == true ]]; then
+  ARGS+=(--skip-verify)
+fi
 
 python3 "${TOOLS_DIR}/deploy.py" "${ARGS[@]}"
 
 # ── 完整性验证 ────────────────────────────────────────────────────────────────
-if [[ "${NO_VERIFY}" == false ]]; then
-    log_step "完整性验证"
-
-    # 找到 staging 目录（DMG 前的 .app 或 staging 文件夹）
-    case "$(uname -s)" in
-        Darwin)
-            STAGE="${BUILD_DIR}/_package_macos/PluginBasedApp.app"
-            ;;
-        Linux)
-            # 找 _staging_linux 临时目录（若已清理则跳过）
-            STAGE="$(find "${BUILD_DIR}" -maxdepth 2 -name "PluginBased-*-linux*" \
-                     -type d 2>/dev/null | head -1)"
-            ;;
-        *)
-            STAGE=""
-            ;;
-    esac
-
-    if [[ -n "${STAGE}" && -d "${STAGE}" ]]; then
-        python3 "${TOOLS_DIR}/verify.py" --stage-dir "${STAGE}" \
-            && log_ok "验证通过" \
-            || die "完整性验证失败，未生成可发布的成功结果"
-    else
-        log_warn "未找到 staging 目录，跳过验证（staging 在打包时已清理属正常）"
-        log_info "可手动验证: python3 tools/verify.py --stage-dir <发布包目录>"
-    fi
-fi
+log_info "完整性验证由打包器在归档前执行"
 
 # ── 完成 ──────────────────────────────────────────────────────────────────────
 echo ""

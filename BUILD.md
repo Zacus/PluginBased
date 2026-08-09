@@ -4,7 +4,8 @@
 
 | 工具 | 最低版本 | 说明 |
 |---|---|---|
-| CMake | 3.21 | 构建系统 |
+| CMake | 3.24 | 构建系统（打包使用 `--fresh`） |
+| Ninja | 1.10 | Debug/Release Preset 的固定生成器 |
 | C++ 编译器 | C++17 | GCC 11 / Clang 14 / MSVC 2022 |
 | Qt | 6.8.3（精确版本） | 通过 Qt 官方安装器安装，不由此 vcpkg manifest 提供 |
 | spdlog | 1.17.0#0 | 通过 vcpkg 安装 |
@@ -13,6 +14,16 @@
 ---
 
 ## 安装依赖
+
+推荐先运行统一的环境准备工具：
+
+```bash
+python3 tools/setup_build_environment.py --configure debug
+```
+
+工具优先复用现有 `VCPKG_ROOT`、`QT_ROOT` 和 `~/vcpkg/vcpkg-master` 中的
+Git checkout 与 downloads 缓存；缺少依赖时才安装固定版本，然后直接
+配置仓库自带的 `debug` Preset。它不生成任何本机专用的 Preset 文件。
 
 ### 1. Qt 官方预编译包
 
@@ -30,9 +41,9 @@ patch 版本。CI 使用固定的 `aqtinstall 3.3.0` 下载相同官方包，不
 
 ```bash
 # 安装 vcpkg（如未安装）
-git clone https://github.com/microsoft/vcpkg
-git -C vcpkg checkout ea1a7396b05637a53bf23c078647ecc0edee4b80
-./vcpkg/bootstrap-vcpkg.sh   # Windows: bootstrap-vcpkg.bat
+git clone https://github.com/microsoft/vcpkg "$HOME/vcpkg/vcpkg-master"
+git -C "$HOME/vcpkg/vcpkg-master" checkout ea1a7396b05637a53bf23c078647ecc0edee4b80
+"$HOME/vcpkg/vcpkg-master/bootstrap-vcpkg.sh"   # Windows: bootstrap-vcpkg.bat
 ```
 
 项目通过 `vcpkg.json` 精确锁定直接依赖：`spdlog 1.17.0#0`、
@@ -50,7 +61,16 @@ git -C vcpkg checkout ea1a7396b05637a53bf23c078647ecc0edee4b80
 `builtin-baseline`/`overrides` 与 `.github/workflows/ci.yml` 的 vcpkg checkout
 `ref`，然后重新执行配置、构建和 CTest。不要只更新其中一处。
 
-### 3. 设置构建环境
+### 3. 可选的路径覆盖
+
+仓库内的 `cmake/PluginBasedToolchain.cmake` 会按平台默认使用：
+
+- vcpkg：`~/vcpkg/vcpkg-master`
+- macOS Qt：`~/Qt/6.8.3/macos`
+- Linux Qt：`~/Qt/6.8.3/gcc_64`
+- Windows Qt：`~/Qt/6.8.3/msvc2022_64`
+
+只有在依赖不在默认位置时，才需要设置以下环境变量：
 
 ```bash
 # macOS
@@ -83,6 +103,8 @@ cmake --build --preset debug --parallel
 ctest --preset debug
 ```
 
+Preset 不保存个人路径，Debug/Release 均固定使用 Ninja。
+
 ### Release 构建（发布前）
 
 ```bash
@@ -97,10 +119,9 @@ ctest --preset release
 
 ```bash
 cmake -S . -B build \
+      -G Ninja \
       -DCMAKE_BUILD_TYPE=Debug \
-      -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" \
-      -DCMAKE_PREFIX_PATH="$QT_ROOT" \
-      -DQt6_DIR="$QT_ROOT/lib/cmake/Qt6"
+      -DCMAKE_TOOLCHAIN_FILE=cmake/PluginBasedToolchain.cmake
 ```
 
 Qt 升级必须在同一变更中同步更新 `CMakeLists.txt` 的 EXACT 版本、CI 的
@@ -220,14 +241,18 @@ cmake --preset release --fresh \
 | 平台 | 产物 | 依赖工具 |
 |---|---|---|
 | macOS | `dist/PluginBased-<ver>-macOS.dmg` | `macdeployqt`（Qt 自带）、`hdiutil`（系统自带）|
-| Linux | `dist/PluginBased-<ver>-linux-x86_64.tar.gz` | `linuxdeployqt`（可选，否则手动收集）|
-| Linux | `dist/PluginBased-<ver>-linux-x86_64.AppImage` | `appimagetool`（可选）|
+| Linux | `dist/PluginBased-<ver>-linux-x86_64.tar.gz` | `ldd`、`patchelf` |
 | Windows | `dist/PluginBased-<ver>-win64.zip` | `windeployqt`（Qt 自带）|
-| Windows | `dist/PluginBased-<ver>-win64-installer.exe` | NSIS `makensis`（可选）|
+
+Linux 和 Windows 都从主程序、业务插件、Qt/QML 插件出发递归收集运行时
+依赖闭包，未解析的 FFmpeg、日志库或 Qt 传递依赖会直接使打包失败。可检查的
+staging 分别位于 `build-release/_package_macos`、`_package_linux`和 `_package_windows`。
 
 ### macOS 注意事项
 
-项目通过 `FetchContent` 引入 `QtQuickComponents` 子库，编译时该库的 rpath 只含构建目录，`macdeployqt` 会报 `Cannot resolve rpath @rpath/QtXxx.framework`。`package.sh` 在调用 `macdeployqt` 前会自动用 `install_name_tool` 修复所有 Mach-O 的 rpath，无需手动处理。
+项目通过 `FetchContent` 自动获取固定提交的 `QtQuickComponents`。打包器先运行
+`macdeployqt`，再补齐 QML/插件的传递 framework 与 dylib，统一改写 install name/rpath、
+重新签名并验证，任何 `install_name_tool` 失败都会终止发布。
 
 ---
 

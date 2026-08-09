@@ -42,6 +42,16 @@ SYSTEM_LIB_PREFIXES = {
     "Windows": ["C:\\Windows\\System32\\", "C:\\Windows\\SysWOW64\\"],
 }
 
+WINDOWS_SYSTEM_DLLS = {
+    "advapi32.dll", "bcrypt.dll", "cfgmgr32.dll", "comdlg32.dll",
+    "crypt32.dll", "d3d11.dll", "dwmapi.dll", "dxgi.dll", "gdi32.dll",
+    "imm32.dll", "iphlpapi.dll", "kernel32.dll", "mpr.dll", "netapi32.dll",
+    "ntdll.dll", "ole32.dll", "oleaut32.dll", "opengl32.dll", "powrprof.dll",
+    "propsys.dll", "psapi.dll", "rpcrt4.dll", "secur32.dll", "setupapi.dll",
+    "shell32.dll", "shlwapi.dll", "user32.dll", "userenv.dll", "uxtheme.dll",
+    "version.dll", "winhttp.dll", "winmm.dll", "winspool.drv", "ws2_32.dll",
+}
+
 
 def get_direct_deps(binary: Path) -> list[str]:
     """获取二进制的直接动态库依赖名称列表。"""
@@ -60,13 +70,19 @@ def _deps_macos(binary: Path) -> list[str]:
                                        stderr=subprocess.DEVNULL, text=True)
     except (subprocess.CalledProcessError, FileNotFoundError):
         return []
-    result = []
-    for line in out.splitlines()[1:]:
-        line = line.strip()
-        dep = line.split("(")[0].strip()
-        if dep:
-            result.append(dep)
-    return result
+    return parse_otool_dependencies(out)
+
+
+def parse_otool_dependencies(output: str) -> list[str]:
+    """Parse fat or thin Mach-O dependencies without treating arch headers as deps."""
+    dependencies: list[str] = []
+    for raw_line in output.splitlines():
+        if not raw_line.startswith(("\t", " ")):
+            continue
+        dependency = raw_line.strip().split("(", 1)[0].strip()
+        if dependency:
+            dependencies.append(dependency)
+    return dependencies
 
 def _deps_linux(binary: Path) -> list[str]:
     try:
@@ -76,9 +92,12 @@ def _deps_linux(binary: Path) -> list[str]:
         return []
     result = []
     for line in out.splitlines():
-        m = re.search(r"=> (.+?) \(", line)
-        if m:
-            result.append(m.group(1).strip())
+        unresolved = re.search(r"^(\S+)\s+=>\s+not found$", line.strip())
+        resolved = re.search(r"=> (.+?) \(", line)
+        if unresolved:
+            result.append(unresolved.group(1))
+        elif resolved:
+            result.append(resolved.group(1).strip())
         elif "=>" not in line and line.strip().endswith(")"):
             # 直接依赖（无 =>）
             result.append(line.strip().split()[0])
@@ -111,6 +130,12 @@ def is_system_lib(dep: str) -> bool:
     # Linux vDSO
     if "linux-vdso" in dep or "ld-linux" in dep:
         return True
+    if sys_name == "Windows":
+        name = Path(dep.replace("\\", "/")).name.casefold()
+        if (name in WINDOWS_SYSTEM_DLLS
+                or name.startswith("api-ms-win-")
+                or name.startswith("ext-ms-win-")):
+            return True
     return False
 
 
@@ -127,22 +152,22 @@ def scan_bundle(stage_dir: Path) -> tuple[list[str], int]:
     """
     sys_name = platform.system()
 
-    # 收集包内所有二进制文件
-    suffixes = {
-        "Darwin":  {".so", ".dylib", ""},    # macOS 可执行无后缀
-        "Linux":   {".so", ""},
-        "Windows": {".dll", ".exe"},
-    }.get(sys_name, {".so", ""})
-
+    # 收集包内所有二进制文件；Linux 版本化 SONAME 的后缀不是 .so。
+    all_bundle_files = [path for path in stage_dir.rglob("*") if path.is_file()]
     bundle_binaries: list[Path] = []
-    for f in stage_dir.rglob("*"):
-        if not f.is_file():
-            continue
-        if f.suffix in suffixes or (not f.suffix and os.access(f, os.X_OK)):
+    for f in all_bundle_files:
+        is_binary = False
+        if sys_name == "Darwin":
+            is_binary = f.suffix in {".so", ".dylib"} or os.access(f, os.X_OK)
+        elif sys_name == "Linux":
+            is_binary = ".so" in f.name or os.access(f, os.X_OK)
+        elif sys_name == "Windows":
+            is_binary = f.suffix.casefold() in {".dll", ".exe"}
+        if is_binary:
             bundle_binaries.append(f)
 
     # 建立包内文件名 → 路径的快速查找表
-    bundle_files: dict[str, Path] = {f.name: f for f in bundle_binaries}
+    bundle_files: dict[str, Path] = {f.name.casefold(): f for f in all_bundle_files}
 
     issues: list[str] = []
     checked = 0
@@ -154,27 +179,52 @@ def scan_bundle(stage_dir: Path) -> tuple[list[str], int]:
         checked += 1
 
         for dep in deps:
-            dep_name = Path(dep).name
+            dep_name = Path(dep.replace("\\", "/")).name
 
             # 系统库，跳过
             if is_system_lib(dep):
                 continue
 
-            # 相对引用（@rpath 等），检查包内是否有对应文件
-            if dep.startswith("@"):
-                if dep_name not in bundle_files:
+            if sys_name == "Linux":
+                dependency_path = Path(dep)
+                if dependency_path.is_absolute():
+                    try:
+                        dependency_path.resolve().relative_to(stage_dir.resolve())
+                    except ValueError:
+                        issues.append(
+                            f"  不可重定位依赖: {binary.relative_to(stage_dir)}\n"
+                            f"    → {dep}"
+                        )
+                    continue
+                if dep_name.casefold() not in bundle_files:
                     issues.append(
                         f"  缺失: {binary.relative_to(stage_dir)}\n"
                         f"    → {dep}  (包内未找到 {dep_name})"
                     )
                 continue
 
-            # 绝对路径：检查是否存在，或包内有同名文件
-            if not Path(dep).exists() and dep_name not in bundle_files:
-                issues.append(
-                    f"  缺失: {binary.relative_to(stage_dir)}\n"
-                    f"    → {dep}"
-                )
+            if sys_name == "Windows":
+                if dep_name.casefold() not in bundle_files:
+                    issues.append(
+                        f"  缺失: {binary.relative_to(stage_dir)}\n"
+                        f"    → {dep}  (包内未找到 {dep_name})"
+                    )
+                continue
+
+            # macOS 相对引用（@rpath 等），检查包内是否有对应文件
+            if dep.startswith("@"):
+                if dep_name.casefold() not in bundle_files:
+                    issues.append(
+                        f"  缺失: {binary.relative_to(stage_dir)}\n"
+                        f"    → {dep}  (包内未找到 {dep_name})"
+                    )
+                continue
+
+            # 任何非系统绝对路径都会把发布包绑定到构建机。
+            issues.append(
+                f"  不可重定位依赖: {binary.relative_to(stage_dir)}\n"
+                f"    → {dep}"
+            )
 
     return issues, checked
 

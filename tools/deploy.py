@@ -16,6 +16,7 @@ deploy.py — PluginBased 核心打包模块
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import platform
 import re
@@ -24,13 +25,7 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
-from typing import NamedTuple, Optional
-
-try:
-    import yaml
-except ImportError:
-    print("[ERROR] 缺少 PyYAML，请执行: pip3 install pyyaml", file=sys.stderr)
-    sys.exit(1)
+from typing import Callable, NamedTuple, Optional
 
 # ── 日志（CI 友好，带颜色，可通过 NO_COLOR 关闭）─────────────────────────────
 _USE_COLOR = sys.stdout.isatty() and os.environ.get("NO_COLOR") != "1"
@@ -73,29 +68,35 @@ def current_platform() -> str:
 # =============================================================================
 # Qt 工具查找
 # =============================================================================
-def find_qt_tool(name: str, qt_dir: Optional[Path] = None) -> Optional[Path]:
-    """按优先级查找 Qt 工具：qt_dir → PATH → 常见安装位置。"""
+def find_qt_tool(
+    name: str,
+    qt_dir: Optional[Path] = None,
+    *,
+    allow_path_fallback: bool = True,
+) -> Optional[Path]:
+    """优先从指定 Qt kit 查找工具；仅显式允许时才查找 PATH。"""
     candidates: list[Path] = []
 
     if qt_dir:
         candidates.append(qt_dir / "bin" / name)
 
-    # PATH
-    found = shutil.which(name)
-    if found:
-        candidates.append(Path(found))
+    if allow_path_fallback:
+        found = shutil.which(name)
+        if found:
+            candidates.append(Path(found))
 
     # 常见安装位置
-    home = Path.home()
-    for pattern in [
-        "/usr/local/opt/qt/bin",
-        "/usr/lib/qt6/bin",
-        str(home / "Qt" / "6.*" / "macos" / "bin"),
-        str(home / "Qt" / "6.*" / "gcc_64" / "bin"),
-    ]:
-        import glob
-        for p in sorted(glob.glob(pattern)):
-            candidates.append(Path(p) / name)
+    if allow_path_fallback:
+        home = Path.home()
+        for pattern in [
+            "/usr/local/opt/qt/bin",
+            "/usr/lib/qt6/bin",
+            str(home / "Qt" / "6.*" / "macos" / "bin"),
+            str(home / "Qt" / "6.*" / "gcc_64" / "bin"),
+        ]:
+            import glob
+            for p in sorted(glob.glob(pattern)):
+                candidates.append(Path(p) / name)
 
     for c in candidates:
         if c.exists() and os.access(c, os.X_OK):
@@ -103,18 +104,40 @@ def find_qt_tool(name: str, qt_dir: Optional[Path] = None) -> Optional[Path]:
     return None
 
 
-def detect_qt_dir(build_dir: Path) -> Optional[Path]:
-    """从 CMakeCache.txt 读取 Qt6_DIR，推导出 Qt 安装根目录。"""
+def cmake_cache_value(build_dir: Path, key: str) -> Optional[str]:
     cache = build_dir / "CMakeCache.txt"
     if not cache.exists():
         return None
     for line in cache.read_text().splitlines():
-        if line.startswith("Qt6_DIR:"):
-            qt6_dir = Path(line.split("=", 1)[1].strip())
-            # Qt6_DIR 通常是 .../Qt/6.x.x/macos/lib/cmake/Qt6
-            # 安装根目录上溯三级：lib/cmake/Qt6 → lib/cmake → lib → 安装根
-            return qt6_dir.parent.parent.parent
+        if line.startswith(f"{key}:"):
+            return line.split("=", 1)[1].strip()
     return None
+
+
+def detect_qt_dir(build_dir: Path) -> Optional[Path]:
+    """从 CMakeCache.txt 读取构建时的 Qt kit 根目录。"""
+    configured_root = cmake_cache_value(build_dir, "PLUGINBASED_QT_ROOT")
+    if configured_root:
+        return Path(configured_root)
+    configured_qt6_dir = cmake_cache_value(build_dir, "Qt6_DIR")
+    if configured_qt6_dir:
+        return Path(configured_qt6_dir).parent.parent.parent
+    return None
+
+
+def resolve_qt_root(
+    build_dir: Path,
+    qt_dir: Optional[Path] = None,
+) -> Optional[Path]:
+    """解析打包 Qt，并拒绝与构建 Qt 不一致的覆盖。"""
+    build_qt = detect_qt_dir(build_dir)
+    build_qt = build_qt.expanduser().resolve() if build_qt else None
+    requested_qt = qt_dir.expanduser().resolve() if qt_dir else None
+    if build_qt and requested_qt and build_qt != requested_qt:
+        raise ValueError(
+            f"deployment Qt '{requested_qt}' does not match build Qt '{build_qt}'"
+        )
+    return build_qt or requested_qt
 
 
 class QtInstallPaths(NamedTuple):
@@ -137,8 +160,9 @@ def detect_qt_install_paths(
     qt_dir: Optional[Path] = None,
 ) -> Optional[QtInstallPaths]:
     """Resolve Qt runtime locations using qtpaths, with layout fallbacks."""
-    root = detect_qt_dir(build_dir) or qt_dir
-    query_tool = find_qt_tool("qtpaths", qt_dir)
+    root = resolve_qt_root(build_dir, qt_dir)
+    query_tool = find_qt_tool(
+        "qtpaths", root, allow_path_fallback=root is None)
     queried: dict[str, Path] = {}
     if query_tool:
         result = run([
@@ -153,7 +177,7 @@ def detect_qt_install_paths(
             for line in result.stdout.splitlines():
                 key, separator, value = line.partition(":")
                 if separator and value:
-                    queried[key] = Path(value)
+                    queried[key] = Path(value).expanduser().resolve()
 
     prefix = queried.get("QT_INSTALL_PREFIX") or root
     if not prefix:
@@ -197,34 +221,107 @@ def get_dependencies(binary: Path) -> list[Path]:
 def _deps_macos(binary: Path) -> list[Path]:
     result = run(["otool", "-L", str(binary)], capture=True, check=False)
     deps = []
-    for line in result.stdout.splitlines()[1:]:
-        line = line.strip()
-        if not line or line.startswith("@"):
+    for dependency in parse_otool_dependencies(result.stdout):
+        if dependency.startswith("@"):
             continue
-        path = Path(line.split("(")[0].strip())
+        path = Path(dependency)
         if path.exists():
             deps.append(path)
     return deps
 
+
+def parse_otool_dependencies(output: str) -> list[str]:
+    """Parse fat or thin Mach-O dependencies without treating arch headers as deps."""
+    dependencies: list[str] = []
+    for raw_line in output.splitlines():
+        if not raw_line.startswith(("\t", " ")):
+            continue
+        dependency = raw_line.strip().split("(", 1)[0].strip()
+        if dependency:
+            dependencies.append(dependency)
+    return dependencies
+
 def _deps_linux(binary: Path) -> list[Path]:
     result = run(["ldd", str(binary)], capture=True, check=False)
-    deps = []
-    for line in result.stdout.splitlines():
-        m = re.search(r"=> (.+?) \(", line)
-        if m:
-            p = Path(m.group(1).strip())
-            if p.exists() and p.name != "linux-vdso.so.1":
-                deps.append(p)
-    return deps
+    return [Path(dependency) for dependency in parse_ldd_dependencies(result.stdout)
+            if Path(dependency).is_absolute() and Path(dependency).exists()]
 
 def _deps_windows(binary: Path) -> list[Path]:
     result = run(["dumpbin", "/dependents", str(binary)], capture=True, check=False)
-    deps = []
-    for line in result.stdout.splitlines():
-        line = line.strip()
-        if line.endswith(".dll") and not line.startswith("Dump"):
-            deps.append(Path(line))
-    return deps
+    return [Path(dependency) for dependency in parse_dumpbin_dependencies(result.stdout)]
+
+
+def parse_ldd_dependencies(output: str) -> list[str]:
+    """Parse both resolved and unresolved dependencies from ldd output."""
+    dependencies: list[str] = []
+    for raw_line in output.splitlines():
+        line = raw_line.strip()
+        if not line or "linux-vdso" in line:
+            continue
+        unresolved = re.match(r"(\S+)\s+=>\s+not found$", line)
+        if unresolved:
+            dependencies.append(unresolved.group(1))
+            continue
+        resolved = re.match(r"\S+\s+=>\s+(\S+)\s+\(", line)
+        if resolved:
+            dependencies.append(resolved.group(1))
+            continue
+        direct = re.match(r"(/\S+)\s+\(", line)
+        if direct:
+            dependencies.append(direct.group(1))
+    return dependencies
+
+
+def parse_dumpbin_dependencies(output: str) -> list[str]:
+    """Parse dependency names from dumpbin /dependents output."""
+    dependencies: list[str] = []
+    for raw_line in output.splitlines():
+        line = raw_line.strip()
+        if re.fullmatch(r"[^\s]+\.dll", line, re.IGNORECASE):
+            dependencies.append(line)
+    return dependencies
+
+
+def read_linux_runtime_dependencies(binary: Path) -> list[str]:
+    result = run(["ldd", str(binary)], capture=True, check=False)
+    if result.returncode != 0:
+        raise RuntimeError(f"ldd failed for runtime binary: {binary}")
+    return parse_ldd_dependencies(result.stdout)
+
+
+def read_windows_runtime_dependencies(binary: Path) -> list[str]:
+    result = run(["dumpbin", "/dependents", str(binary)], capture=True, check=False)
+    if result.returncode != 0:
+        raise RuntimeError(f"dumpbin failed for runtime binary: {binary}")
+    return parse_dumpbin_dependencies(result.stdout)
+
+
+def is_linux_system_dependency(dependency: str) -> bool:
+    return (
+        "linux-vdso" in dependency
+        or "ld-linux" in dependency
+        or dependency.startswith(("/lib/", "/lib64/", "/usr/lib/", "/usr/lib64/"))
+    )
+
+
+WINDOWS_SYSTEM_DLLS = {
+    "advapi32.dll", "bcrypt.dll", "cfgmgr32.dll", "comdlg32.dll",
+    "crypt32.dll", "d3d11.dll", "dwmapi.dll", "dxgi.dll", "gdi32.dll",
+    "imm32.dll", "iphlpapi.dll", "kernel32.dll", "mpr.dll", "netapi32.dll",
+    "ntdll.dll", "ole32.dll", "oleaut32.dll", "opengl32.dll", "powrprof.dll",
+    "propsys.dll", "psapi.dll", "rpcrt4.dll", "secur32.dll", "setupapi.dll",
+    "shell32.dll", "shlwapi.dll", "user32.dll", "userenv.dll", "uxtheme.dll",
+    "version.dll", "winhttp.dll", "winmm.dll", "winspool.drv", "ws2_32.dll",
+}
+
+
+def is_windows_system_dependency(dependency: str) -> bool:
+    name = Path(dependency.replace("\\", "/")).name.casefold()
+    return (
+        name in WINDOWS_SYSTEM_DLLS
+        or name.startswith("api-ms-win-")
+        or name.startswith("ext-ms-win-")
+    )
 
 
 def collect_qt_libs(binary: Path, qt_lib_dir: Path, visited: Optional[set] = None) -> set[Path]:
@@ -258,6 +355,146 @@ def collect_qt_libs(binary: Path, qt_lib_dir: Path, visited: Optional[set] = Non
     return result
 
 
+def copy_runtime_dependency_closure(
+    initial_binaries: list[Path],
+    destination_dir: Path,
+    dependency_reader: Callable[[Path], list[str]],
+    search_roots: list[Path],
+    is_system_dependency: Callable[[str], bool],
+) -> list[Path]:
+    """递归复制所有非系统运行时依赖，无法解析时立即失败。"""
+    destination_dir.mkdir(parents=True, exist_ok=True)
+    normalized_roots = [root.expanduser().resolve() for root in search_roots
+                        if root.exists()]
+    queue = [binary.expanduser().resolve() for binary in initial_binaries]
+    inspected: set[Path] = set()
+    copied: list[Path] = []
+
+    def locate(dependency: str) -> Optional[Path]:
+        candidate = Path(dependency)
+        if candidate.is_absolute() and candidate.is_file():
+            return candidate
+
+        destination_candidate = destination_dir / candidate.name
+        if destination_candidate.is_file():
+            return destination_candidate
+
+        for root in normalized_roots:
+            for relative in (candidate, Path(candidate.name)):
+                direct = root / relative
+                if direct.is_file():
+                    return direct
+            matches = sorted(root.rglob(candidate.name))
+            if matches:
+                return matches[0]
+        return None
+
+    while queue:
+        binary = queue.pop(0)
+        if binary in inspected:
+            continue
+        if not binary.is_file():
+            raise RuntimeError(f"runtime binary does not exist: {binary}")
+        inspected.add(binary)
+
+        for dependency in dependency_reader(binary):
+            if is_system_dependency(dependency):
+                continue
+            source = locate(dependency)
+            if source is None:
+                raise RuntimeError(
+                    f"cannot resolve runtime dependency '{dependency}' required by '{binary}'"
+                )
+
+            target_name = Path(dependency).name or source.name
+            try:
+                source.resolve().relative_to(destination_dir.resolve())
+                queue.append(source.resolve())
+                continue
+            except ValueError:
+                pass
+
+            target = destination_dir / target_name
+            if target.exists():
+                queue.append(target.resolve())
+                continue
+            shutil.copy2(source, target)
+            copied.append(target)
+            queue.append(target.resolve())
+
+    return copied
+
+
+def runtime_dependency_search_roots(
+    build_dir: Path,
+    qt_paths: QtInstallPaths,
+) -> list[Path]:
+    """Return project, Qt, and vcpkg runtime roots used by the current build."""
+    roots = [
+        build_dir / "app",
+        build_dir / "plugins",
+        build_dir,
+        qt_paths.root / "bin",
+        qt_paths.libraries,
+        qt_paths.plugins,
+        qt_paths.qml,
+    ]
+
+    installed_value = cmake_cache_value(build_dir, "VCPKG_INSTALLED_DIR")
+    triplet = cmake_cache_value(build_dir, "VCPKG_TARGET_TRIPLET")
+    if installed_value:
+        installed = Path(installed_value)
+        if not installed.is_absolute():
+            installed = build_dir / installed
+        if triplet:
+            roots.extend([
+                installed / triplet / "bin",
+                installed / triplet / "lib",
+            ])
+
+    unique_roots: list[Path] = []
+    seen: set[Path] = set()
+    for root in roots:
+        resolved = root.expanduser().resolve()
+        if resolved not in seen and resolved.exists():
+            seen.add(resolved)
+            unique_roots.append(resolved)
+    return unique_roots
+
+
+def linux_runtime_binaries(stage: Path, app_binary: str) -> list[Path]:
+    """Collect ELF candidates without treating launcher scripts as binaries."""
+    candidates: list[Path] = []
+    for path in stage.rglob("*"):
+        if not path.is_file():
+            continue
+        if path.name == app_binary or ".so" in path.name:
+            candidates.append(path)
+    return candidates
+
+
+def windows_runtime_binaries(stage: Path) -> list[Path]:
+    return [path for path in stage.rglob("*")
+            if path.is_file() and path.suffix.casefold() in {".exe", ".dll"}]
+
+
+def verify_staging(stage: Path, build_dir: Path, *, enabled: bool) -> None:
+    """Run the release verifier before any archive is created."""
+    if not enabled:
+        warn("已显式跳过发布包完整性验证")
+        return
+    step("完整性验证")
+    run([
+        sys.executable,
+        str(Path(__file__).parent / "verify.py"),
+        "--stage-dir",
+        str(stage),
+        "--expected-version",
+        _read_version(build_dir),
+    ], check=True)
+    ok("发布包完整性验证通过")
+
+
 # =============================================================================
 # rpath 修正
 # =============================================================================
@@ -275,7 +512,7 @@ def fix_rpath_macos(binary: Path, frameworks_rpath: str = "@executable_path/../F
         if rp.startswith("@"):
             continue  # 已是相对路径，保留
         # 删除绝对路径（构建目录）
-        run(["install_name_tool", "-delete_rpath", rp, str(binary)], check=False)
+        run(["install_name_tool", "-delete_rpath", rp, str(binary)], check=True)
         info(f"  删除 rpath: {rp}")
 
     if frameworks_rpath not in rpaths:
@@ -305,12 +542,7 @@ def collect_framework_binaries(root: Path) -> list[Path]:
 def fix_macos_dep_paths(binary: Path) -> None:
     result = run(["otool", "-L", str(binary)], capture=True, check=True)
 
-    for line in result.stdout.splitlines()[1:]:
-        line = line.strip()
-        if not line:
-            continue
-
-        dep = line.split("(")[0].strip()
+    for dep in parse_otool_dependencies(result.stdout):
 
         if dep.startswith("/System") or dep.startswith("/usr/lib"):
             continue
@@ -354,19 +586,14 @@ def fix_macos_dep_paths(binary: Path) -> None:
         print(f"        OLD: {dep}")
         print(f"        NEW: {new_path}")
 
-        r = run([
+        run([
             "install_name_tool",
             "-change",
             dep,
             new_path,
             str(binary)
-        ], capture=True, check=False)
-
-        if r.returncode != 0:
-            print(f"[ERROR] 修改失败: {dep}")
-            print(r.stderr)
-        else:
-            print(f"[OK] 修改成功")
+        ], capture=True, check=True)
+        print("[OK] 修改成功")
 
 def fix_framework_id(binary: Path):
     if ".framework" not in str(binary):
@@ -382,7 +609,7 @@ def fix_framework_id(binary: Path):
         "-id",
         new_id,
         str(binary)
-    ], check=False)
+    ], check=True)
 
     print(f"[ID] {binary} -> {new_id}")
 
@@ -397,7 +624,7 @@ def fix_dylib_id(binary: Path):
         "-id",
         new_id,
         str(binary)
-    ], check=False)
+    ], check=True)
 
     print(f"[ID] {binary} -> {new_id}")
 
@@ -407,10 +634,10 @@ def make_writable(p: Path):
 
 def fix_rpath_linux(binary: Path, lib_rpath: str = "$ORIGIN/../lib") -> None:
     """修正 Linux 二进制的 rpath（需要 patchelf）。"""
-    if not shutil.which("patchelf"):
-        warn("未找到 patchelf，跳过 rpath 修正（建议安装: apt/brew install patchelf）")
-        return
-    run(["patchelf", "--set-rpath", lib_rpath, str(binary)], check=False)
+    patchelf = shutil.which("patchelf")
+    if not patchelf:
+        raise RuntimeError("缺少 Linux 发布必需工具 patchelf")
+    run([patchelf, "--set-rpath", lib_rpath, str(binary)], check=True)
     info(f"  设置 rpath: {lib_rpath}")
 
 
@@ -597,6 +824,23 @@ def prepare_macos_bundle(
     return staged_bundle
 
 
+def prepare_platform_staging(
+    build_dir: Path,
+    platform_name: str,
+    package_name: str,
+) -> Path:
+    """Create a deterministic, inspectable staging directory for packaging."""
+    staging_root = build_dir / f"_package_{platform_name}"
+    if staging_root.is_dir() and not staging_root.is_symlink():
+        shutil.rmtree(staging_root)
+    elif staging_root.exists() or staging_root.is_symlink():
+        staging_root.unlink()
+
+    stage = staging_root / package_name
+    stage.mkdir(parents=True)
+    return stage
+
+
 def macdeployqt_command(
     macdeployqt: Path,
     bundle: Path,
@@ -651,8 +895,7 @@ def copy_missing_macos_runtime_dependencies(
         if result.returncode != 0:
             continue
 
-        for line in result.stdout.splitlines()[1:]:
-            dependency = line.strip().split("(")[0].strip()
+        for dependency in parse_otool_dependencies(result.stdout):
             if dependency.startswith("@rpath/"):
                 relative = Path(dependency.removeprefix("@rpath/"))
                 absolute_source: Optional[Path] = None
@@ -709,7 +952,14 @@ def copy_missing_macos_runtime_dependencies(
 # =============================================================================
 # macOS 打包
 # =============================================================================
-def package_macos(build_dir: Path, dist_dir: Path, cfg: dict, qt_dir: Optional[Path]) -> Path:
+def package_macos(
+    build_dir: Path,
+    dist_dir: Path,
+    cfg: dict,
+    qt_dir: Optional[Path],
+    *,
+    verify: bool = True,
+) -> Path:
     step("macOS 打包")
 
     app_name   = cfg["app"]["name"]
@@ -720,11 +970,13 @@ def package_macos(build_dir: Path, dist_dir: Path, cfg: dict, qt_dir: Optional[P
     if not source_bundle.exists():
         die(f".app bundle 不存在: {source_bundle}")
 
-    mdqt = find_qt_tool("macdeployqt", qt_dir)
+    resolved_qt = resolve_qt_root(build_dir, qt_dir)
+    mdqt = find_qt_tool(
+        "macdeployqt", resolved_qt, allow_path_fallback=resolved_qt is None)
     if not mdqt:
         die("找不到 macdeployqt。请设置 QT_DIR 环境变量或使用 --qt-dir 参数。")
 
-    qt_paths = detect_qt_install_paths(build_dir, qt_dir)
+    qt_paths = detect_qt_install_paths(build_dir, resolved_qt)
     if not qt_paths:
         die("无法确定 Qt 安装根目录，请通过 --qt-dir 指定")
     info(f"Qt 安装目录: {qt_paths.root}")
@@ -821,6 +1073,7 @@ def package_macos(build_dir: Path, dist_dir: Path, cfg: dict, qt_dir: Optional[P
     ])
 
     ok("签名完成")
+    verify_staging(bundle, build_dir, enabled=verify)
 
     # ── 6. 生成 DMG ───────────────────────────────────────────────────────────
     step("生成 DMG")
@@ -848,118 +1101,103 @@ def package_macos(build_dir: Path, dist_dir: Path, cfg: dict, qt_dir: Optional[P
 # =============================================================================
 # Linux 打包
 # =============================================================================
-def package_linux(build_dir: Path, dist_dir: Path, cfg: dict, qt_dir: Optional[Path]) -> Path:
+def package_linux(
+    build_dir: Path,
+    dist_dir: Path,
+    cfg: dict,
+    qt_dir: Optional[Path],
+    *,
+    verify: bool = True,
+) -> Path:
     step("Linux 打包")
 
-    app_name   = cfg["app"]["name"]
+    app_name = cfg["app"]["name"]
     app_binary = cfg["app"]["binary"]
-    layout     = cfg["layout"]["linux"]
-
+    layout = cfg["layout"]["linux"]
     binary = build_dir / "app" / app_binary
-    if not binary.exists():
-        die(f"可执行文件不存在: {binary}")
+    if not binary.is_file():
+        raise FileNotFoundError(f"可执行文件不存在: {binary}")
 
-    version  = _read_version(build_dir)
+    version = _read_version(build_dir)
     pkg_name = f"{app_name}-{version}-linux-x86_64"
+    stage = prepare_platform_staging(build_dir, "linux", pkg_name)
+    bin_dir = stage / layout["bin"]
+    plug_dir = stage / layout["plugins"]
+    qml_dir = stage / layout["qml"]
+    lib_dir = stage / layout["lib"]
+    for directory in (bin_dir, plug_dir, qml_dir, lib_dir):
+        directory.mkdir(parents=True, exist_ok=True)
 
-    with tempfile.TemporaryDirectory() as tmp:
-        stage = Path(tmp) / pkg_name
-        bin_dir  = stage / layout["bin"]
-        plug_dir = stage / layout["plugins"]
-        qml_dir  = stage / layout["qml"]
-        lib_dir  = stage / layout["lib"]
-        for d in [bin_dir, plug_dir, qml_dir, lib_dir]:
-            d.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(binary, bin_dir / app_binary)
+    for plugin in (build_dir / "plugins").glob("*.so"):
+        shutil.copy2(plugin, plug_dir / plugin.name)
+        info(f"  业务插件: {plugin.name}")
+    resource_count = copy_runtime_resources(build_dir, stage, layout, "linux")
+    info(f"  运行时清单/元数据/主题: {resource_count} 个文件")
 
-        # 主程序
-        shutil.copy2(binary, bin_dir / app_binary)
+    for module in cfg.get("qml_modules", []):
+        source = build_dir / module
+        if source.is_dir():
+            shutil.copytree(source, qml_dir / module)
+            info(f"  QML: {module}/")
 
-        # 业务插件
-        for f in (build_dir / "plugins").glob("*.so"):
-            shutil.copy2(f, plug_dir / f.name)
-            info(f"  业务插件: {f.name}")
-        resource_count = copy_runtime_resources(build_dir, stage, layout, "linux")
-        info(f"  运行时清单/元数据/主题: {resource_count} 个文件")
+    resolved_qt = resolve_qt_root(build_dir, qt_dir)
+    qt_paths = detect_qt_install_paths(build_dir, resolved_qt)
+    if not qt_paths:
+        raise RuntimeError("无法确定构建使用的 Qt 安装根目录")
+    runtime_plugins: list[str] = []
+    for paths in cfg.get("qt_runtime_plugins", {}).get("linux", {}).values():
+        runtime_plugins.extend(paths)
+    count = copy_qt_runtime_plugins(
+        qt_paths, stage, layout, runtime_plugins, "linux")
+    ok(f"补全 {count} 个 Qt 运行时插件")
 
-        # QML 模块
-        for mod in cfg.get("qml_modules", []):
-            src = build_dir / mod
-            if src.is_dir():
-                dst = qml_dir / mod
-                if dst.exists(): shutil.rmtree(dst)
-                shutil.copytree(src, dst)
-                info(f"  QML: {mod}/")
+    initial_binaries = linux_runtime_binaries(stage, app_binary)
+    copied = copy_runtime_dependency_closure(
+        initial_binaries,
+        lib_dir,
+        read_linux_runtime_dependencies,
+        runtime_dependency_search_roots(build_dir, qt_paths),
+        is_linux_system_dependency,
+    )
+    ok(f"补全 {len(copied)} 个传递运行时依赖")
 
-        # Qt 运行时插件补全
-        qt_paths = detect_qt_install_paths(build_dir, qt_dir)
-        if qt_paths:
-            rt_plugins = []
-            for paths in cfg.get("qt_runtime_plugins", {}).get("linux", {}).values():
-                rt_plugins.extend(paths)
-            n = copy_qt_runtime_plugins(qt_paths, stage, layout, rt_plugins, "linux")
-            ok(f"补全 {n} 个 Qt 运行时插件")
+    step("修正 rpath")
+    for runtime_binary in linux_runtime_binaries(stage, app_binary):
+        relative_lib = os.path.relpath(lib_dir, runtime_binary.parent)
+        rpath = "$ORIGIN" if relative_lib == "." else f"$ORIGIN/{relative_lib}"
+        fix_rpath_linux(runtime_binary, rpath)
 
-        # Qt 依赖库：优先 linuxdeployqt，否则 ldd 收集
-        ldqt = find_qt_tool("linuxdeployqt", qt_dir)
-        if ldqt:
-            step("linuxdeployqt")
-            run([str(ldqt), str(bin_dir / app_binary),
-                 f"-qmldir={build_dir / '..' / 'app' / 'qml'}",
-                 f"-qmldir={qml_dir}",
-                 "-bundle-non-qt-libs", "-no-translations",
-                 "-verbose=1"])
-        else:
-            warn("未找到 linuxdeployqt，使用 ldd 收集 Qt 依赖库")
-            _collect_libs_ldd(binary, lib_dir)
+    run_sh = stage / "run.sh"
+    run_sh.write_text(
+        "#!/usr/bin/env bash\n"
+        'DIR="$(cd "$(dirname "$0")" && pwd)"\n'
+        'export LD_LIBRARY_PATH="${DIR}/lib${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"\n'
+        'export QT_PLUGIN_PATH="${DIR}/bin/plugins"\n'
+        f'exec "${{DIR}}/bin/{app_binary}" "$@"\n',
+        encoding="utf-8",
+    )
+    run_sh.chmod(0o755)
 
-        # 修正 rpath
-        step("修正 rpath")
-        for b in list(bin_dir.glob("*")) + list(plug_dir.glob("*.so")):
-            if b.is_file() and not b.suffix == ".txt":
-                fix_rpath_linux(b)
-
-        # 启动脚本
-        run_sh = stage / "run.sh"
-        run_sh.write_text(
-            "#!/usr/bin/env bash\n"
-            'DIR="$(cd "$(dirname "$0")" && pwd)"\n'
-            'export LD_LIBRARY_PATH="${DIR}/lib${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"\n'
-            'export QT_PLUGIN_PATH="${DIR}/bin/plugins"\n'
-            'exec "${DIR}/bin/PluginBasedApp" "$@"\n'
-        )
-        run_sh.chmod(0o755)
-
-        # 打包 tar.gz
-        out = dist_dir / f"{pkg_name}.tar.gz"
-        dist_dir.mkdir(parents=True, exist_ok=True)
-        run(["tar", "-czf", str(out), "-C", str(Path(tmp)), pkg_name])
-
+    verify_staging(stage, build_dir, enabled=verify)
+    out = dist_dir / f"{pkg_name}.tar.gz"
+    dist_dir.mkdir(parents=True, exist_ok=True)
+    run(["tar", "-czf", str(out), "-C", str(stage.parent), stage.name])
     ok(f"tar.gz: {out}")
     return out
-
-
-def _collect_libs_ldd(binary: Path, lib_dir: Path) -> None:
-    """用 ldd 收集 Qt 依赖库（linuxdeployqt 降级方案）。"""
-    result = run(["ldd", str(binary)], capture=True, check=False)
-    for line in result.stdout.splitlines():
-        m = re.search(r"=> (.+?) \(", line)
-        if not m:
-            continue
-        so = Path(m.group(1).strip())
-        if not so.exists():
-            continue
-        name = so.name
-        if any(k in name for k in ("Qt6", "libspdlog", "libfmt")):
-            dst = lib_dir / name
-            if not dst.exists():
-                shutil.copy2(so, dst)
-                info(f"  lib: {name}")
 
 
 # =============================================================================
 # Windows 打包
 # =============================================================================
-def package_windows(build_dir: Path, dist_dir: Path, cfg: dict, qt_dir: Optional[Path]) -> Path:
+def package_windows(
+    build_dir: Path,
+    dist_dir: Path,
+    cfg: dict,
+    qt_dir: Optional[Path],
+    *,
+    verify: bool = True,
+) -> Path:
     step("Windows 打包")
 
     app_name   = cfg["app"]["name"]
@@ -980,53 +1218,61 @@ def package_windows(build_dir: Path, dist_dir: Path, cfg: dict, qt_dir: Optional
     if not binary:
         die(f"找不到 {app_binary}.exe，请确认构建成功")
 
-    with tempfile.TemporaryDirectory() as tmp:
-        stage    = Path(tmp) / pkg_name
-        plug_dir = stage / layout["plugins"]
-        qml_dir  = stage / layout["qml"]
-        stage.mkdir(parents=True)
-        plug_dir.mkdir(parents=True)
-        qml_dir.mkdir(parents=True)
+    stage = prepare_platform_staging(build_dir, "windows", pkg_name)
+    plug_dir = stage / layout["plugins"]
+    qml_dir = stage / layout["qml"]
+    plug_dir.mkdir(parents=True)
+    qml_dir.mkdir(parents=True)
 
-        shutil.copy2(binary, stage / f"{app_binary}.exe")
+    shutil.copy2(binary, stage / f"{app_binary}.exe")
+    for plugin in (build_dir / "plugins").glob("*.dll"):
+        shutil.copy2(plugin, plug_dir / plugin.name)
+    resource_count = copy_runtime_resources(build_dir, stage, layout, "windows")
+    info(f"  运行时清单/元数据/主题: {resource_count} 个文件")
 
-        for f in (build_dir / "plugins").glob("*.dll"):
-            shutil.copy2(f, plug_dir / f.name)
-        resource_count = copy_runtime_resources(build_dir, stage, layout, "windows")
-        info(f"  运行时清单/元数据/主题: {resource_count} 个文件")
+    for module in cfg.get("qml_modules", []):
+        source = build_dir / module
+        if source.is_dir():
+            shutil.copytree(source, qml_dir / module)
 
-        for mod in cfg.get("qml_modules", []):
-            src = build_dir / mod
-            if src.is_dir():
-                dst = qml_dir / mod
-                if dst.exists(): shutil.rmtree(dst)
-                shutil.copytree(src, dst)
+    resolved_qt = resolve_qt_root(build_dir, qt_dir)
+    qt_paths = detect_qt_install_paths(build_dir, resolved_qt)
+    if not qt_paths:
+        raise RuntimeError("无法确定构建使用的 Qt 安装根目录")
+    wdqt = find_qt_tool(
+        "windeployqt", resolved_qt, allow_path_fallback=resolved_qt is None)
+    if not wdqt:
+        raise RuntimeError("构建使用的 Qt kit 中缺少 windeployqt")
+    step("windeployqt")
+    run([
+        str(wdqt),
+        "--qmldir", str(build_dir.parent / "app" / "qml"),
+        "--qmldir", str(qml_dir),
+        "--release", "--compiler-runtime",
+        str(stage / f"{app_binary}.exe"),
+    ])
 
-        # windeployqt
-        wdqt = find_qt_tool("windeployqt", qt_dir)
-        if wdqt:
-            step("windeployqt")
-            run([str(wdqt),
-                 "--qmldir", str(build_dir / ".." / "app" / "qml"),
-                 "--qmldir", str(qml_dir),
-                 "--release", "--compiler-runtime",
-                 str(stage / f"{app_binary}.exe")])
-        else:
-            warn("未找到 windeployqt，Qt DLL 需手动拷贝")
+    runtime_plugins: list[str] = []
+    for paths in cfg.get("qt_runtime_plugins", {}).get("windows", {}).values():
+        runtime_plugins.extend(paths)
+    count = copy_qt_runtime_plugins(
+        qt_paths, stage, layout, runtime_plugins, "windows")
+    ok(f"补全 {count} 个 Qt 运行时插件")
 
-        # 补全运行时插件
-        qt_paths = detect_qt_install_paths(build_dir, qt_dir)
-        if qt_paths:
-            rt_plugins = []
-            for paths in cfg.get("qt_runtime_plugins", {}).get("windows", {}).values():
-                rt_plugins.extend(paths)
-            n = copy_qt_runtime_plugins(qt_paths, stage, layout, rt_plugins, "windows")
-            ok(f"补全 {n} 个 Qt 运行时插件")
+    copied = copy_runtime_dependency_closure(
+        windows_runtime_binaries(stage),
+        stage,
+        read_windows_runtime_dependencies,
+        [stage, *runtime_dependency_search_roots(build_dir, qt_paths)],
+        is_windows_system_dependency,
+    )
+    ok(f"补全 {len(copied)} 个传递运行时依赖")
 
-        # ZIP
-        out = dist_dir / f"{pkg_name}.zip"
-        dist_dir.mkdir(parents=True, exist_ok=True)
-        shutil.make_archive(str(out.with_suffix("")), "zip", str(Path(tmp)), pkg_name)
+    verify_staging(stage, build_dir, enabled=verify)
+    out = dist_dir / f"{pkg_name}.zip"
+    dist_dir.mkdir(parents=True, exist_ok=True)
+    shutil.make_archive(
+        str(out.with_suffix("")), "zip", str(stage.parent), stage.name)
 
     ok(f"ZIP: {out}")
     return out
@@ -1054,11 +1300,16 @@ def _read_version(build_dir: Path) -> str:
 
 
 def load_config(config_path: Path) -> dict:
-    """加载 package.yml 配置文件。"""
+    """加载仅使用 Python 标准库的 package.json 配置。"""
     if not config_path.exists():
         die(f"配置文件不存在: {config_path}")
-    with open(config_path) as f:
-        return yaml.safe_load(f)
+    try:
+        document = json.loads(config_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
+        die(f"打包配置无效: {config_path} ({error})")
+    if not isinstance(document, dict):
+        die(f"打包配置根节点必须是 JSON object: {config_path}")
+    return document
 
 
 # =============================================================================
@@ -1071,8 +1322,9 @@ def main() -> None:
     )
     parser.add_argument("--build-dir",  type=Path, required=True,  help="CMake 构建目录")
     parser.add_argument("--dist-dir",   type=Path, required=True,  help="输出目录")
-    parser.add_argument("--config",     type=Path, default=None,   help="配置文件路径（默认 tools/package.yml）")
+    parser.add_argument("--config",     type=Path, default=None,   help="配置文件路径（默认 tools/package.json）")
     parser.add_argument("--qt-dir",     type=Path, default=None,   help="Qt 安装根目录")
+    parser.add_argument("--skip-verify", action="store_true",      help="跳过归档前完整性验证")
     parser.add_argument("--platform",   choices=["macos", "linux", "windows"], default=None)
     args = parser.parse_args()
 
@@ -1082,8 +1334,7 @@ def main() -> None:
     if args.config:
         cfg_path = args.config.resolve()
     else:
-        # 默认找 deploy.py 同级的 package.yml
-        cfg_path = Path(__file__).parent / "package.yml"
+        cfg_path = Path(__file__).parent / "package.json"
 
     cfg = load_config(cfg_path)
 
@@ -1093,14 +1344,20 @@ def main() -> None:
 
     plat = args.platform or current_platform()
 
-    if plat == "macos":
-        out = package_macos(build_dir, dist_dir, cfg, qt_dir)
-    elif plat == "linux":
-        out = package_linux(build_dir, dist_dir, cfg, qt_dir)
-    elif plat == "windows":
-        out = package_windows(build_dir, dist_dir, cfg, qt_dir)
-    else:
-        die(f"不支持的平台: {plat}")
+    try:
+        if plat == "macos":
+            out = package_macos(
+                build_dir, dist_dir, cfg, qt_dir, verify=not args.skip_verify)
+        elif plat == "linux":
+            out = package_linux(
+                build_dir, dist_dir, cfg, qt_dir, verify=not args.skip_verify)
+        elif plat == "windows":
+            out = package_windows(
+                build_dir, dist_dir, cfg, qt_dir, verify=not args.skip_verify)
+        else:
+            die(f"不支持的平台: {plat}")
+    except (FileNotFoundError, RuntimeError, ValueError) as error:
+        die(str(error))
 
     print()
     ok(f"打包完成: {out}")

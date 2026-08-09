@@ -1,0 +1,94 @@
+{
+  "app": {
+    "name": "PluginBased",
+    "binary": "PluginBasedApp",
+    "bundle_id": "com.pluginbased.app"
+  },
+  "qml_modules": [
+    "AppLog",
+    "PluginBased",
+    "PlayPlugin",
+    "QuickUI"
+  ],
+  "qt_runtime_plugins": {
+    "macos": {
+      "qml": ["qml/Qt/labs/folderlistmodel"],
+      "platforms": ["plugins/platforms/libqcocoa.dylib"],
+      "styles": ["plugins/styles/libqmacstyle.dylib"],
+      "imageformats": ["plugins/imageformats/libqjpeg.dylib"],
+      "multimedia": ["plugins/multimedia/libdarwinmediaplugin.dylib"],
+      "frameworks": [
+        "frameworks/QtDBus.framework"
+      ]
+    },
+    "linux": {
+      "qml": [
+        "qml/Qt/labs/folderlistmodel",
+        "qml/Qt/labs/settings",
+        "qml/QtQml",
+        "qml/QtQml/Models",
+        "qml/QtQml/WorkerScript",
+        "qml/QtQuick",
+        "qml/QtQuick/Controls",
+        "qml/QtQuick/Controls/Basic",
+        "qml/QtQuick/Dialogs",
+        "qml/QtQuick/Layouts",
+        "qml/QtQuick/Window",
+        "qml/QtMultimedia"
+      ],
+      "platforms": [
+        "plugins/platforms/libqxcb.so",
+        "plugins/platforms/libqwayland-generic.so",
+        "plugins/xcbglintegrations/libqxcb-glx-integration.so"
+      ],
+      "imageformats": [
+        "plugins/imageformats/libqjpeg.so",
+        "plugins/imageformats/libqsvg.so"
+      ],
+      "multimedia": ["plugins/multimedia/libgstreamermediaplugin.so"],
+      "platformthemes": ["plugins/platformthemes/libqgtk3.so"]
+    },
+    "windows": {
+      "qml": [
+        "qml/Qt/labs/folderlistmodel",
+        "qml/Qt/labs/settings",
+        "qml/QtQml",
+        "qml/QtQml/Models",
+        "qml/QtQml/WorkerScript",
+        "qml/QtQuick",
+        "qml/QtQuick/Controls",
+        "qml/QtQuick/Controls/Basic",
+        "qml/QtQuick/Dialogs",
+        "qml/QtQuick/Layouts",
+        "qml/QtQuick/Window",
+        "qml/QtMultimedia"
+      ],
+      "platforms": ["plugins/platforms/qwindows.dll"],
+      "imageformats": [
+        "plugins/imageformats/qjpeg.dll",
+        "plugins/imageformats/qsvg.dll"
+      ],
+      "multimedia": ["plugins/multimedia/windowsmediaplugin.dll"],
+      "styles": ["plugins/styles/qwindowsvistastyle.dll"]
+    }
+  },
+  "layout": {
+    "macos": {
+      "plugins": "Contents/PlugIns",
+      "qml": "Contents/Resources/qml",
+      "qt_plugins": "Contents/PlugIns",
+      "frameworks": "Contents/Frameworks"
+    },
+    "linux": {
+      "bin": "bin",
+      "plugins": "bin/plugins",
+      "qml": "bin/qml",
+      "lib": "lib"
+    },
+    "windows": {
+      "root": ".",
+      "plugins": "plugins",
+      "qml": "qml"
+    }
+  }
+}
