@@ -127,10 +127,12 @@ Item {
         muted:         engine.muted
         playbackRate:  engine.playbackRate
         playbackRateChangePending: engine.playbackRateChangePending
+        canSeekForward: engine.canSeekForward
         playlistOpen:  root.playlistOpen
         onPlayPauseRequested: engine.togglePlayPause()
         onStopRequested:      engine.stop()
         onSeekRequested:      (ms) => engine.seek(ms)
+        onForwardRequested:   engine.seekBy(3000)
         onPlaybackRateRequested: (rate) => engine.playbackRate = rate
         onVolumeRequested:    (v)  => engine.volume = v
         onMuteRequested:      engine.muted = !engine.muted

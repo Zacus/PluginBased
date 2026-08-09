@@ -73,7 +73,7 @@ PluginBased/
 | CoreAudio / AudioUnit | macOS 系统框架 | SDK runtime 的 macOS 音频输出 |
 
 项目顶层通过 `FetchContent` 自动获取 `QtQuickComponents`，并固定到提交
-`8e376dfc50e703a49b4e66aa1302e5fcd6df2cde`，新 clone 不需要准备相邻仓库。
+`e91f737666f9cfc8472a40de01f660a0bd8019fb`，新 clone 不需要准备相邻仓库。
 
 Qt 不由 vcpkg 提供。请通过 Qt 官方安装器安装 Desktop Qt 6.8.3，并选择
 `qtmultimedia` 与 `qtshadertools` 模块；项目会在配置时拒绝其他 Qt 版本。

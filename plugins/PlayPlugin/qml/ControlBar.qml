@@ -18,6 +18,7 @@ Rectangle {
     property bool playbackRateChangePending: false
     property bool playlistOpen: false
     readonly property bool showPlaylistButton: true
+    property bool canSeekForward: false
 
     signal playPauseRequested()
     signal stopRequested()
@@ -27,6 +28,7 @@ Rectangle {
     signal openRequested()
     signal previousRequested()
     signal nextRequested()
+    signal forwardRequested()
     signal playbackRateRequested(real playbackRate)
     signal playlistRequested()
 
@@ -125,13 +127,23 @@ Rectangle {
                 onClicked: root.playPauseRequested()
             }
 
+            IconButton {
+                iconText: "⏩"
+                tooltip: qsTr("Forward 3 seconds")
+                fontSize: 15
+                enabled: root.canSeekForward
+                onClicked: root.forwardRequested()
+            }
+
             IconButton { iconText: "⏹"; tooltip: qsTr("Stop"); fontSize: 15; onClicked: root.stopRequested() }
             IconButton { iconText: "⏭"; tooltip: qsTr("Next"); fontSize: 15; onClicked: root.nextRequested() }
 
             ComboBox {
                 id: rateSelector
                 Layout.preferredWidth: 76
+                Layout.minimumWidth: 76
                 Layout.preferredHeight: 28
+                popupMinimumWidth: 112
                 model: [
                     { text: "0.5x", value: 0.5 },
                     { text: "0.75x", value: 0.75 },
@@ -148,8 +160,8 @@ Rectangle {
                 Component.onCompleted: currentIndex = root.playbackRateIndex(root.playbackRate)
 
                 contentItem: Text {
-                    leftPadding: 10
-                    rightPadding: 22
+                    leftPadding: 0
+                    rightPadding: 0
                     text: rateSelector.displayText
                     color: ComponentTheme.textPrimary
                     font.pixelSize: 12

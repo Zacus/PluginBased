@@ -135,7 +135,7 @@ include(FetchContent)
 FetchContent_Declare(
     QtQuickComponents
     GIT_REPOSITORY https://github.com/Zacus/QtQuickComponents.git
-    GIT_TAG 8e376dfc50e703a49b4e66aa1302e5fcd6df2cde
+    GIT_TAG e91f737666f9cfc8472a40de01f660a0bd8019fb
 )
 # The host owns the Qt version/policy baseline. Prevent the embedded project
 # from replacing it with qt_standard_project_setup()'s version-agnostic default.
@@ -372,6 +372,22 @@ if(BUILD_TESTING)
         COMMAND $<TARGET_FILE:PlayPluginPlaybackCompletionTest>
         WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
     )
+    add_executable(PlayPluginPlaybackSeekTest
+        tests/tst_playplugin_playback_seek.cpp
+        "${PLAYPLUGIN_TEST_PLUGIN_ROOT}/PlayPlugin/src/playback/PlaybackSeek.cpp"
+    )
+    target_include_directories(PlayPluginPlaybackSeekTest PRIVATE
+        "${PLAYPLUGIN_TEST_PLUGIN_ROOT}/PlayPlugin/src"
+    )
+    target_link_libraries(PlayPluginPlaybackSeekTest PRIVATE
+        Qt6::Core
+        Qt6::Test
+    )
+    add_test(NAME playplugin_playback_seek
+        COMMAND $<TARGET_FILE:PlayPluginPlaybackSeekTest>
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+    )
+    pluginbased_enable_test_assertions(PlayPluginPlaybackSeekTest)
     add_executable(PlayPluginPendingSeekRequestsTest
         tests/tst_playplugin_pending_seek_requests.cpp
     )

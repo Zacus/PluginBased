@@ -2,9 +2,12 @@
 #include "Logger.h"
 #include "playback/PlaybackContext.h"
 #include "playback/PlaybackPipeline.h"
+#include "playback/PlaybackSeek.h"
 #include "media_sdk/runtime/PlaybackRate.h"
 
 #include <QFileInfo>
+
+#include <algorithm>
 // ─────────────────────────────────────────────────────────────────────────────
 // 构造 / 析构
 // ─────────────────────────────────────────────────────────────────────────────
@@ -104,7 +107,8 @@ void PlayerEngine::open(const QUrl& url)
 
     m_currentUrl = url;
     m_completion.resetForOpen();
-    m_seekGeneration = 0;
+    m_seekState.reset();
+    refreshCanSeekForward();
     setPlaybackRateChangePending(false);
 
     // 通知解码器打开文件（异步，解码器线程内执行）
@@ -135,43 +139,70 @@ void PlayerEngine::stop()
 {
     if (m_state == Stopped)
         return;
-    stopAllComponents();
-    setState(Stopped);
+
     m_position = 0;
     m_duration = 0;
     m_completion.resetForStop();
-    setPlaybackRateChangePending(false);
-    delete m_mediaInfo;
+    m_seekState.reset();
+    MediaInfo* const previousMediaInfo = m_mediaInfo;
     m_mediaInfo = nullptr;
+    const bool canSeekForwardDidChange = updateCanSeekForward();
+
+    stopAllComponents();
+    m_pipeline->clearSurface();
+    setState(Stopped);
+    setPlaybackRateChangePending(false);
+    delete previousMediaInfo;
+    if (canSeekForwardDidChange)
+        emit canSeekForwardChanged(m_canSeekForward);
 
     emit positionChanged(m_position);
     emit durationChanged(m_duration);
     emit currentMediaChanged(nullptr);
-    m_pipeline->clearSurface();
     LOG_INFO("PlayerEngine: stop");
 }
 
 void PlayerEngine::seek(qint64 positionMs)
 {
-    if (m_state == Stopped && !m_completion.isMediaFinished())
+    if (!m_mediaInfo || m_duration <= 0)
         return;
-    LOG_INFO("PlayerEngine: seek to {}ms", positionMs);
+
+    const qint64 targetPositionMs = std::clamp(positionMs, qint64 { 0 }, m_duration);
+    LOG_INFO("PlayerEngine: seek to {}ms", targetPositionMs);
 
     const bool resumeAfterSeek = m_completion.resumeAfterFinishedSeek(m_state == Playing);
 
-    const int seekGeneration = ++m_seekGeneration;
+    const int seekGeneration = m_seekState.begin(targetPositionMs);
+    if (seekGeneration == 0)
+        return;
+    const quint64 seekResetVersion = m_seekState.resetVersion();
 
     // 通知各组件 seek
-    m_pipeline->seek(positionMs, seekGeneration, resumeAfterSeek);
+    m_pipeline->seek(targetPositionMs, seekGeneration, resumeAfterSeek);
+    if (!m_seekState.isPending(seekGeneration))
+        return;
 
     // 立即更新 UI 进度条（不等音频时钟重建）
-    m_position = positionMs;
+    m_position = targetPositionMs;
+    refreshCanSeekForward();
+
     emit positionChanged(m_position);
 
-    if (resumeAfterSeek)
+    if (resumeAfterSeek && m_seekState.resetVersion() == seekResetVersion)
     {
         setState(Playing);
     }
+}
+
+void PlayerEngine::seekBy(qint64 deltaMs)
+{
+    if (!m_mediaInfo || (deltaMs > 0 && !m_canSeekForward))
+        return;
+
+    const qint64 basePosition = m_seekState.basePosition(m_position);
+    const auto target = calculateRelativeSeekTarget(basePosition, m_duration, deltaMs);
+    if (target)
+        seek(*target);
 }
 
 void PlayerEngine::togglePlayPause()
@@ -201,34 +232,43 @@ void PlayerEngine::onMediaInfoReady(qint64 durationMs, int width, int height, do
              width, height, fps, sampleRate, channels, sampleFmt);
 
     m_duration = durationMs;
-    emit durationChanged(m_duration);
-
     m_completion.setStreams(sampleRate > 0 && channels > 0,
                             width > 0 && height > 0);
+
+    // 更新 MediaInfo（QML 侧显示文件信息）
+    // onMediaInfoReady 通过 Qt::AutoConnection 在主线程执行，安全
+    MediaInfo* const previousMediaInfo = m_mediaInfo;
+    m_mediaInfo = new MediaInfo(m_currentUrl, QFileInfo(m_currentUrl.toLocalFile()).baseName(),
+                                durationMs, width, height, format, this);
+    const bool canSeekForwardDidChange = updateCanSeekForward();
+
     m_pipeline->startRenderersForMedia(m_completion.hasAudio(),
                                        m_completion.hasVideo(),
                                        sampleRate,
                                        channels,
                                        channelLayoutMask,
                                        sampleFmt);
-
-    // 更新 MediaInfo（QML 侧显示文件信息）
-    // onMediaInfoReady 通过 Qt::AutoConnection 在主线程执行，安全
-    delete m_mediaInfo;
-    m_mediaInfo = new MediaInfo(m_currentUrl, QFileInfo(m_currentUrl.toLocalFile()).baseName(),
-                                durationMs, width, height, format, this);
+    delete previousMediaInfo;
+    if (canSeekForwardDidChange)
+        emit canSeekForwardChanged(m_canSeekForward);
+    emit durationChanged(m_duration);
     emit currentMediaChanged(m_mediaInfo);
 }
 
 void PlayerEngine::onDecoderError(const QString& msg)
 {
-    setError(msg);
-    stopAllComponents();
-    setState(Stopped);
     m_position = 0;
     m_duration = 0;
     m_completion.resetForStop();
+    m_seekState.reset();
+    const bool canSeekForwardDidChange = updateCanSeekForward();
+
+    stopAllComponents();
+    setState(Stopped);
     setPlaybackRateChangePending(false);
+    if (canSeekForwardDidChange)
+        emit canSeekForwardChanged(m_canSeekForward);
+    setError(msg);
     emit positionChanged(m_position);
     emit durationChanged(m_duration);
 }
@@ -243,14 +283,17 @@ void PlayerEngine::onEndOfFile()
 
 void PlayerEngine::onDecoderPosition(qint64 posMs)
 {
+    if (!m_seekState.acceptsPositionUpdate())
+        return;
     m_position = posMs;
+    refreshCanSeekForward();
     emit positionChanged(m_position);
 }
 
 void PlayerEngine::onDecoderSeekCompleted(int generation, int serial)
 {
-    Q_UNUSED(generation);
     Q_UNUSED(serial);
+    (void)m_seekState.complete(generation);
 }
 
 void PlayerEngine::onPlaybackRateChanged(double playbackRate)
@@ -269,6 +312,7 @@ void PlayerEngine::onPlaybackRateChanged(double playbackRate)
 void PlayerEngine::onAudioPosition(qint64 posMs)
 {
     m_position = posMs;
+    refreshCanSeekForward();
     emit positionChanged(m_position);
 }
 
@@ -288,6 +332,7 @@ void PlayerEngine::onVideoPosition(qint64 posMs)
         return;
 
     m_position = posMs;
+    refreshCanSeekForward();
     emit positionChanged(m_position);
 }
 
@@ -317,6 +362,29 @@ void PlayerEngine::setPlaybackRateChangePending(bool pending)
     emit playbackRateChangePendingChanged(pending);
 }
 
+bool PlayerEngine::updateCanSeekForward()
+{
+    const bool available = isForwardSeekAvailable(
+        m_mediaInfo != nullptr,
+        m_position,
+        m_duration,
+        m_completion.isMediaFinished());
+    if (m_canSeekForward == available)
+        return false;
+
+    m_canSeekForward = available;
+    return true;
+}
+
+void PlayerEngine::refreshCanSeekForward()
+{
+    const bool changed = updateCanSeekForward();
+    if (!changed)
+        return;
+
+    emit canSeekForwardChanged(m_canSeekForward);
+}
+
 void PlayerEngine::setError(const QString& msg)
 {
     m_errorString = msg;
@@ -337,7 +405,10 @@ void PlayerEngine::finishMedia()
     if (!m_completion.finish())
         return;
 
+    const bool canSeekForwardDidChange = updateCanSeekForward();
     m_pipeline->setPaused(true);
     setState(Paused);
+    if (canSeekForwardDidChange)
+        emit canSeekForwardChanged(m_canSeekForward);
     emit endOfMedia();
 }

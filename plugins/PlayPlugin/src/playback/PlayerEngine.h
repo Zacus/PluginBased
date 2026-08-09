@@ -8,6 +8,7 @@
 
 #include "model/MediaInfo.h"
 #include "playback/PlaybackCompletionTracker.h"
+#include "playback/PlaybackSeek.h"
 
 class FFmpegSurface;
 class PlaybackPipeline;
@@ -21,8 +22,8 @@ Q_MOC_INCLUDE("video/FFmpegSurface.h")
  *   PlaybackPipeline 播放管线，桥接 SDK PlaybackSession 与 Qt RHI presenter
  *   FFmpegSurface    QML 视频输出组件（由 QML 侧创建，Engine 只持有弱引用）
  *
- * QML 接口与之前完全保持不变：
- *   - 所有 Q_PROPERTY 和信号不变，QML 代码无需修改
+ * QML 接口：
+ *   - 暴露播放状态、倍率和前进 seek 可用性
  *   - position() 由 SDK session 的进度事件驱动，不再轮询
  */
 class PlayerEngine : public QObject
@@ -38,6 +39,7 @@ class PlayerEngine : public QObject
     Q_PROPERTY(double     playbackRate  READ playbackRate WRITE setPlaybackRate NOTIFY playbackRateChanged)
     Q_PROPERTY(bool       playbackRateChangePending READ playbackRateChangePending
                    NOTIFY playbackRateChangePendingChanged)
+    Q_PROPERTY(bool       canSeekForward READ canSeekForward NOTIFY canSeekForwardChanged)
     Q_PROPERTY(MediaInfo* currentMedia  READ currentMedia     NOTIFY currentMediaChanged)
     Q_PROPERTY(QString    errorString   READ errorString      NOTIFY errorOccurred)
 
@@ -56,6 +58,7 @@ public:
     bool          muted()            const { return m_muted; }
     double        playbackRate()      const { return m_playbackRate; }
     bool          playbackRateChangePending() const { return m_playbackRateChangePending; }
+    bool          canSeekForward() const { return m_canSeekForward; }
     MediaInfo*    currentMedia()     const { return m_mediaInfo; }
     QString       errorString()      const { return m_errorString; }
 
@@ -72,6 +75,7 @@ public slots:
     Q_INVOKABLE void pause();
     Q_INVOKABLE void stop();
     Q_INVOKABLE void seek(qint64 positionMs);
+    Q_INVOKABLE void seekBy(qint64 deltaMs);
     Q_INVOKABLE void togglePlayPause();
 
 signals:
@@ -82,6 +86,7 @@ signals:
     void mutedChanged(bool muted);
     void playbackRateChanged(double playbackRate);
     void playbackRateChangePendingChanged(bool pending);
+    void canSeekForwardChanged(bool canSeekForward);
     void currentMediaChanged(MediaInfo* info);
     void errorOccurred(const QString& msg);
     void endOfMedia();
@@ -107,6 +112,8 @@ private slots:
 private:
     void setState(PlaybackState s);
     void setPlaybackRateChangePending(bool pending);
+    bool updateCanSeekForward();
+    void refreshCanSeekForward();
     void setError(const QString& msg);
     void stopAllComponents();
     void maybeFinishMedia();
@@ -123,8 +130,9 @@ private:
     bool          m_muted      = false;
     double        m_playbackRate = 1.0;
     bool          m_playbackRateChangePending = false;
+    bool          m_canSeekForward = false;
     PlaybackCompletionTracker m_completion;
-    int           m_seekGeneration = 0;
+    PlaybackSeekState m_seekState;
     QString       m_errorString;
     QUrl          m_currentUrl; // open() 时记录，onMediaInfoReady 时写入 MediaInfo
 };

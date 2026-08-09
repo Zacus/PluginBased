@@ -96,6 +96,10 @@
         <translation>停止</translation>
     </message>
     <message>
+        <source>Forward 3 seconds</source>
+        <translation>快进 3 秒</translation>
+    </message>
+    <message>
         <source>Next</source>
         <translation>下一个</translation>
     </message>

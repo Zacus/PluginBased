@@ -262,7 +262,7 @@ def main():
             "top-level CMake should preserve the Qt 6.8 policy baseline")
     require("GIT_REPOSITORY https://github.com/Zacus/QtQuickComponents.git" in root_cmake,
             "QtQuickComponents should be fetched from its canonical repository")
-    require("GIT_TAG 8e376dfc50e703a49b4e66aa1302e5fcd6df2cde" in root_cmake,
+    require("GIT_TAG e91f737666f9cfc8472a40de01f660a0bd8019fb" in root_cmake,
             "QtQuickComponents should be pinned to the approved commit")
     require('SOURCE_DIR "${CMAKE_SOURCE_DIR}/../QtQuickComponents"' not in root_cmake,
             "fresh clones should not require an adjacent QtQuickComponents checkout")
