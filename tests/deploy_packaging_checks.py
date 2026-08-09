@@ -2,6 +2,7 @@
 
 import os
 import importlib.util
+import json
 import shutil
 import subprocess
 import tempfile
@@ -13,6 +14,22 @@ ROOT = Path(__file__).resolve().parents[1]
 DEPLOY_PATH = ROOT / "tools" / "deploy.py"
 VERIFY_PATH = ROOT / "tools" / "verify.py"
 PACKAGE_SCRIPT = ROOT / "package.sh"
+
+BUILD_INFO = {
+    "schemaVersion": 1,
+    "productName": "PluginBased",
+    "productVersion": "1.0.0",
+    "displayVersion": "1.0.0+g12345678",
+    "gitCommit": "1234567890abcdef1234567890abcdef12345678",
+    "gitShortCommit": "12345678",
+    "gitTag": "",
+    "gitTreeState": "clean",
+    "buildType": "Release",
+    "platform": "Linux",
+    "architecture": "x86_64",
+    "compiler": "GNU 13.2.0",
+    "qtVersion": "6.8.3",
+}
 
 
 def load_deploy_module():
@@ -178,6 +195,7 @@ def test_runtime_resources_are_self_contained(deploy) -> None:
         write(build / "plugins" / "PlayPlugin.json")
         write(build / "themes" / "dark.json")
         write(build / "themes" / "light.json")
+        write(build / "build-info.json", json.dumps(BUILD_INFO))
 
         layout = {
             "plugins": "Contents/PlugIns",
@@ -186,12 +204,66 @@ def test_runtime_resources_are_self_contained(deploy) -> None:
         }
         copied = deploy.copy_runtime_resources(build, bundle, layout, "macos")
 
-        assert copied == 5
+        assert copied == 6
         assert (bundle / "Contents" / "plugins.json").is_file()
         assert (bundle / "Contents" / "PlugIns" / "DummyPlugin.json").is_file()
         assert (bundle / "Contents" / "PlugIns" / "PlayPlugin.json").is_file()
         assert (bundle / "Contents" / "Resources" / "themes" / "dark.json").is_file()
         assert (bundle / "Contents" / "Resources" / "themes" / "light.json").is_file()
+        assert (bundle / "Contents" / "Resources" / "build-info.json").is_file()
+
+        for platform_name, platform_layout in (
+            ("linux", {"plugins": "bin/plugins"}),
+            ("windows", {"plugins": "plugins"}),
+        ):
+            stage = root / platform_name
+            copied = deploy.copy_runtime_resources(
+                build, stage, platform_layout, platform_name)
+            assert copied == 6
+            assert (stage / "build-info.json").is_file()
+
+
+def test_build_info_verifier_enforces_schema_privacy_and_version(verifier) -> None:
+    with tempfile.TemporaryDirectory() as temporary:
+        stage = Path(temporary) / "stage"
+        path = stage / "build-info.json"
+
+        write(path, json.dumps(BUILD_INFO))
+        assert verifier.scan_build_info(stage, expected_version="1.0.0") == []
+
+        path.unlink()
+        assert any("缺失构建信息" in issue
+                   for issue in verifier.scan_build_info(stage))
+
+        write(path, "{")
+        assert any("无效构建信息" in issue
+                   for issue in verifier.scan_build_info(stage))
+
+        document = dict(BUILD_INFO)
+        document["schemaVersion"] = 2
+        write(path, json.dumps(document))
+        assert any("schemaVersion" in issue
+                   for issue in verifier.scan_build_info(stage))
+
+        document = dict(BUILD_INFO)
+        document["productVersion"] = "2.0.0"
+        write(path, json.dumps(document))
+        assert any("2.0.0" in issue and "1.0.0" in issue
+                   for issue in verifier.scan_build_info(
+                       stage, expected_version="1.0.0"))
+
+        document = dict(BUILD_INFO)
+        document["gitCommit"] = "not-a-commit"
+        write(path, json.dumps(document))
+        assert any("gitCommit" in issue
+                   for issue in verifier.scan_build_info(stage))
+
+        for forbidden_key in ("gitRef", "sourceDir"):
+            document = dict(BUILD_INFO)
+            document[forbidden_key] = "private-context"
+            write(path, json.dumps(document))
+            assert any(forbidden_key in issue
+                       for issue in verifier.scan_build_info(stage))
 
 
 def test_qt_query_paths_and_plugin_category_are_preserved(deploy) -> None:
@@ -394,6 +466,7 @@ def main() -> None:
     test_package_script_keeps_custom_multiconfig_build_support()
     test_package_script_uses_qt_root_as_deployment_fallback()
     test_runtime_resources_are_self_contained(deploy)
+    test_build_info_verifier_enforces_schema_privacy_and_version(verifier)
     test_qt_query_paths_and_plugin_category_are_preserved(deploy)
     test_existing_framework_rpath_is_not_added_twice(deploy)
     test_runtime_resource_verifier_rejects_incomplete_bundle(verifier)

@@ -518,7 +518,7 @@ def copy_runtime_resources(
     layout: dict,
     platform: str,
 ) -> int:
-    """Copy runtime manifests, plugin metadata, and themes into a package."""
+    """Copy runtime manifests, build identity, plugin metadata, and themes."""
     plugin_dir = stage_dir / layout.get("plugins", "plugins")
     runtime_root = plugin_dir.parent
     theme_dir = (stage_dir / "Contents" / "Resources" / "themes"
@@ -527,22 +527,32 @@ def copy_runtime_resources(
     manifest = build_dir / "plugins.json"
     metadata_files = sorted((build_dir / "plugins").glob("*.json"))
     theme_files = sorted((build_dir / "themes").glob("*.json"))
+    build_info = build_dir / "build-info.json"
     if not manifest.is_file():
         raise FileNotFoundError(f"runtime plugin manifest not found: {manifest}")
     if not metadata_files:
         raise FileNotFoundError(f"runtime plugin metadata not found: {build_dir / 'plugins'}")
     if not theme_files:
         raise FileNotFoundError(f"runtime themes not found: {build_dir / 'themes'}")
+    if not build_info.is_file():
+        raise FileNotFoundError(f"build identity not found: {build_info}")
+
+    build_info_destination = (
+        stage_dir / "Contents" / "Resources" / "build-info.json"
+        if platform == "macos" else stage_dir / "build-info.json"
+    )
 
     runtime_root.mkdir(parents=True, exist_ok=True)
     plugin_dir.mkdir(parents=True, exist_ok=True)
     theme_dir.mkdir(parents=True, exist_ok=True)
+    build_info_destination.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(manifest, runtime_root / manifest.name)
     for metadata in metadata_files:
         shutil.copy2(metadata, plugin_dir / metadata.name)
     for theme in theme_files:
         shutil.copy2(theme, theme_dir / theme.name)
-    return 1 + len(metadata_files) + len(theme_files)
+    shutil.copy2(build_info, build_info_destination)
+    return 2 + len(metadata_files) + len(theme_files)
 
 
 def clean_macos_deployment(bundle: Path, layout: dict) -> None:

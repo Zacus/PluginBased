@@ -230,9 +230,74 @@ def scan_runtime_resources(stage_dir: Path) -> list[str]:
     return issues
 
 
+def build_info_path(stage_dir: Path) -> Path:
+    if (stage_dir / "Contents").is_dir():
+        return stage_dir / "Contents" / "Resources" / "build-info.json"
+    return stage_dir / "build-info.json"
+
+
+def scan_build_info(
+    stage_dir: Path,
+    expected_version: Optional[str] = None,
+) -> list[str]:
+    """Validate packaged build identity, provenance, and privacy boundaries."""
+    path = build_info_path(stage_dir)
+    if not path.is_file():
+        return [f"  缺失构建信息: {path.relative_to(stage_dir)}"]
+
+    try:
+        document = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
+        return [f"  无效构建信息: {path.relative_to(stage_dir)} ({error})"]
+
+    if not isinstance(document, dict):
+        return [f"  无效构建信息: {path.relative_to(stage_dir)} (根节点必须为 object)"]
+
+    issues: list[str] = []
+    required_strings = (
+        "productName", "productVersion", "displayVersion", "gitCommit",
+        "gitShortCommit", "gitTag", "gitTreeState", "buildType",
+        "platform", "architecture", "compiler", "qtVersion",
+    )
+    if document.get("schemaVersion") != 1:
+        issues.append("  build-info.json schemaVersion 必须为 1")
+    for key in required_strings:
+        if not isinstance(document.get(key), str):
+            issues.append(f"  build-info.json 字段必须为字符串: {key}")
+    for key in ("gitRef", "branch", "hostname", "sourceDir", "remoteUrl"):
+        if key in document:
+            issues.append(f"  build-info.json 包含禁止字段: {key}")
+    if issues:
+        return issues
+
+    version = document["productVersion"]
+    commit = document["gitCommit"]
+    short_commit = document["gitShortCommit"]
+    tree_state = document["gitTreeState"]
+    display_version = document["displayVersion"]
+
+    if expected_version is not None and version != expected_version:
+        issues.append(f"  构建版本不一致: {version} != {expected_version}")
+    if tree_state not in {"clean", "dirty", "unknown"}:
+        issues.append(f"  无效源码状态: {tree_state}")
+    if commit:
+        if (len(commit) not in {40, 64}
+                or any(char not in "0123456789abcdefABCDEF" for char in commit)):
+            issues.append("  gitCommit 必须为 40 或 64 位十六进制提交")
+        elif short_commit != commit[:8]:
+            issues.append("  gitShortCommit 与 gitCommit 不一致")
+    elif tree_state != "unknown" or short_commit != "unknown":
+        issues.append("  未知 Git 提交必须同时使用 unknown 状态和构建号")
+    if not (display_version == version
+            or display_version.startswith(version + "+")):
+        issues.append("  displayVersion 与 productVersion 不一致")
+    return issues
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="发布包完整性验证")
     parser.add_argument("--stage-dir", type=Path, required=True, help="staging 目录或 .app bundle")
+    parser.add_argument("--expected-version", help="预期产品版本（例如 1.0.0）")
     parser.add_argument("--strict",    action="store_true",       help="警告也视为失败")
     args = parser.parse_args()
 
@@ -246,7 +311,8 @@ def main() -> None:
 
     dependency_issues, checked = scan_bundle(stage)
     resource_issues = scan_runtime_resources(stage)
-    issues = dependency_issues + resource_issues
+    build_info_issues = scan_build_info(stage, args.expected_version)
+    issues = dependency_issues + resource_issues + build_info_issues
 
     print()
     info(f"已检查二进制: {checked}")
