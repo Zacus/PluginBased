@@ -297,6 +297,8 @@ Path(a.output).write_text(json.dumps(result), encoding='utf-8')
             "label": "test",
             "runs": 3,
             "window_ms": 4000,
+            "build_type": "Release",
+            "runner": "test-runner",
             "runner_sha256": "test",
             "platform": "test",
             "media": {
