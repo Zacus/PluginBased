@@ -72,7 +72,8 @@ PluginBased/
 | pkgconf/pkg-config | 2.5.1#4 | CMake 查找 FFmpeg pkg-config 模块 |
 | CoreAudio / AudioUnit | macOS 系统框架 | SDK runtime 的 macOS 音频输出 |
 
-项目顶层通过 `FetchContent` 引入相邻目录 `../QtQuickComponents`，构建前请确保该目录存在，或在 `CMakeLists.txt` 中替换为对应的远程仓库来源。
+项目顶层通过 `FetchContent` 自动获取 `QtQuickComponents`，并固定到提交
+`8e376dfc50e703a49b4e66aa1302e5fcd6df2cde`，新 clone 不需要准备相邻仓库。
 
 Qt 不由 vcpkg 提供。请通过 Qt 官方安装器安装 Desktop Qt 6.8.3，并选择
 `qtmultimedia` 与 `qtshadertools` 模块；项目会在配置时拒绝其他 Qt 版本。
@@ -87,12 +88,10 @@ vcpkg manifest 当前固定在 baseline
 ## 快速构建
 
 ```bash
-# 指向固定 vcpkg checkout 与 Qt 6.8.3 官方 kit
-export VCPKG_ROOT=/path/to/vcpkg
-export QT_ROOT="$HOME/Qt/6.8.3/macos"
+# 首次执行：检查 Ninja，准备固定版本的 vcpkg/Qt，并配置 Debug
+python3 tools/setup_build_environment.py --configure debug
 
 # 配置与构建（manifest 会自动安装 spdlog、fmt、pkgconf、ffmpeg）
-cmake --preset debug
 cmake --build --preset debug --parallel
 
 # 运行
@@ -106,13 +105,17 @@ python3 tests/plugin_generator_checks.py
 ctest --preset debug
 ```
 
+`debug`/`release` Preset 不包含个人路径，默认使用
+`~/vcpkg/vcpkg-master` 和当前平台的 `~/Qt/6.8.3/<kit>`。如果依赖在其他
+位置，可用 `VCPKG_ROOT` 和 `QT_ROOT` 覆盖；所有配置统一采用 Ninja。
+
 详细说明、Release 构建、打包步骤见 [BUILD.md](BUILD.md)。
 
 ---
 
 ## 自动化验证
 
-项目启用 CTest，当前注册 36 项检查。验证覆盖宿主、插件、播放 SDK core、runtime、macOS 音频平台层和架构约束：
+项目启用 CTest，当前注册 54 项检查。验证覆盖宿主、插件、播放 SDK core、runtime、macOS 音频平台层和架构约束：
 
 | 范围 | 代表性测试 |
 |---|---|

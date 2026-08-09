@@ -2,27 +2,16 @@
   "version": 3,
   "cmakeMinimumRequired": {
     "major": 3,
-    "minor": 21,
+    "minor": 24,
     "patch": 0
   },
   "configurePresets": [
     {
       "name": "base",
       "hidden": true,
-      "environment": {
-        "VCPKG_ROOT": "$penv{HOME}/vcpkg/vcpkg-git",
-        "QT_ROOT": "$penv{HOME}/Qt/6.8.3/macos"
-      },
-      "toolchainFile": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
+      "generator": "Ninja",
+      "toolchainFile": "${sourceDir}/cmake/PluginBasedToolchain.cmake",
       "cacheVariables": {
-        "CMAKE_PREFIX_PATH": {
-          "type": "PATH",
-          "value": "$env{QT_ROOT}"
-        },
-        "Qt6_DIR": {
-          "type": "PATH",
-          "value": "$env{QT_ROOT}/lib/cmake/Qt6"
-        },
         "CMAKE_EXPORT_COMPILE_COMMANDS": true,
         "BUILD_TESTING": true
       }

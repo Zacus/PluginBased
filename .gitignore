@@ -2,9 +2,7 @@
 .DS_Store
 .AppleDouble
 .LSOverride
-.vscode
 .clang-tidy
-.clang-format
 
 # Build
 build/

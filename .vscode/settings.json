@@ -1,0 +1,33 @@
+{
+    // CMake 配置
+    "cmake.useCMakePresets": "always",
+    "cmake.configureOnOpen": true,
+    "cmake.autoRefreshIntelliSense": true,
+    // clangd 配置
+    "clangd.arguments": [
+        "--compile-commands-dir=${workspaceFolder}/build",
+        "--background-index",
+        "--clang-tidy",
+        "--pch-storage=memory"
+    ],
+    // QML 智能提示：由 Qt 扩展发现 qmlls，并使用 Debug Preset 构建元数据
+    "qt-qml.qmlls.enabled": true,
+    "qt-qml.qmlls.customArgs": [
+        "--build-dir=${workspaceFolder}/build",
+        "--no-cmake-calls"
+    ],
+    // 格式化配置
+    "editor.formatOnSave": true,
+    "editor.defaultFormatter": "llvm-vs-code-extensions.vscode-clangd",
+    "[cpp]": {
+        "editor.defaultFormatter": "llvm-vs-code-extensions.vscode-clangd"
+    },
+    "[qml]": {
+        "editor.defaultFormatter": "theqtcompany.qt-qml"
+    },
+    "files.exclude": {
+        "**/.clangd": true,
+        "**/build": false,
+        "**/build-release": false
+    }
+}

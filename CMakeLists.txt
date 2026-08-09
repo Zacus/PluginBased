@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.21)
+cmake_minimum_required(VERSION 3.24)
 project(PluginBased VERSION 1.0.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
@@ -128,19 +128,14 @@ if(APPLE)
 endif()
 
 # ── UI 组件库：独立仓库，通过 FetchContent 引入 ───────────────
-# 生产环境替换 SOURCE_DIR 为 GIT_REPOSITORY + GIT_TAG：
-#   FetchContent_Declare(
-#       QtQuickComponents
-#       GIT_REPOSITORY https://github.com/yourname/QtQuickComponents.git
-#       GIT_TAG        v1.0.0
-#   )
 # 告知组件库把 qmldir 和插件输出到本项目的构建目录，
 # 确保运行时 QML 引擎能通过 QML_IMPORT_PATH 找到它们。
 set(QTC_QML_OUTPUT_BASE "${CMAKE_BINARY_DIR}" CACHE PATH "" FORCE)
 include(FetchContent)
 FetchContent_Declare(
     QtQuickComponents
-    SOURCE_DIR "${CMAKE_SOURCE_DIR}/../QtQuickComponents"
+    GIT_REPOSITORY https://github.com/Zacus/QtQuickComponents.git
+    GIT_TAG 8e376dfc50e703a49b4e66aa1302e5fcd6df2cde
 )
 # The host owns the Qt version/policy baseline. Prevent the embedded project
 # from replacing it with qt_standard_project_setup()'s version-agnostic default.

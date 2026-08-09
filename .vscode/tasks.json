@@ -1,0 +1,87 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "CMake Configure (Debug)",
+            "type": "process",
+            "command": "cmake",
+            "args": ["--preset", "debug"],
+            "options": { "cwd": "${workspaceFolder}" },
+            "problemMatcher": ["$cmake"]
+        },
+        {
+            "label": "CMake Build (Debug)",
+            "type": "process",
+            "command": "cmake",
+            "args": ["--build", "--preset", "debug", "--parallel"],
+            "options": { "cwd": "${workspaceFolder}" },
+            "dependsOn": ["CMake Configure (Debug)"],
+            "problemMatcher": ["$gcc"],
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            }
+        },
+        {
+            "label": "CTest (Debug)",
+            "type": "process",
+            "command": "ctest",
+            "args": ["--preset", "debug"],
+            "options": { "cwd": "${workspaceFolder}" },
+            "dependsOn": ["CMake Build (Debug)"],
+            "problemMatcher": []
+        },
+        {
+            "label": "CMake Configure (Release)",
+            "type": "process",
+            "command": "cmake",
+            "args": ["--preset", "release"],
+            "options": { "cwd": "${workspaceFolder}" },
+            "problemMatcher": ["$cmake"]
+        },
+        {
+            "label": "CMake Build (Release)",
+            "type": "process",
+            "command": "cmake",
+            "args": ["--build", "--preset", "release", "--parallel"],
+            "options": { "cwd": "${workspaceFolder}" },
+            "dependsOn": ["CMake Configure (Release)"],
+            "problemMatcher": ["$gcc"],
+            "group": "build"
+        },
+        {
+            "label": "CTest (Release)",
+            "type": "process",
+            "command": "ctest",
+            "args": ["--preset", "release"],
+            "options": { "cwd": "${workspaceFolder}" },
+            "dependsOn": ["CMake Build (Release)"],
+            "problemMatcher": []
+        },
+        {
+            "label": "Package (Release)",
+            "type": "process",
+            "command": "${workspaceFolder}/package.sh",
+            "args": ["--skip-build"],
+            "options": { "cwd": "${workspaceFolder}" },
+            "dependsOn": ["CMake Build (Release)"],
+            "problemMatcher": []
+        },
+        {
+            "label": "CMake Clean (Debug)",
+            "type": "process",
+            "command": "cmake",
+            "args": ["--build", "--preset", "debug", "--target", "clean"],
+            "options": { "cwd": "${workspaceFolder}" },
+            "problemMatcher": []
+        },
+        {
+            "label": "CMake Clean (Release)",
+            "type": "process",
+            "command": "cmake",
+            "args": ["--build", "--preset", "release", "--target", "clean"],
+            "options": { "cwd": "${workspaceFolder}" },
+            "problemMatcher": []
+        }
+    ]
+}
