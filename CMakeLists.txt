@@ -6,6 +6,9 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 
+option(PLUGINBASED_OFFICIAL_BUILD "Require clean, matching tagged source" OFF)
+set(PLUGINBASED_EXPECTED_TAG "" CACHE STRING "Expected vMAJOR.MINOR.PATCH release tag")
+
 find_package(Qt6 6.8.3 EXACT REQUIRED COMPONENTS Core Gui Quick QuickControls2 Multimedia ShaderTools Test LinguistTools)
 qt_standard_project_setup(REQUIRES 6.8)
 
@@ -287,6 +290,10 @@ if(BUILD_TESTING)
     )
     add_test(NAME deploy_packaging_checks
         COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tests/deploy_packaging_checks.py"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+    )
+    add_test(NAME build_info_generation_checks
+        COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tests/build_info_generation_checks.py"
         WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
     )
     add_executable(PluginMetadataValidatorTest
