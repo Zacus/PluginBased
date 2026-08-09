@@ -1,34 +1,82 @@
 name: CI
+
 on:
   push:
     branches:
       - main
+    tags:
+      - 'v*'
   pull_request:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
 jobs:
-  macos:
-    name: macOS Debug
-    runs-on: macos-14
+  build_and_package:
+    name: ${{ matrix.platform }} / ${{ github.event_name == 'pull_request' && 'Debug validation' || 'Release package' }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 180
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos
+            runner: macos-14
+            qt_host: mac
+            qt_arch: clang_64
+            qt_kit: macos
+            package_glob: '*.dmg'
+          - platform: linux
+            runner: ubuntu-22.04
+            qt_host: linux
+            qt_arch: gcc_64
+            qt_kit: gcc_64
+            package_glob: '*.tar.gz'
+          - platform: windows
+            runner: windows-2022
+            qt_host: windows
+            qt_arch: win64_msvc2022_64
+            qt_kit: msvc2022_64
+            package_glob: '*.zip'
 
     env:
       VCPKG_ROOT: ${{ github.workspace }}/vcpkg
-      QT_ROOT: ${{ runner.temp }}/Qt/6.8.3/macos
+      QT_ROOT: ${{ runner.temp }}/Qt/6.8.3/${{ matrix.qt_kit }}
+      VCPKG_DOWNLOADS: ${{ runner.temp }}/vcpkg-downloads
+      VCPKG_BINARY_CACHE: ${{ runner.temp }}/vcpkg-binary-cache
+      VCPKG_BINARY_SOURCES: clear;files,${{ runner.temp }}/vcpkg-binary-cache,readwrite
       VCPKG_MAX_RETRIES: 5
       X_VCPKG_DOWNLOAD_RETRY_DELAY_SECONDS: 10
-      VCPKG_BINARY_SOURCES: "clear;default,readwrite"
+      BUILD_PRESET: ${{ github.event_name == 'pull_request' && 'debug' || 'release' }}
+      BUILD_DIR: ${{ github.event_name == 'pull_request' && 'build' || 'build-release' }}
 
     steps:
       - name: Checkout PluginBased
         uses: actions/checkout@v4
         with:
           path: PluginBased
+          fetch-depth: 0
 
-      - name: Checkout QtQuickComponents
-        uses: actions/checkout@v4
-        with:
-          repository: Zacus/QtQuickComponents
-          path: QtQuickComponents
+      - name: Validate release tag
+        if: startsWith(github.ref, 'refs/tags/')
+        working-directory: PluginBased
+        shell: bash
+        run: |
+          if [[ ! "${GITHUB_REF_NAME}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Invalid release tag: ${GITHUB_REF_NAME}" >&2
+            exit 1
+          fi
+          product_version="$(./package.sh --version)"
+          if [[ "${GITHUB_REF_NAME#v}" != "${product_version}" ]]; then
+            echo "Tag ${GITHUB_REF_NAME} does not match product version ${product_version}" >&2
+            exit 1
+          fi
 
       - name: Checkout vcpkg
         uses: actions/checkout@v4
@@ -38,12 +86,46 @@ jobs:
           ref: ea1a7396b05637a53bf23c078647ecc0edee4b80
           fetch-depth: 0
 
+      - name: Initialize Visual Studio 2022
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Install Linux build and packaging prerequisites
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends \
+            libasound2 \
+            libdbus-1-3 \
+            libegl1-mesa-dev \
+            libfontconfig1 \
+            libgl1-mesa-dev \
+            libglib2.0-0 \
+            libnss3 \
+            libpulse0 \
+            libxkbcommon-x11-0 \
+            libxcb-cursor0 \
+            libxcb-icccm4 \
+            libxcb-keysyms1 \
+            libxcb-randr0 \
+            libxcb-render-util0 \
+            libxcb-shape0 \
+            libxcb-util1 \
+            libxcb-xinerama0 \
+            libxcb-xinput0 \
+            ninja-build \
+            patchelf
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
 
       - name: Install aqtinstall
+        shell: bash
         run: python -m pip install --disable-pip-version-check aqtinstall==3.3.0
 
       - name: Cache Qt
@@ -51,144 +133,249 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ runner.temp }}/Qt/6.8.3
-          key: qt-${{ runner.os }}-6.8.3-clang_64-qtmultimedia-qtshadertools-aqt-3.3.0
+          key: qt-${{ runner.os }}-${{ matrix.qt_arch }}-6.8.3-qtmultimedia-qtshadertools-aqt-3.3.0
 
       - name: Install Qt 6.8.3
         if: steps.qt-cache.outputs.cache-hit != 'true'
-        run: aqt install-qt --outputdir "${RUNNER_TEMP}/Qt" mac desktop 6.8.3 clang_64 -m qtmultimedia qtshadertools
+        shell: bash
+        run: >-
+          aqt install-qt --outputdir "${RUNNER_TEMP}/Qt"
+          "${{ matrix.qt_host }}" desktop 6.8.3 "${{ matrix.qt_arch }}"
+          -m qtmultimedia qtshadertools
 
       - name: Validate Qt 6.8.3
-        run: test -f "${QT_ROOT}/lib/cmake/Qt6/Qt6Config.cmake"
+        shell: bash
+        run: |
+          python - <<'PY'
+          import os
+          from pathlib import Path
+
+          root = Path(os.environ["QT_ROOT"])
+          required = (
+              root / "lib/cmake/Qt6/Qt6Config.cmake",
+              root / "lib/cmake/Qt6Multimedia/Qt6MultimediaConfig.cmake",
+              root / "lib/cmake/Qt6ShaderTools/Qt6ShaderToolsConfig.cmake",
+          )
+          missing = [str(path) for path in required if not path.is_file()]
+          if missing:
+              raise SystemExit("Missing Qt package files:\n" + "\n".join(missing))
+          PY
 
       - name: Cache vcpkg downloads
         uses: actions/cache@v4
         with:
-          path: ~/.vcpkg/downloads
-          key: vcpkg-downloads-${{ runner.os }}-${{ hashFiles('PluginBased/vcpkg.json') }}
-          restore-keys: vcpkg-downloads-${{ runner.os }}-
+          path: ${{ runner.temp }}/vcpkg-downloads
+          key: vcpkg-downloads-${{ runner.os }}-${{ matrix.qt_arch }}-ea1a7396b05637a53bf23c078647ecc0edee4b80-${{ hashFiles('PluginBased/vcpkg.json') }}
+          restore-keys: |
+            vcpkg-downloads-${{ runner.os }}-${{ matrix.qt_arch }}-ea1a7396b05637a53bf23c078647ecc0edee4b80-
 
-      - name: Cache vcpkg binary cache
+      - name: Cache vcpkg binary archives
         uses: actions/cache@v4
         with:
-          path: ~/.cache/vcpkg/archives
-          key: vcpkg-bin-${{ runner.os }}-${{ hashFiles('PluginBased/vcpkg.json') }}
-          restore-keys: vcpkg-bin-${{ runner.os }}-
+          path: ${{ runner.temp }}/vcpkg-binary-cache
+          key: vcpkg-binary-${{ runner.os }}-${{ matrix.qt_arch }}-ea1a7396b05637a53bf23c078647ecc0edee4b80-${{ hashFiles('PluginBased/vcpkg.json') }}
+          restore-keys: |
+            vcpkg-binary-${{ runner.os }}-${{ matrix.qt_arch }}-ea1a7396b05637a53bf23c078647ecc0edee4b80-
 
-      - name: Bootstrap vcpkg
-        run: ./vcpkg/bootstrap-vcpkg.sh
+      - name: Prepare vcpkg cache directories
+        shell: bash
+        run: |
+          python - <<'PY'
+          import os
+          from pathlib import Path
+
+          Path(os.environ["VCPKG_DOWNLOADS"]).mkdir(parents=True, exist_ok=True)
+          Path(os.environ["VCPKG_BINARY_CACHE"]).mkdir(parents=True, exist_ok=True)
+          PY
+
+      - name: Bootstrap vcpkg (Unix)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: '"${VCPKG_ROOT}/bootstrap-vcpkg.sh" -disableMetrics'
+
+      - name: Bootstrap vcpkg (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: '& "$env:VCPKG_ROOT/bootstrap-vcpkg.bat" -disableMetrics'
+
+      - name: Validate build tools
+        shell: bash
+        run: |
+          cmake --version
+          ninja --version
+          python --version
+          python - <<'PY'
+          import os
+          import platform
+          import subprocess
+          from pathlib import Path
+
+          executable = "vcpkg.exe" if platform.system() == "Windows" else "vcpkg"
+          vcpkg = Path(os.environ["VCPKG_ROOT"]) / executable
+          if not vcpkg.is_file():
+              raise SystemExit(f"Missing vcpkg executable: {vcpkg}")
+          subprocess.run([str(vcpkg), "version"], check=True)
+          PY
 
       - name: Configure
         working-directory: PluginBased
+        shell: bash
         run: |
           set -o pipefail
-          cmake --preset debug 2>&1 | tee configure.log || {
-              emit_error_annotation() {
-                local file="$1"
-                if [ ! -f "${file}" ]; then
-                  return 0
-                fi
-
-                local excerpt
-                excerpt="$(
-                  {
-                    echo "VCPKG_ROOT=${VCPKG_ROOT}"
-                    echo "QT_ROOT=${QT_ROOT}"
-                    echo ""
-                    echo "### ${file}: matching error context"
-                    grep -Ei -C 3 "error|failed|fatal|not found|could not|unable" "${file}" || true
-                    echo ""
-                    echo "### ${file}: tail"
-                    tail -n 80 "${file}"
-                  } | sed -e 's/%/%25/g' -e 's/\r/%0D/g' -e 's/$/%0A/' | tr -d '\n'
-                )"
-                echo "::error title=Configure diagnostics from ${file}::${excerpt}"
-              }
-
-              emit_error_annotation "configure.log"
-              emit_error_annotation "build/vcpkg-manifest-install.log"
-              emit_error_annotation "build/CMakeFiles/CMakeConfigureLog.yaml"
-              emit_error_annotation "build/CMakeFiles/CMakeError.log"
-
-              echo "::group::CMake/vcpkg configure diagnostics"
-              {
-                echo "## Configure diagnostics"
-                echo ""
-                echo "### Environment"
-                echo '```text'
-                echo "VCPKG_ROOT=${VCPKG_ROOT}"
-                echo "QT_ROOT=${QT_ROOT}"
-                echo '```'
-                for log_file in \
-                  configure.log \
-                  build/vcpkg-manifest-install.log \
-                  build/CMakeFiles/CMakeConfigureLog.yaml \
-                  build/CMakeFiles/CMakeError.log
-                do
-                  if [ -f "${log_file}" ]; then
-                    echo ""
-                    echo "### ${log_file}"
-                    echo '```text'
-                    cat "${log_file}"
-                    echo '```'
-                  fi
-                done
-              } | tee configure-diagnostics.md >> "$GITHUB_STEP_SUMMARY"
-              echo "::endgroup::"
-              exit 1
-            }
-
-      - name: Upload configure diagnostics
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: configure-diagnostics
-          path: |
-            PluginBased/configure-diagnostics.md
-            PluginBased/configure.log
-            PluginBased/build/vcpkg-manifest-install.log
-            PluginBased/build/CMakeFiles/CMakeConfigureLog.yaml
-            PluginBased/build/CMakeFiles/CMakeError.log
-          if-no-files-found: ignore
+          configure_log="${RUNNER_TEMP}/configure-${{ matrix.platform }}.log"
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            cmake --preset "${BUILD_PRESET}" --fresh \
+              -DPLUGINBASED_OFFICIAL_BUILD=ON \
+              "-DPLUGINBASED_EXPECTED_TAG=${GITHUB_REF_NAME}" \
+              2>&1 | tee "${configure_log}"
+          else
+            cmake --preset "${BUILD_PRESET}" --fresh \
+              2>&1 | tee "${configure_log}"
+          fi
 
       - name: Build
         working-directory: PluginBased
-        run: cmake --build --preset debug --parallel
+        shell: bash
+        run: cmake --build --preset "${BUILD_PRESET}" --parallel
 
       - name: Test
         working-directory: PluginBased
+        shell: bash
         run: |
           set -o pipefail
-          ctest --preset debug 2>&1 | tee ctest.log || {
-            emit_error_annotation() {
-              local file="$1"
-              if [ ! -f "${file}" ]; then
-                return 0
-              fi
+          ctest --preset "${BUILD_PRESET}" \
+            2>&1 | tee "${RUNNER_TEMP}/ctest-${{ matrix.platform }}.log"
 
-              local excerpt
-              excerpt="$(
-                {
-                  echo "### ${file}: matching failure context"
-                  grep -Ei -C 5 "fail|failed|failure|error|exception|timeout|not run" "${file}" || true
-                  echo ""
-                  echo "### ${file}: tail"
-                  tail -n 120 "${file}"
-                } | sed -e 's/%/%25/g' -e 's/\r/%0D/g' -e 's/$/%0A/' | tr -d '\n'
-              )"
-              echo "::error title=CTest diagnostics from ${file}::${excerpt}"
-            }
+      - name: Package verified Release
+        if: github.event_name != 'pull_request'
+        working-directory: PluginBased
+        shell: bash
+        run: ./package.sh --skip-build
 
-            emit_error_annotation "ctest.log"
-            emit_error_annotation "build/Testing/Temporary/LastTest.log"
-            exit 1
-          }
+      - name: Generate package checksum
+        if: github.event_name != 'pull_request'
+        working-directory: PluginBased
+        shell: bash
+        env:
+          PACKAGE_GLOB: ${{ matrix.package_glob }}
+        run: |
+          python - <<'PY'
+          import hashlib
+          import os
+          from pathlib import Path
 
-      - name: Upload test diagnostics
+          packages = sorted(Path("dist").glob(os.environ["PACKAGE_GLOB"]))
+          if len(packages) != 1:
+              names = ", ".join(str(path) for path in packages) or "none"
+              raise SystemExit(f"Expected exactly one package, found: {names}")
+
+          package = packages[0]
+          digest = hashlib.sha256()
+          with package.open("rb") as stream:
+              for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                  digest.update(chunk)
+          checksum = package.with_name(package.name + ".sha256")
+          checksum.write_text(
+              f"{digest.hexdigest()}  {package.name}\n", encoding="utf-8")
+          print(checksum)
+          PY
+
+      - name: Upload verified package
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: PluginBased-${{ matrix.platform }}-package
+          path: |
+            PluginBased/dist/${{ matrix.package_glob }}
+            PluginBased/dist/${{ matrix.package_glob }}.sha256
+          if-no-files-found: error
+          retention-days: ${{ startsWith(github.ref, 'refs/tags/v') && 365 || 30 }}
+
+      - name: Upload failure diagnostics
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: test-diagnostics
+          name: PluginBased-${{ matrix.platform }}-diagnostics
           path: |
-            PluginBased/ctest.log
-            PluginBased/build/Testing/Temporary/LastTest.log
+            ${{ runner.temp }}/configure-${{ matrix.platform }}.log
+            ${{ runner.temp }}/ctest-${{ matrix.platform }}.log
+            PluginBased/${{ env.BUILD_DIR }}/vcpkg-manifest-install.log
+            PluginBased/${{ env.BUILD_DIR }}/CMakeFiles/CMakeConfigureLog.yaml
+            PluginBased/${{ env.BUILD_DIR }}/CMakeFiles/CMakeError.log
+            PluginBased/${{ env.BUILD_DIR }}/Testing/Temporary/LastTest.log
           if-no-files-found: ignore
+          retention-days: 30
+
+  release:
+    name: Publish GitHub Release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build_and_package
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download verified packages
+        uses: actions/download-artifact@v4
+        with:
+          pattern: PluginBased-*-package
+          path: release-assets
+          merge-multiple: true
+
+      - name: Revalidate packages and checksums
+        shell: bash
+        run: |
+          python - <<'PY'
+          import hashlib
+          from pathlib import Path
+
+          root = Path("release-assets")
+          suffixes = (".dmg", ".tar.gz", ".zip")
+          packages = [
+              path for path in root.iterdir()
+              if path.is_file() and any(path.name.endswith(suffix) for suffix in suffixes)
+          ]
+          for suffix in suffixes:
+              matches = [path for path in packages if path.name.endswith(suffix)]
+              if len(matches) != 1:
+                  raise SystemExit(
+                      f"Expected one {suffix} package, found {len(matches)}")
+          if len(packages) != 3:
+              raise SystemExit(f"Expected three packages, found {len(packages)}")
+
+          expected_files = set(packages)
+          for package in packages:
+              checksum = package.with_name(package.name + ".sha256")
+              if not checksum.is_file():
+                  raise SystemExit(f"Missing checksum: {checksum.name}")
+              expected_files.add(checksum)
+              fields = checksum.read_text(encoding="utf-8").strip().split()
+              if len(fields) != 2 or fields[1] != package.name:
+                  raise SystemExit(f"Malformed checksum: {checksum.name}")
+
+              digest = hashlib.sha256()
+              with package.open("rb") as stream:
+                  for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                      digest.update(chunk)
+              if digest.hexdigest() != fields[0]:
+                  raise SystemExit(f"Checksum mismatch: {package.name}")
+
+          actual_files = {path for path in root.iterdir() if path.is_file()}
+          if actual_files != expected_files:
+              unexpected = sorted(path.name for path in actual_files - expected_files)
+              raise SystemExit(f"Unexpected release assets: {unexpected}")
+          PY
+
+      - name: Create GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1; then
+            echo "Release already exists: ${GITHUB_REF_NAME}" >&2
+            exit 1
+          fi
+          gh release create "${GITHUB_REF_NAME}" release-assets/* \
+            --title "${GITHUB_REF_NAME}" \
+            --verify-tag

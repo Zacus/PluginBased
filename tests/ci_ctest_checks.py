@@ -2,6 +2,9 @@
 
 import json
 import os
+import platform
+import re
+import shutil
 import subprocess
 import tempfile
 from pathlib import Path
@@ -19,42 +22,67 @@ def require(condition, message):
         raise AssertionError(message)
 
 
-def verify_preset_bootstraps_local_environment(presets):
+def write_fake_dependencies(vcpkg_root, qt_root):
+    (vcpkg_root / "scripts" / "buildsystems").mkdir(parents=True)
+    (vcpkg_root / "scripts" / "buildsystems" / "vcpkg.cmake").write_text(
+        "# test toolchain\n", encoding="utf-8"
+    )
+    vcpkg_executable = "vcpkg.exe" if platform.system() == "Windows" else "vcpkg"
+    (vcpkg_root / vcpkg_executable).write_text("test tool\n", encoding="utf-8")
+    (qt_root / "lib" / "cmake" / "Qt6").mkdir(parents=True)
+    (qt_root / "lib" / "cmake" / "Qt6" / "Qt6Config.cmake").write_text(
+        "# test Qt config\n", encoding="utf-8"
+    )
+    for package in ("Qt6Multimedia", "Qt6ShaderTools"):
+        package_dir = qt_root / "lib" / "cmake" / package
+        package_dir.mkdir(parents=True)
+        (package_dir / f"{package}Config.cmake").write_text(
+            "# test Qt module config\n", encoding="utf-8"
+        )
+
+
+def write_toolchain_test_project(source_dir, presets):
+    source_dir.mkdir(exist_ok=True)
+    (source_dir / "cmake").mkdir()
+    shutil.copy2(
+        ROOT / "cmake" / "PluginBasedToolchain.cmake",
+        source_dir / "cmake" / "PluginBasedToolchain.cmake",
+    )
+    isolated_presets = json.loads(json.dumps(presets))
+    debug_preset = next(
+        preset
+        for preset in isolated_presets["configurePresets"]
+        if preset.get("name") == "debug"
+    )
+    debug_preset["binaryDir"] = "${sourceDir}/build"
+    isolated_presets["buildPresets"] = []
+    isolated_presets["testPresets"] = []
+    (source_dir / "CMakePresets.json").write_text(
+        json.dumps(isolated_presets), encoding="utf-8"
+    )
+    (source_dir / "CMakeLists.txt").write_text(
+        "cmake_minimum_required(VERSION 3.21)\n"
+        "project(ToolchainResolutionCheck NONE)\n"
+        "file(WRITE \"${CMAKE_BINARY_DIR}/resolved-paths.txt\" "
+        "\"${PLUGINBASED_VCPKG_ROOT}\\n${Qt6_DIR}\\n\")\n",
+        encoding="utf-8",
+    )
+
+
+def verify_preset_respects_external_environment(presets):
     with tempfile.TemporaryDirectory() as temporary_directory:
         source_dir = Path(temporary_directory) / "source"
         fake_home = Path(temporary_directory) / "home"
-        source_dir.mkdir()
         fake_home.mkdir()
-
-        isolated_presets = json.loads(json.dumps(presets))
-        base_preset = next(
-            preset
-            for preset in isolated_presets["configurePresets"]
-            if preset.get("name") == "base"
-        )
-        base_preset.pop("toolchainFile", None)
-        base_preset["cacheVariables"] = {
-            "RESOLVED_VCPKG_ROOT": "$env{VCPKG_ROOT}",
-            "RESOLVED_QT_ROOT": "$env{QT_ROOT}",
-        }
-        isolated_presets["buildPresets"] = []
-        isolated_presets["testPresets"] = []
-
-        (source_dir / "CMakePresets.json").write_text(
-            json.dumps(isolated_presets), encoding="utf-8"
-        )
-        (source_dir / "CMakeLists.txt").write_text(
-            "cmake_minimum_required(VERSION 3.21)\n"
-            "project(PresetEnvironmentCheck NONE)\n"
-            "file(WRITE \"${CMAKE_BINARY_DIR}/resolved-paths.txt\" "
-            "\"${RESOLVED_VCPKG_ROOT}\\n${RESOLVED_QT_ROOT}\\n\")\n",
-            encoding="utf-8",
-        )
+        vcpkg_root = fake_home / "portable-vcpkg"
+        qt_root = fake_home / "portable-qt"
+        write_fake_dependencies(vcpkg_root, qt_root)
+        write_toolchain_test_project(source_dir, presets)
 
         environment = os.environ.copy()
-        environment.pop("VCPKG_ROOT", None)
-        environment.pop("QT_ROOT", None)
         environment["HOME"] = str(fake_home)
+        environment["VCPKG_ROOT"] = str(vcpkg_root)
+        environment["QT_ROOT"] = str(qt_root)
         result = subprocess.run(
             ["cmake", "--preset", "debug"],
             cwd=source_dir,
@@ -64,17 +92,69 @@ def verify_preset_bootstraps_local_environment(presets):
             check=False,
         )
         require(result.returncode == 0,
-                "debug preset should configure without pre-exported dependency roots:\n"
+                "debug preset should configure with externally supplied dependency roots:\n"
                 + result.stdout + result.stderr)
 
         resolved_paths = (source_dir / "build" / "resolved-paths.txt").read_text(
             encoding="utf-8"
         ).splitlines()
+        require(resolved_paths == [str(vcpkg_root), str(qt_root / "lib/cmake/Qt6")],
+                "project toolchain should preserve externally supplied dependency roots")
+
+
+def verify_build_environment_setup_tool():
+    setup_tool = ROOT / "tools" / "setup_build_environment.py"
+    require(setup_tool.exists(),
+            "the build environment setup tool should be available")
+
+    with tempfile.TemporaryDirectory() as temporary_directory:
+        temporary_root = Path(temporary_directory)
+        project_root = temporary_root / "project"
+        fake_home = temporary_root / "home"
+        vcpkg_root = fake_home / "vcpkg" / "vcpkg-master"
+        qt_kit = {
+            "Darwin": "macos",
+            "Linux": "gcc_64",
+            "Windows": "msvc2022_64",
+        }[platform.system()]
+        qt_root = fake_home / "Qt" / "6.8.3" / qt_kit
+        downloads_root = vcpkg_root / "downloads"
+        project_root.mkdir()
+        write_fake_dependencies(vcpkg_root, qt_root)
+        downloads_root.mkdir(parents=True)
+        write_toolchain_test_project(project_root, json.loads(read("CMakePresets.json")))
+
+        environment = os.environ.copy()
+        environment["HOME"] = str(fake_home)
+        environment.pop("VCPKG_ROOT", None)
+        environment.pop("QT_ROOT", None)
+        environment.pop("VCPKG_DOWNLOADS", None)
+        result = subprocess.run(
+            [
+                "python3", str(setup_tool),
+                "--project-root", str(project_root),
+                "--no-install",
+                "--configure", "debug",
+            ],
+            env=environment,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        require(result.returncode == 0,
+                "setup tool should accept valid existing dependencies:\n"
+                + result.stdout + result.stderr)
+
+        require(not (project_root / "CMakeUserPresets.json").exists(),
+                "setup tool should not generate machine-specific presets")
+        resolved_paths = (project_root / "build" / "resolved-paths.txt").read_text(
+            encoding="utf-8"
+        ).splitlines()
         require(resolved_paths == [
-                    str(fake_home / "vcpkg" / "vcpkg-git"),
-                    str(fake_home / "Qt" / "6.8.3" / "macos"),
+                    str(vcpkg_root.resolve()),
+                    str((qt_root / "lib" / "cmake" / "Qt6").resolve()),
                 ],
-                "debug preset should derive vcpkg and Qt roots from the parent HOME")
+                "setup tool should configure with the resolved default dependency roots")
 
 
 def main():
@@ -92,14 +172,14 @@ def main():
     require(presets_path.exists(),
             "CMakePresets.json should define the supported build interface")
     presets = json.loads(presets_path.read_text(encoding="utf-8"))
-    verify_preset_bootstraps_local_environment(presets)
+    verify_preset_respects_external_environment(presets)
+    verify_build_environment_setup_tool()
     require(presets.get("version") == 3,
-            "CMake presets should use schema version 3 for CMake 3.21")
+            "CMake presets should use schema version 3 for CMake 3.24")
     require(presets.get("cmakeMinimumRequired") == {
-                "major": 3, "minor": 21, "patch": 0
+                "major": 3, "minor": 24, "patch": 0
             },
-            "CMake presets should match the project CMake 3.21 floor")
-
+            "CMake presets should match the project CMake 3.24 floor")
     configure_presets = {
         preset.get("name"): preset
         for preset in presets.get("configurePresets", [])
@@ -107,19 +187,47 @@ def main():
     base_preset = configure_presets.get("base", {})
     require(base_preset.get("hidden") is True,
             "CMake presets should keep shared configuration in a hidden base preset")
+    require(base_preset.get("generator") == "Ninja",
+            "CMake presets should use the Ninja generator")
+    require("environment" not in base_preset,
+            "shared presets should not override machine- or CI-specific dependency roots")
     require(base_preset.get("toolchainFile") ==
-            "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
-            "CMake presets should obtain the vcpkg toolchain from VCPKG_ROOT")
+            "${sourceDir}/cmake/PluginBasedToolchain.cmake",
+            "CMake presets should use the repository-owned dependency resolver")
     base_cache = base_preset.get("cacheVariables", {})
-    require(base_cache.get("CMAKE_PREFIX_PATH", {}).get("value") == "$env{QT_ROOT}",
-            "CMake presets should obtain the Qt prefix from QT_ROOT")
-    require(base_cache.get("Qt6_DIR", {}).get("value") ==
-            "$env{QT_ROOT}/lib/cmake/Qt6",
-            "CMake presets should bind Qt6 discovery to QT_ROOT")
+    require("CMAKE_PREFIX_PATH" not in base_cache and "Qt6_DIR" not in base_cache,
+            "dependency paths should be resolved by the project toolchain")
     require(base_cache.get("BUILD_TESTING") is True,
             "CMake presets should enable the project test suite")
     require(base_cache.get("CMAKE_EXPORT_COMPILE_COMMANDS") is True,
             "CMake presets should generate compile_commands.json for editor tooling")
+
+    vscode_settings_path = ROOT / ".vscode" / "settings.json"
+    vscode_tasks_path = ROOT / ".vscode" / "tasks.json"
+    vscode_launch_path = ROOT / ".vscode" / "launch.json"
+    require(vscode_settings_path.exists() and vscode_tasks_path.exists() and
+            vscode_launch_path.exists(),
+            "fresh clones should include shared VS Code CMake and QML configuration")
+    vscode_settings = vscode_settings_path.read_text(encoding="utf-8")
+    vscode_tasks = vscode_tasks_path.read_text(encoding="utf-8")
+    vscode_launch = vscode_launch_path.read_text(encoding="utf-8")
+    require('"cmake.useCMakePresets": "always"' in vscode_settings,
+            "VS Code should configure through repository CMake presets")
+    require('"qt-qml.qmlls.enabled": true' in vscode_settings and
+            '"--build-dir=${workspaceFolder}/build"' in vscode_settings,
+            "VS Code should provide QML language-server build metadata")
+    require("customExePath" not in vscode_settings and
+            '"cmake.environment"' not in vscode_settings,
+            "VS Code settings should not hard-code machine dependency paths")
+    require('"--preset", "debug"' in vscode_tasks and
+            '"--preset", "release"' in vscode_tasks,
+            "VS Code tasks should expose the shared debug and release presets")
+    require("local-debug" not in vscode_tasks and "local-release" not in vscode_tasks and
+            "VCPKG_ROOT" not in vscode_tasks and "QT_ROOT" not in vscode_tasks,
+            "VS Code tasks should not carry local preset names or dependency paths")
+    require('"program": "${command:cmake.launchTargetPath}"' in vscode_launch and
+            "PluginBasedApp.app" not in vscode_launch,
+            "VS Code launch configuration should use the active CMake target on every platform")
 
     require(configure_presets.get("debug", {}).get("inherits") == "base" and
             configure_presets["debug"].get("binaryDir") == "${sourceDir}/build" and
@@ -129,12 +237,16 @@ def main():
             configure_presets["release"].get("binaryDir") == "${sourceDir}/build-release" and
             configure_presets["release"].get("cacheVariables", {}).get("CMAKE_BUILD_TYPE") == "Release",
             "release configure preset should preserve the existing Release build directory")
+    require(set(configure_presets) == {"base", "debug", "release"},
+            "repository configure presets should expose only debug and release")
 
     for preset_kind in ("buildPresets", "testPresets"):
         named_presets = {
             preset.get("name"): preset
             for preset in presets.get(preset_kind, [])
         }
+        require(set(named_presets) == {"debug", "release"},
+                f"{preset_kind} should expose only debug and release")
         for name, configuration in (("debug", "Debug"), ("release", "Release")):
             require(named_presets.get(name, {}).get("configurePreset") == name and
                     named_presets[name].get("configuration") == configuration,
@@ -148,6 +260,12 @@ def main():
             "top-level CMake should require the approved exact Qt version")
     require("qt_standard_project_setup(REQUIRES 6.8)" in root_cmake,
             "top-level CMake should preserve the Qt 6.8 policy baseline")
+    require("GIT_REPOSITORY https://github.com/Zacus/QtQuickComponents.git" in root_cmake,
+            "QtQuickComponents should be fetched from its canonical repository")
+    require("GIT_TAG 8e376dfc50e703a49b4e66aa1302e5fcd6df2cde" in root_cmake,
+            "QtQuickComponents should be pinned to the approved commit")
+    require('SOURCE_DIR "${CMAKE_SOURCE_DIR}/../QtQuickComponents"' not in root_cmake,
+            "fresh clones should not require an adjacent QtQuickComponents checkout")
 
     vcpkg_manifest_path = ROOT / "vcpkg.json"
     require(vcpkg_manifest_path.exists(),
@@ -325,6 +443,46 @@ def main():
 
     require(workflow_path.exists(), "GitHub Actions CI workflow should exist")
     workflow = workflow_path.read_text(encoding="utf-8")
+    require("tags:" in workflow and "- 'v*'" in workflow,
+            "CI should build version tags")
+    require("permissions:\n  contents: read" in workflow,
+            "workflow permissions should default to read-only contents")
+    require("concurrency:" in workflow and
+            "!startsWith(github.ref, 'refs/tags/')" in workflow,
+            "CI should cancel stale branch runs but preserve tag releases")
+    require("jobs:\n  build_and_package:" in workflow,
+            "CI should use one cross-platform build and package job")
+
+    build_job_start = workflow.index("  build_and_package:")
+    release_job_start = workflow.index("\n  release:", build_job_start)
+    build_job = workflow[build_job_start:release_job_start]
+    release_job = workflow[release_job_start:]
+
+    require("fail-fast: false" in build_job and
+            "timeout-minutes: 180" in build_job,
+            "matrix jobs should be independent and bounded")
+    require(len(re.findall(r"^\s+- platform:", build_job, re.MULTILINE)) == 3,
+            "CI matrix should define exactly three native platforms")
+    for required in (
+        "runner: macos-14", "qt_host: mac", "qt_arch: clang_64",
+        "qt_kit: macos", "package_glob: '*.dmg'",
+        "runner: ubuntu-22.04", "qt_host: linux", "qt_arch: gcc_64",
+        "qt_kit: gcc_64", "package_glob: '*.tar.gz'",
+        "runner: windows-2022", "qt_host: windows",
+        "qt_arch: win64_msvc2022_64", "qt_kit: msvc2022_64",
+        "package_glob: '*.zip'",
+    ):
+        require(required in build_job, f"CI matrix missing {required}")
+
+    require("github.event_name == 'pull_request' && 'debug' || 'release'" in build_job,
+            "pull requests should use Debug and package events should use Release")
+    require("github.event_name == 'pull_request' && 'build' || 'build-release'" in build_job,
+            "CI diagnostic paths should follow the selected preset")
+    require("ilammy/msvc-dev-cmd@v1" in build_job,
+            "Windows should initialize the VS 2022 compiler environment")
+    require("patchelf" in build_job,
+            "Linux should install its required packaging tool")
+
     vcpkg_checkout_start = workflow.index("- name: Checkout vcpkg")
     install_qt_start = workflow.index("- name: Install Qt", vcpkg_checkout_start)
     vcpkg_checkout = workflow[vcpkg_checkout_start:install_qt_start]
@@ -332,28 +490,91 @@ def main():
             "CI should checkout the same vcpkg commit used as builtin-baseline")
     require("fetch-depth: 0" in vcpkg_checkout,
             "CI should fetch full vcpkg history so manifest overrides can resolve port trees")
-    require("QtQuickComponents" in workflow,
-            "CI should checkout or provide QtQuickComponents")
+    require("Checkout QtQuickComponents" not in workflow,
+            "CI should rely on the same pinned FetchContent declaration as local builds")
     require("VCPKG_ROOT: ${{ github.workspace }}/vcpkg" in workflow,
             "CI should expose the fixed vcpkg checkout to CMake Presets")
-    require("QT_ROOT: ${{ runner.temp }}/Qt/6.8.3/macos" in workflow,
-            "CI should expose the exact official Qt kit to CMake Presets")
+    require("QT_ROOT: ${{ runner.temp }}/Qt/6.8.3/${{ matrix.qt_kit }}" in workflow,
+            "CI should expose each exact official Qt kit to CMake Presets")
+    require("VCPKG_DOWNLOADS: ${{ runner.temp }}/vcpkg-downloads" in workflow,
+            "CI should use an explicit reusable vcpkg downloads directory")
+    require("path: ${{ runner.temp }}/vcpkg-downloads" in workflow,
+            "CI should cache the configured vcpkg downloads directory")
+    require("path: ${{ runner.temp }}/vcpkg-binary-cache" in workflow,
+            "CI should cache compiled vcpkg archives in an explicit directory")
+    require(expected_vcpkg_baseline in workflow and
+            "matrix.qt_arch" in workflow and
+            "hashFiles('PluginBased/vcpkg.json')" in workflow,
+            "vcpkg cache keys should include baseline, architecture, and manifest")
+    require("ninja --version" in workflow,
+            "CI should verify the Ninja generator is available")
     require("actions/setup-python@v5" in workflow and "python-version: '3.12'" in workflow,
             "CI should provide the pinned Python line used by aqtinstall")
     require("aqtinstall==3.3.0" in workflow,
             "CI should pin the Qt installer version")
-    require('aqt install-qt --outputdir "${RUNNER_TEMP}/Qt" mac desktop 6.8.3 clang_64 -m qtmultimedia qtshadertools' in workflow,
-            "CI should install only the required Qt 6.8.3 official modules")
+    require('aqt install-qt --outputdir "${RUNNER_TEMP}/Qt"' in workflow and
+            '"${{ matrix.qt_host }}" desktop 6.8.3 "${{ matrix.qt_arch }}"' in workflow and
+            "-m qtmultimedia qtshadertools" in workflow,
+            "CI should install only the required official Qt 6.8.3 matrix kits")
     require("brew install qt" not in workflow and "brew reinstall qt" not in workflow,
             "CI should not fall back to Homebrew Qt")
-    require('test -f "${QT_ROOT}/lib/cmake/Qt6/Qt6Config.cmake"' in workflow,
-            "CI should validate restored or installed Qt before configuring")
-    require("cmake --preset debug" in workflow,
-            "CI should configure through the shared Debug preset")
-    require("cmake --build --preset debug --parallel" in workflow,
-            "CI should build through the shared Debug preset")
-    require("ctest --preset debug" in workflow,
-            "CI should test through the shared Debug preset")
+    for package_file in (
+        "lib/cmake/Qt6/Qt6Config.cmake",
+        "lib/cmake/Qt6Multimedia/Qt6MultimediaConfig.cmake",
+        "lib/cmake/Qt6ShaderTools/Qt6ShaderToolsConfig.cmake",
+    ):
+        require(package_file in workflow,
+                f"CI should validate restored Qt package {package_file}")
+    require('cmake --preset "${BUILD_PRESET}" --fresh' in build_job,
+            "CI should fresh-configure through the event-selected preset")
+    require('cmake --build --preset "${BUILD_PRESET}" --parallel' in build_job,
+            "CI should build through the event-selected preset")
+    require('ctest --preset "${BUILD_PRESET}"' in build_job,
+            "CI should test the event-selected build")
+
+    for required in (
+        "${GITHUB_REF_NAME#v}", "./package.sh --version",
+        "-DPLUGINBASED_OFFICIAL_BUILD=ON",
+        "-DPLUGINBASED_EXPECTED_TAG=${GITHUB_REF_NAME}",
+    ):
+        require(required in build_job, f"tag validation missing {required}")
+    require("${RUNNER_TEMP}/configure-${{ matrix.platform }}.log" in build_job and
+            "${RUNNER_TEMP}/ctest-${{ matrix.platform }}.log" in build_job,
+            "CI logs should stay outside the source tree for clean official builds")
+    require("./package.sh --skip-build" in workflow,
+            "CI should exercise the production packaging entry point")
+    require(build_job.count("if: github.event_name != 'pull_request'") >= 3,
+            "pull requests should not package, checksum, or upload release artifacts")
+    require("hashlib.sha256" in build_job and
+            "len(packages) != 1" in build_job,
+            "CI should require and checksum exactly one native package")
+    require("startsWith(github.ref, 'refs/tags/v') && 365 || 30" in build_job,
+            "tag artifacts should retain 365 days and ordinary artifacts 30 days")
+    require("PluginBased-${{ matrix.platform }}-package" in build_job,
+            "package artifact names should be matrix-specific")
+    require("if: failure()" in build_job and
+            "PluginBased-${{ matrix.platform }}-diagnostics" in build_job and
+            "if-no-files-found: ignore" in build_job and
+            "retention-days: 30" in build_job,
+            "failure diagnostics should be matrix-specific and retained 30 days")
+
+    require("if: startsWith(github.ref, 'refs/tags/v')" in release_job and
+            "needs: build_and_package" in release_job,
+            "release publication should wait for every tagged matrix job")
+    require("permissions:\n      contents: write" in release_job and
+            "contents: write" not in build_job,
+            "only the publication job should write repository contents")
+    require("actions/download-artifact@v4" in release_job and
+            "pattern: PluginBased-*-package" in release_job and
+            "merge-multiple: true" in release_job,
+            "release publication should reuse all matrix artifacts")
+    require("hashlib.sha256" in release_job and
+            "gh release view" in release_job and
+            "gh release create" in release_job and
+            "--verify-tag" in release_job,
+            "release publication should revalidate checksums and create a verified tag release")
+    require("--clobber" not in release_job and "--prerelease" not in release_job,
+            "release publication should not overwrite or infer prerelease status")
 
     main_cpp = read("app/main.cpp")
     app_controller_h = read("app/AppController.h")

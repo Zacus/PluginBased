@@ -52,13 +52,13 @@ Require one `build_and_package` job, `fail-fast: false`, the three runner/Qt/pac
 
 ```python
 for required in (
-    "runner: macos-14", "qt-host: mac", "qt-arch: clang_64",
-    "qt-kit: macos", "package-glob: '*.dmg'",
-    "runner: ubuntu-22.04", "qt-host: linux", "qt-arch: gcc_64",
-    "qt-kit: gcc_64", "package-glob: '*.tar.gz'",
-    "runner: windows-2022", "qt-host: windows",
-    "qt-arch: win64_msvc2022_64", "qt-kit: msvc2022_64",
-    "package-glob: '*.zip'",
+    "runner: macos-14", "qt_host: mac", "qt_arch: clang_64",
+    "qt_kit: macos", "package_glob: '*.dmg'",
+    "runner: ubuntu-22.04", "qt_host: linux", "qt_arch: gcc_64",
+    "qt_kit: gcc_64", "package_glob: '*.tar.gz'",
+    "runner: windows-2022", "qt_host: windows",
+    "qt_arch: win64_msvc2022_64", "qt_kit: msvc2022_64",
+    "package_glob: '*.zip'",
 ):
     require(required in workflow, f"CI matrix missing {required}")
 require("fail-fast: false" in workflow and "timeout-minutes: 180" in workflow,
@@ -121,7 +121,7 @@ concurrency:
   cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
 ```
 
-Create `build_and_package` with `timeout-minutes: 180`, `fail-fast: false`, and three `include` entries carrying `platform`, `runner`, `qt-host`, `qt-arch`, `qt-kit`, and `package-glob`.
+Create `build_and_package` with `timeout-minutes: 180`, `fail-fast: false`, and three `include` entries carrying `platform`, `runner`, `qt_host`, `qt_arch`, `qt_kit`, and `package_glob`.
 
 - [ ] **Step 2: Prepare native toolchains and pinned dependencies**
 
@@ -142,7 +142,7 @@ Before tagged configuration, validate the tag regex and compare `${GITHUB_REF_NA
 
 - [ ] **Step 4: Package and generate a checksum for non-PR events**
 
-Run `./package.sh --skip-build`, then use Python's `pathlib` and `hashlib.sha256` to require exactly one file matching `matrix.package-glob`, stream-hash it, and create `<package>.sha256` containing `<digest>  <filename>`.
+Run `./package.sh --skip-build`, then use Python's `pathlib` and `hashlib.sha256` to require exactly one file matching `matrix.package_glob`, stream-hash it, and create `<package>.sha256` containing `<digest>  <filename>`.
 
 Upload the package and checksum as `PluginBased-${{ matrix.platform }}-package`; set retention to 365 for `refs/tags/v*` and 30 otherwise.
 
