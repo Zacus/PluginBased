@@ -1,3 +1,13 @@
+add_library(PluginBasedBuildInfo STATIC
+    BuildInfo.h
+    BuildInfo.cpp
+)
+target_link_libraries(PluginBasedBuildInfo PUBLIC Qt6::Core)
+target_include_directories(PluginBasedBuildInfo PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
+
+include("${CMAKE_SOURCE_DIR}/cmake/PluginBasedBuildInfo.cmake")
+pluginbased_attach_build_info(PluginBasedBuildInfo)
+
 qt_add_executable(PluginBasedApp
     main.cpp
     AppConfig.h
@@ -61,6 +71,7 @@ target_link_libraries(PluginBasedApp PRIVATE
     PluginBasedLogger               # Logger 与 AppLog QML 模块
     PluginBasedPlugin               # IAppPlugin 接口（INTERFACE）
     PluginBasedCore                 # PluginManager.h 头文件路径（INTERFACE）
+    PluginBasedBuildInfo
     QtQuickComponents
     ${DUMP_LIBS}
 )

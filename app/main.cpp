@@ -6,6 +6,10 @@
 #include <QDir>
 #include <QStringList>
 
+#include <cstddef>
+#include <cstdio>
+
+#include "BuildInfo.h"
 #include "Logger.h"
 #include "CrashHandler.h"
 #include "AppController.h"
@@ -16,6 +20,7 @@
 using PluginBased::App::AppConfig;
 using PluginBased::App::AppController;
 using PluginBased::App::AppLanguageService;
+using PluginBased::App::BuildInfo;
 
 namespace {
 
@@ -56,10 +61,25 @@ void addRuntimeQmlImportPaths(QQmlApplicationEngine& engine, const QString& appD
 
 int main(int argc, char* argv[])
 {
+    for (int index = 1; index < argc; ++index) {
+        const QByteArray argument(argv[index]);
+        if (argument == "--version") {
+            const QByteArray output = BuildInfo::conciseVersion().toUtf8();
+            std::fwrite(output.constData(), 1, static_cast<std::size_t>(output.size()), stdout);
+            std::fputc('\n', stdout);
+            return 0;
+        }
+        if (argument == "--build-info") {
+            const QByteArray output = BuildInfo::json();
+            std::fwrite(output.constData(), 1, static_cast<std::size_t>(output.size()), stdout);
+            return 0;
+        }
+    }
+
     QGuiApplication app(argc, argv);
     app.setOrganizationName("PluginBased");
-    app.setApplicationName("PluginBased");
-    app.setApplicationVersion("1.0.0");
+    app.setApplicationName(BuildInfo::productName());
+    app.setApplicationVersion(BuildInfo::productVersion());
 
     const QString dataDir = QStandardPaths::writableLocation(
                                 QStandardPaths::AppLocalDataLocation);
@@ -83,7 +103,8 @@ int main(int argc, char* argv[])
         static_cast<std::size_t>(cfg.logMaxFiles()),
         cfg.logFlushOn()
     );
-    LOG_INFO("=== PluginBased starting (v1.0.0) ===");
+    LOG_INFO("=== {} starting ===", BuildInfo::conciseVersion().toStdString());
+    LOG_INFO("Build identity:\n{}", BuildInfo::diagnosticSummary().toStdString());
     LOG_INFO("Data dir: {}", dataDir.toStdString());
     LOG_INFO("Config  : {}", cfg.path().toStdString());
 

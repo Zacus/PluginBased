@@ -296,6 +296,30 @@ if(BUILD_TESTING)
         COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tests/build_info_generation_checks.py"
         WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
     )
+    add_executable(BuildInfoTest
+        tests/tst_build_info.cpp
+    )
+    target_compile_definitions(BuildInfoTest PRIVATE
+        PLUGINBASED_TEST_VERSION="${PROJECT_VERSION}"
+    )
+    target_link_libraries(BuildInfoTest PRIVATE
+        Qt6::Core
+        Qt6::Test
+        PluginBasedBuildInfo
+    )
+    add_test(NAME build_info
+        COMMAND $<TARGET_FILE:BuildInfoTest>
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+    )
+    pluginbased_enable_test_assertions(BuildInfoTest)
+    add_test(NAME build_info_cli
+        COMMAND "${Python3_EXECUTABLE}"
+                "${CMAKE_SOURCE_DIR}/tests/build_info_cli_checks.py"
+                --app $<TARGET_FILE:PluginBasedApp>
+                --json "${CMAKE_BINARY_DIR}/build-info.json"
+                --version "${PROJECT_VERSION}"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+    )
     add_executable(PluginMetadataValidatorTest
         tests/tst_plugin_metadata_validator.cpp
         core/PluginMetadataValidator.cpp
